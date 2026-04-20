@@ -1,7 +1,7 @@
 import Foundation
 
 enum Constants {
-    static let appName = "AetherDesk"
+    static let appName = "ÆtherDesk"
     static let bundleIdentifier = "com.aetherdesk.AetherDesk"
 
     enum Defaults {
@@ -26,15 +26,15 @@ enum Constants {
     }
 
     enum Notifications {
-        static let wallpaperDidChange = Notification.Name("AetherDesk.wallpaperDidChange")
-        static let displayConfigurationDidChange = Notification.Name("AetherDesk.displayConfigurationDidChange")
-        static let lowPowerModeDidChange = Notification.Name("AetherDesk.lowPowerModeDidChange")
+        static let wallpaperDidChange = Notification.Name("ÆtherDesk.wallpaperDidChange")
+        static let displayConfigurationDidChange = Notification.Name("ÆtherDesk.displayConfigurationDidChange")
+        static let lowPowerModeDidChange = Notification.Name("ÆtherDesk.lowPowerModeDidChange")
 
         /// Posted by a runtime when it has decided it cannot continue
         /// (watchdog trip, web content process terminated, AV player item
         /// failed). `userInfo["displayID"]` carries the affected display so
         /// the manager can demote just that one.
-        static let runtimeDidFail = Notification.Name("AetherDesk.runtimeDidFail")
+        static let runtimeDidFail = Notification.Name("ÆtherDesk.runtimeDidFail")
     }
 
     enum Keys {

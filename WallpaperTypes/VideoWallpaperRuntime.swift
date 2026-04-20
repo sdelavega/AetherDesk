@@ -127,7 +127,7 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     private func reportFailure(reason: String) {
-        NSLog("AetherDesk: video runtime failure on display %u: %@", displayID, reason)
+        NSLog("ÆtherDesk: video runtime failure on display %u: %@", displayID, reason)
         NotificationCenter.default.post(
             name: Constants.Notifications.runtimeDidFail,
             object: nil,

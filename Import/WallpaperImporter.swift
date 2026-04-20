@@ -36,7 +36,7 @@ final class WallpaperImporter {
     private let fileManager = FileManager.default
     private var cachedWallpapers: [WallpaperBundle]?
 
-    /// User-writable library in ~/Library/Application Support/AetherDesk/Wallpapers.
+    /// User-writable library in ~/Library/Application Support/ÆtherDesk/Wallpapers.
     var wallpapersDirectory: URL {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory,
                                           in: .userDomainMask).first!

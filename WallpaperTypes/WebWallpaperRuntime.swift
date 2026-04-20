@@ -272,15 +272,15 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        NSLog("AetherDesk: WebView navigation failed: %@", error.localizedDescription)
+        NSLog("ÆtherDesk: WebView navigation failed: %@", error.localizedDescription)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        NSLog("AetherDesk: WebView provisional navigation failed: %@", error.localizedDescription)
+        NSLog("ÆtherDesk: WebView provisional navigation failed: %@", error.localizedDescription)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        NSLog("AetherDesk: web content process terminated on display %u", displayID)
+        NSLog("ÆtherDesk: web content process terminated on display %u", displayID)
         watchdog.stop()
         self.webView = nil
         propertyBridge.setWebView(nil)

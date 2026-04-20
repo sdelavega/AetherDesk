@@ -120,7 +120,7 @@ class LivelyInfoParser {
             let decoder = JSONDecoder()
             return try decoder.decode(LivelyInfo.self, from: data)
         } catch {
-            print("AetherDesk: Failed to parse LivelyInfo.json: \(error)")
+            print("ÆtherDesk: Failed to parse LivelyInfo.json: \(error)")
             return nil
         }
     }
@@ -130,7 +130,7 @@ class LivelyInfoParser {
             let decoder = JSONDecoder()
             return try decoder.decode(LivelyInfo.self, from: data)
         } catch {
-            print("AetherDesk: Failed to parse LivelyInfo: \(error)")
+            print("ÆtherDesk: Failed to parse LivelyInfo: \(error)")
             return nil
         }
     }

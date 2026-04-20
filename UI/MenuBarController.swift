@@ -2,11 +2,11 @@ import AppKit
 import Foundation
 import UserNotifications
 
-/// Menu-bar-only UI for AetherDesk. The app has no Dock presence (LSUIElement
+/// Menu-bar-only UI for ÆtherDesk. The app has no Dock presence (LSUIElement
 /// in Info.plist); this controller is the primary user-facing surface.
 ///
 /// Menu layout, per prompt:
-///   AetherDesk
+///   ÆtherDesk
 ///   ─────────
 ///   Wallpapers ▸   (all available wallpapers, checkmark on current)
 ///   Import Wallpaper…
@@ -60,11 +60,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func setupStatusItem() {
         if let button = statusItem.button {
             let image = NSImage(systemSymbolName: "photo.on.rectangle.angled",
-                                accessibilityDescription: "AetherDesk")
-                ?? NSImage(systemSymbolName: "photo", accessibilityDescription: "AetherDesk")
+                                accessibilityDescription: "ÆtherDesk")
+                ?? NSImage(systemSymbolName: "photo", accessibilityDescription: "ÆtherDesk")
             image?.isTemplate = true
             button.image = image
-            button.toolTip = "AetherDesk"
+            button.toolTip = "ÆtherDesk"
         }
         statusItem.menu = menu
     }
@@ -74,7 +74,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func setupMenu() {
         menu.removeAllItems()
 
-        let title = NSMenuItem(title: "AetherDesk", action: nil, keyEquivalent: "")
+        let title = NSMenuItem(title: "ÆtherDesk", action: nil, keyEquivalent: "")
         title.isEnabled = false
         menu.addItem(title)
         menu.addItem(.separator())
@@ -120,7 +120,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quit AetherDesk",
+        let quit = NSMenuItem(title: "Quit ÆtherDesk",
                               action: #selector(quit),
                               keyEquivalent: "q")
         quit.target = self

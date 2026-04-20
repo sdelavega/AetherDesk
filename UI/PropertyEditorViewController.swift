@@ -11,7 +11,7 @@ import ObjectiveC.runtime
 final class PropertyEditorViewController: NSViewController {
 
     static let propertyChangedNotification =
-        Notification.Name("AetherDesk.propertyChanged")
+        Notification.Name("ÆtherDesk.propertyChanged")
 
     private let bundle: WallpaperBundle
     private var propertyControls: [String: NSControl] = [:]

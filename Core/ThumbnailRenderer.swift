@@ -17,7 +17,7 @@ import Foundation
 ///   3. On failure → nil (callers should show a placeholder)
 ///
 /// All results are disk-cached under
-///   ~/Library/Caches/com.aetherdesk.AetherDesk/thumbnails/<bundleID>_<w>x<h>.png
+///   ~/Library/Caches/com.aetherdesk.ÆtherDesk/thumbnails/<bundleID>_<w>x<h>.png
 /// keyed by bundle id + requested pixel size. Cache entries older than the
 /// source bundle's mtime are invalidated at lookup time.
 final class ThumbnailRenderer {

@@ -3,7 +3,7 @@ import AppKit
 // Single-instance guard: exit immediately if another copy is already running.
 let dominated = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier!)
 if dominated.count > 1 {
-    NSLog("AetherDesk: another instance is already running — exiting.")
+    NSLog("ÆtherDesk: another instance is already running — exiting.")
     exit(0)
 }
 

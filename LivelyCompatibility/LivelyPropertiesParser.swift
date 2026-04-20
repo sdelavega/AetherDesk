@@ -62,7 +62,7 @@ class LivelyPropertiesParser {
             let data = try Data(contentsOf: propertiesURL)
             return parse(from: data)
         } catch {
-            print("AetherDesk: Failed to parse LivelyProperties.json: \(error)")
+            print("ÆtherDesk: Failed to parse LivelyProperties.json: \(error)")
             return nil
         }
     }

@@ -115,7 +115,7 @@ final class WallpaperManager {
                                             userInfo: ["displayID": displayID,
                                                        "bundleID": bundle.id.uuidString])
         } catch {
-            NSLog("AetherDesk: runtime start failed for display %u: %@",
+            NSLog("ÆtherDesk: runtime start failed for display %u: %@",
                   displayID, String(describing: error))
             installSafeModeContent(for: displayID)
         }
@@ -131,7 +131,7 @@ final class WallpaperManager {
         guard let runtime = runtimes[displayID] else { return }
         do { try runtime.reload() }
         catch {
-            NSLog("AetherDesk: reload failed for display %u: %@",
+            NSLog("ÆtherDesk: reload failed for display %u: %@",
                   displayID, String(describing: error))
             installSafeModeContent(for: displayID)
         }
@@ -323,7 +323,7 @@ final class WallpaperManager {
     @objc private func runtimeDidFail(_ note: Notification) {
         guard let displayID = note.userInfo?["displayID"] as? CGDirectDisplayID else { return }
         let reason = (note.userInfo?["reason"] as? String) ?? "unknown"
-        NSLog("AetherDesk: runtime on display %u reported failure (%@); demoting to safe content",
+        NSLog("ÆtherDesk: runtime on display %u reported failure (%@); demoting to safe content",
               displayID, reason)
         DispatchQueue.main.async { [weak self] in
             self?.installSafeModeContent(for: displayID)

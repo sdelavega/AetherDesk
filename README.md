@@ -1,8 +1,8 @@
-# AetherDesk
+# ÆtherDesk
 
 **Live wallpapers for macOS — powered by HTML, video, and images.**
 
-AetherDesk is a lightweight menu-bar app that renders animated wallpapers behind your desktop icons on every connected display. Drop in any HTML5 canvas/WebGL page, a looping video, or a static image and AetherDesk takes care of the rest.
+ÆtherDesk is a lightweight menu-bar app that renders animated wallpapers behind your desktop icons on every connected display. Drop in any HTML5 canvas/WebGL page, a looping video, or a static image and ÆtherDesk takes care of the rest.
 
 It ships with full [Lively Wallpaper](https://www.rocksdanister.com/lively/) compatibility, so thousands of community-made wallpapers work out of the box.
 
@@ -32,7 +32,7 @@ Grab the latest signed and notarized `.app` from the [Releases](https://github.c
 
 ### Using wallpapers
 
-1. Click the **AetherDesk** icon in your menu bar
+1. Click the **ÆtherDesk** icon in your menu bar
 2. **Wallpapers** submenu shows all available wallpapers — click one to apply
 3. If you have multiple displays, each gets its own submenu section
 4. **Import Wallpaper...** lets you add `.zip` bundles or folders containing a wallpaper
@@ -40,7 +40,7 @@ Grab the latest signed and notarized `.app` from the [Releases](https://github.c
 
 ### Bundled wallpapers
 
-AetherDesk comes with three built-in wallpapers to get you started:
+ÆtherDesk comes with three built-in wallpapers to get you started:
 
 | Wallpaper | Description |
 |-----------|-------------|
@@ -52,12 +52,12 @@ All three support real-time property tweaking from Preferences.
 
 ## Importing Lively Wallpapers
 
-AetherDesk reads the same `LivelyInfo.json` and `LivelyProperties.json` format used by [Lively Wallpaper](https://www.rocksdanister.com/lively/) on Windows. To import:
+ÆtherDesk reads the same `LivelyInfo.json` and `LivelyProperties.json` format used by [Lively Wallpaper](https://www.rocksdanister.com/lively/) on Windows. To import:
 
 1. Find a wallpaper you like (e.g. from the [Lively community](https://www.rocksdanister.com/lively/gallery/))
 2. Download the `.zip` bundle
-3. In AetherDesk, click **Import Wallpaper...** and select the zip
-4. The importer validates the bundle, copies it to `~/Library/Application Support/AetherDesk/Wallpapers/`, and makes it available immediately
+3. In ÆtherDesk, click **Import Wallpaper...** and select the zip
+4. The importer validates the bundle, copies it to `~/Library/Application Support/ÆtherDesk/Wallpapers/`, and makes it available immediately
 
 Supported types: **web/HTML**, **video** (mp4, mov, m4v, webm), and **image** (png, jpg, gif, webp, heic).
 
@@ -107,21 +107,21 @@ MyWallpaper/
 Your `index.html` receives property updates through the Lively-compatible JS bridge:
 
 ```javascript
-// Called by AetherDesk when the user changes a property
+// Called by ÆtherDesk when the user changes a property
 function livelyPropertyListener(name, val) {
   if (name === "speed") animationSpeed = val;
   if (name === "color") primaryColor = val;
 }
 ```
 
-Zip the folder and import it, or drop it directly into `~/Library/Application Support/AetherDesk/Wallpapers/`.
+Zip the folder and import it, or drop it directly into `~/Library/Application Support/ÆtherDesk/Wallpapers/`.
 
 ---
 
 ## Under the Hood
 
 ```
-AetherDesk (menu-bar app, LSUIElement)
+ÆtherDesk (menu-bar app, LSUIElement)
 │
 ├── AppDelegate              — Bootstrap, restore last session
 ├── WallpaperManager         — Orchestrates runtimes across all displays

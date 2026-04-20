@@ -21,7 +21,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "AetherDesk Preferences"
+        window.title = "ÆtherDesk Preferences"
         window.center()
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 600, height: 400)
@@ -118,7 +118,7 @@ private final class PreferencesViewController: NSViewController {
         container.addSubview(revealButton)
 
         let note = NSTextField(wrappingLabelWithString:
-            "AetherDesk runs as a menu-bar-only application. It has no Dock presence.")
+            "ÆtherDesk runs as a menu-bar-only application. It has no Dock presence.")
         note.textColor = .secondaryLabelColor
         note.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(note)
@@ -251,7 +251,7 @@ private final class PreferencesViewController: NSViewController {
     private func buildAboutTab() -> NSView {
         let view = NSView()
 
-        let title = NSTextField(labelWithString: "AetherDesk")
+        let title = NSTextField(labelWithString: "ÆtherDesk")
         title.font = NSFont.boldSystemFont(ofSize: 24)
         title.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(title)

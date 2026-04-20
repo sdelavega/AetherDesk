@@ -169,7 +169,7 @@ final class PropertyBridge: NSObject {
                      data: ["properties": properties])
         case "log":
             if let msg = data["message"] as? String {
-                NSLog("AetherDesk[wallpaper %u]: %@", displayID, msg)
+                NSLog("ÆtherDesk[wallpaper %u]: %@", displayID, msg)
             }
         default:
             break
@@ -264,7 +264,7 @@ final class PropertyBridge: NSObject {
         if Thread.isMainThread {
             webView.evaluateJavaScript(js) { _, error in
                 if let error = error {
-                    NSLog("AetherDesk: %@ failed: %@", tag, String(describing: error))
+                    NSLog("ÆtherDesk: %@ failed: %@", tag, String(describing: error))
                 }
             }
         } else {
@@ -272,7 +272,7 @@ final class PropertyBridge: NSObject {
                 guard let wv = webView else { return }
                 wv.evaluateJavaScript(js) { _, error in
                     if let error = error {
-                        NSLog("AetherDesk: %@ failed: %@", tag, String(describing: error))
+                        NSLog("ÆtherDesk: %@ failed: %@", tag, String(describing: error))
                     }
                 }
             }
