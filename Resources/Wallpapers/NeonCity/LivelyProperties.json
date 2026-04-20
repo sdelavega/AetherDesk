@@ -9,7 +9,7 @@
   },
   "fogDensity": {
     "type": "slider",
-    "value": 40,
+    "value": 30,
     "min": 0,
     "max": 100,
     "step": 5,
@@ -17,9 +17,9 @@
   },
   "neonBrightness": {
     "type": "slider",
-    "value": 80,
+    "value": 100,
     "min": 20,
-    "max": 100,
+    "max": 120,
     "step": 5,
     "text": "Neon Brightness"
   },

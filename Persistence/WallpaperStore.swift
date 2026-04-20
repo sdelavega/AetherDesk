@@ -70,14 +70,27 @@ final class WallpaperStore {
 
     // MARK: Internals
 
+    private var cachedPayload: Payload?
+
+    func invalidateCache() {
+        cachedPayload = nil
+    }
+
     private func loadPayload() -> Payload {
+        if let cached = cachedPayload { return cached }
         guard let data = userDefaults.data(forKey: key),
               let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        else { return Payload(displayAssignments: [:]) }
+        else {
+            let empty = Payload(displayAssignments: [:])
+            cachedPayload = empty
+            return empty
+        }
+        cachedPayload = payload
         return payload
     }
 
     private func save(_ payload: Payload) {
+        cachedPayload = payload
         guard let data = try? JSONEncoder().encode(payload) else { return }
         userDefaults.set(data, forKey: key)
     }

@@ -19,6 +19,11 @@ final class PropertyBridge: NSObject {
     private var properties: [String: Any] = [:]
     private weak var webView: WKWebView?
 
+    // Debounce batching: accumulate property updates and flush in one JS eval.
+    private var pendingUpdates: [String: Any] = [:]
+    private var flushWorkItem: DispatchWorkItem?
+    private static let debounceInterval: TimeInterval = 0.05
+
     init(displayID: CGDirectDisplayID) {
         self.displayID = displayID
         super.init()
@@ -26,7 +31,7 @@ final class PropertyBridge: NSObject {
 
     // MARK: Setup
 
-    func setWebView(_ webView: WKWebView) {
+    func setWebView(_ webView: WKWebView?) {
         self.webView = webView
     }
 
@@ -59,25 +64,53 @@ final class PropertyBridge: NSObject {
         evaluate(script, on: webView, tag: "injectProperties")
     }
 
-    /// Push a single property delta into the page.
+    /// Push a single property delta into the page (debounced).
     func updateProperty(_ key: String, value: Any) {
         properties[key] = value
-        guard let webView = webView else { return }
-        let keyJSON = jsonFragment(key)
-        let valJSON = jsonFragment(value)
+        pendingUpdates[key] = value
+        scheduleFlush()
+    }
+
+    /// Deliver any pending updates immediately. Call before stop/inject.
+    func flushNow() {
+        flushWorkItem?.cancel()
+        flushWorkItem = nil
+        flushPendingUpdates()
+    }
+
+    private func scheduleFlush() {
+        flushWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.flushPendingUpdates()
+        }
+        flushWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.debounceInterval, execute: work)
+    }
+
+    private func flushPendingUpdates() {
+        guard !pendingUpdates.isEmpty, let webView = webView else {
+            pendingUpdates.removeAll()
+            return
+        }
+
+        let updates = pendingUpdates
+        pendingUpdates.removeAll()
+
+        let updatesJSON = jsonFragment(updates)
         let script = """
         (function() {
             window._aetherDeskProperties = window._aetherDeskProperties || {};
-            window._aetherDeskProperties[\(keyJSON)] = \(valJSON);
+            var updates = \(updatesJSON);
+            for (var k in updates) { window._aetherDeskProperties[k] = updates[k]; }
             if (window.aetherDesk && window.aetherDesk._notify) {
                 window.aetherDesk._notify(window._aetherDeskProperties);
             }
             if (typeof livelyPropertyListener === 'function') {
-                livelyPropertyListener(\(keyJSON), \(valJSON));
+                for (var k in updates) { livelyPropertyListener(k, updates[k]); }
             }
         })();
         """
-        evaluate(script, on: webView, tag: "updateProperty(\(key))")
+        evaluate(script, on: webView, tag: "flushProperties(\(updates.count) keys)")
     }
 
     /// Push display/system environment info into the page. Called on

@@ -14,7 +14,7 @@
 <script>
 'use strict';
 
-const CFG = { rainIntensity:60, fogDensity:40, neonBrightness:80, vehicleCount:8 };
+const CFG = { rainIntensity:60, fogDensity:30, neonBrightness:100, vehicleCount:8 };
 function livelyPropertyListener(name, val) {
   if (name in CFG) { CFG[name]=val; if(name==='rainIntensity')initRain(); if(name==='vehicleCount')initVehicles(); }
 }
@@ -49,7 +49,7 @@ function buildCity(){
 
   // Sky
   const sky=c.createLinearGradient(0,0,0,HZ);
-  sky.addColorStop(0,'#01020a'); sky.addColorStop(0.65,'#04091a'); sky.addColorStop(1,'#071020');
+  sky.addColorStop(0,'#020518'); sky.addColorStop(0.65,'#081430'); sky.addColorStop(1,'#0c1a38');
   c.fillStyle=sky; c.fillRect(0,0,W,HZ);
 
   // Stars
@@ -88,12 +88,12 @@ function buildCity(){
     c.beginPath(); c.moveTo(0,HZ);
     for(const b of bldgs){ c.lineTo(b.x,HZ); c.lineTo(b.x,b.y); c.lineTo(b.x+b.w,b.y); c.lineTo(b.x+b.w,HZ); }
     c.lineTo(W,HZ); c.closePath();
-    c.fillStyle=`hsl(225,${[7,9,11][li]}%,${[2,3,4][li]}%)`; c.fill();
+    c.fillStyle=`hsl(225,${[10,12,15][li]}%,${[4,6,8][li]}%)`; c.fill();
 
     for(const b of bldgs){
       // Face — barely a shade above silhouette
-      const fL=[2,3,4][li]+rI(0,2);
-      c.fillStyle=`hsl(${rI(218,238)},${rI(7,14)}%,${fL}%)`; c.fillRect(b.x+1,b.y,b.w-2,b.h);
+      const fL=[5,7,10][li]+rI(0,3);
+      c.fillStyle=`hsl(${rI(218,238)},${rI(10,18)}%,${fL}%)`; c.fillRect(b.x+1,b.y,b.w-2,b.h);
 
       // Atmospheric haze
       if(li===0){ c.fillStyle='rgba(2,5,14,0.58)'; c.fillRect(b.x,b.y,b.w,b.h); }
@@ -114,7 +114,7 @@ function buildCity(){
 
   // Horizon atmosphere glow
   const hg=c.createLinearGradient(0,HZ-20,0,HZ+40);
-  hg.addColorStop(0,'rgba(0,0,0,0)'); hg.addColorStop(0.4,'rgba(8,22,65,0.18)'); hg.addColorStop(1,'rgba(0,0,0,0)');
+  hg.addColorStop(0,'rgba(0,0,0,0)'); hg.addColorStop(0.4,'rgba(12,30,85,0.28)'); hg.addColorStop(1,'rgba(0,0,0,0)');
   c.fillStyle=hg; c.fillRect(0,HZ-20,W,60);
 
   // Wet road sheen — thin horizontal bands, no perspective lines
@@ -154,11 +154,11 @@ function drawRooftop(c,bx,by,bw,bh,layer,isTall,antDim=1.0){
 
 // ── Windows — sparse, mostly dark ────────────────────────────────────────────
 function drawWindows(c,bx,by,bw,bh,layer){
-  const density=[0.07,0.13,0.20][layer]; // very sparse — most windows dark
+  const density=[0.12,0.20,0.30][layer];
   const ww=rR(2,3.5),wh=rR(2,3.5);
-  const gx=rR(6,13),gy=rR(6,12);
+  const gx=rR(5,11),gy=rR(5,10);
   const sx=bx+rR(4,8),sy=by+rR(5,10);
-  const maxL=[22,34,46][layer];
+  const maxL=[30,45,58][layer];
   for(let wy=sy;wy<by+bh-wh-4;wy+=wh+gy){
     for(let wx=sx;wx<bx+bw-ww-4;wx+=ww+gx){
       if(rng()>density) continue;
@@ -213,9 +213,9 @@ function drawNeonTube(ctx,x,y,w,h,color,alpha,nb){
   const cy=y+h/2, x1=x+h*0.5, x2=x+w-h*0.5;
   if(x2<=x1){ctx.restore();return;}
   ctx.strokeStyle=color; ctx.shadowColor=color;
-  ctx.globalAlpha=alpha*0.13*nb; ctx.shadowBlur=h*4; ctx.lineWidth=h*2.4;
+  ctx.globalAlpha=alpha*0.18*nb; ctx.shadowBlur=h*5; ctx.lineWidth=h*3.0;
   ctx.beginPath(); ctx.moveTo(x1,cy); ctx.lineTo(x2,cy); ctx.stroke();
-  ctx.globalAlpha=alpha*0.68*nb; ctx.shadowBlur=h*1.4; ctx.lineWidth=h*0.80;
+  ctx.globalAlpha=alpha*0.78*nb; ctx.shadowBlur=h*2.0; ctx.lineWidth=h*0.90;
   ctx.beginPath(); ctx.moveTo(x1,cy); ctx.lineTo(x2,cy); ctx.stroke();
   ctx.globalAlpha=alpha*0.88*nb; ctx.strokeStyle='#fff'; ctx.shadowColor='#fff'; ctx.shadowBlur=h*0.55; ctx.lineWidth=Math.max(0.7,h*0.20);
   ctx.beginPath(); ctx.moveTo(x1,cy); ctx.lineTo(x2,cy); ctx.stroke();
@@ -344,7 +344,7 @@ function drawFog(ctx,t){
 
 function drawVignette(ctx){
   const vg=ctx.createRadialGradient(W*.5,H*.5,H*.2,W*.5,H*.5,H*.88);
-  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.65)');
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.4)');
   ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
 }
 
