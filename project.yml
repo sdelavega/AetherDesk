@@ -5,10 +5,13 @@ options:
     macOS: "12.0"
   xcodeVersion: "15.0"
   generateEmptyDirectories: true
+  groupSortPosition: top
+  createIntermediateGroups: true
 
 settings:
   base:
     PRODUCT_NAME: AetherDesk
+    PRODUCT_BUNDLE_IDENTIFIER: com.aetherdesk.AetherDesk
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.9"
@@ -16,6 +19,10 @@ settings:
     CODE_SIGN_STYLE: Automatic
     ENABLE_HARDENED_RUNTIME: YES
     COMBINE_HIDPI_IMAGES: YES
+    SWIFT_STRICT_CONCURRENCY: minimal
+    CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: YES
+    GCC_WARN_UNUSED_VARIABLE: YES
+    DEAD_CODE_STRIPPING: YES
 
 targets:
   AetherDesk:
@@ -29,7 +36,22 @@ targets:
       - path: Import
       - path: UI
       - path: Persistence
+      # Non-code resources, minus Info.plist / entitlements (handled via
+      # build settings below) and minus the Wallpapers folder (added as a
+      # folder reference so per-wallpaper subdirectories are preserved).
       - path: Resources
+        excludes:
+          - "Info.plist"
+          - "AetherDesk.entitlements"
+          - "Wallpapers"
+          - "Wallpapers/**"
+        buildPhase: resources
+      # Keep bundled wallpapers as a folder reference so each wallpaper's
+      # index.html + LivelyInfo.json + LivelyProperties.json stays grouped
+      # under Resources/Wallpapers/<Name>/ in the built app.
+      - path: Resources/Wallpapers
+        type: folder
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
@@ -38,3 +60,4 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     entitlements:
       path: Resources/AetherDesk.entitlements
+    dependencies: []

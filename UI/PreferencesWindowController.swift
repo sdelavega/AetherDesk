@@ -1,153 +1,284 @@
 import AppKit
 import Foundation
 
-class PreferencesWindowController: NSWindowController {
+/// Preferences window with three tabs:
+///   General      – launch-at-login, reveal-folder, etc.
+///   Performance  – FPS cap, pause-when-occluded, respect low-power mode
+///   Wallpaper    – picker + property editor for the selected wallpaper
+///   About        – build info
+///
+/// The AppDelegate wires this up via `shared.showWindow()` from the menu bar.
+final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     static let shared = PreferencesWindowController()
 
-    private var tabView: NSTabView!
+    private let tabView = NSTabView()
+    private var currentEditor: PropertyEditorViewController?
+    private let wallpaperEditorContainer = NSView()
 
-    private override init(window: NSWindow?) {
-        let prefWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
-            styleMask: [.titled, .closable],
+    private convenience init() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        prefWindow.title = "AetherDesk Preferences"
-        prefWindow.center()
-
-        super.init(window: prefWindow)
-
+        window.title = "AetherDesk Preferences"
+        window.center()
+        window.isReleasedWhenClosed = false
+        self.init(window: window)
+        window.delegate = self
         setupTabs()
+        observePropertyChanges()
+    }
+
+    override init(window: NSWindow?) {
+        super.init(window: window)
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // MARK: Layout
+
     private func setupTabs() {
-        tabView = NSTabView()
+        guard let contentView = window?.contentView else { return }
+
         tabView.translatesAutoresizingMaskIntoConstraints = false
 
-        let generalTab = NSTabViewItem(identifier: "general")
-        generalTab.label = "General"
-        generalTab.view = createGeneralTab()
-        tabView.addTabViewItem(generalTab)
+        tabView.addTabViewItem(tabViewItem(id: "general",     label: "General",     view: buildGeneralTab()))
+        tabView.addTabViewItem(tabViewItem(id: "performance", label: "Performance", view: buildPerformanceTab()))
+        tabView.addTabViewItem(tabViewItem(id: "wallpaper",   label: "Wallpaper",   view: buildWallpaperTab()))
+        tabView.addTabViewItem(tabViewItem(id: "about",       label: "About",       view: buildAboutTab()))
 
-        let performanceTab = NSTabViewItem(identifier: "performance")
-        performanceTab.label = "Performance"
-        performanceTab.view = createPerformanceTab()
-        tabView.addTabViewItem(performanceTab)
-
-        let aboutTab = NSTabViewItem(identifier: "about")
-        aboutTab.label = "About"
-        aboutTab.view = createAboutTab()
-        tabView.addTabViewItem(aboutTab)
-
-        window?.contentView?.addSubview(tabView)
-
+        contentView.addSubview(tabView)
         NSLayoutConstraint.activate([
-            tabView.topAnchor.constraint(equalTo: window!.contentView!.topAnchor, constant: 20),
-            tabView.leadingAnchor.constraint(equalTo: window!.contentView!.leadingAnchor, constant: 20),
-            tabView.trailingAnchor.constraint(equalTo: window!.contentView!.trailingAnchor, constant: -20),
-            tabView.bottomAnchor.constraint(equalTo: window!.contentView!.bottomAnchor, constant: -20)
+            tabView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
+            tabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            tabView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16)
         ])
     }
 
-    private func createGeneralTab() -> NSView {
-        let view = NSView()
-
-        let launchAtLoginCheckbox = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
-        launchAtLoginCheckbox.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(launchAtLoginCheckbox)
-
-        let showInDockCheckbox = NSButton(checkboxWithTitle: "Show icon in Dock", target: nil, action: nil)
-        showInDockCheckbox.translatesAutoresizingMaskIntoConstraints = false
-        showInDockCheckbox.isEnabled = false
-        view.addSubview(showInDockCheckbox)
-
-        NSLayoutConstraint.activate([
-            launchAtLoginCheckbox.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-            launchAtLoginCheckbox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-
-            showInDockCheckbox.topAnchor.constraint(equalTo: launchAtLoginCheckbox.bottomAnchor, constant: 10),
-            showInDockCheckbox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20)
-        ])
-
-        return view
+    private func tabViewItem(id: String, label: String, view: NSView) -> NSTabViewItem {
+        let item = NSTabViewItem(identifier: id)
+        item.label = label
+        item.view = view
+        return item
     }
 
-    private func createPerformanceTab() -> NSView {
-        let view = NSView()
+    // MARK: Tabs
 
-        let fpsLabel = NSTextField(labelWithString: "Default FPS Cap:")
+    private func buildGeneralTab() -> NSView {
+        let container = NSView()
+
+        let launchAtLogin = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
+        launchAtLogin.translatesAutoresizingMaskIntoConstraints = false
+        // NOTE: actual launch-at-login integration (SMAppService on macOS 13+)
+        // is left to a follow-up; the checkbox is disabled to avoid pretending.
+        launchAtLogin.isEnabled = false
+        container.addSubview(launchAtLogin)
+
+        let revealButton = NSButton(title: "Reveal wallpaper folder",
+                                    target: self,
+                                    action: #selector(revealWallpaperFolder))
+        revealButton.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(revealButton)
+
+        let note = NSTextField(wrappingLabelWithString:
+            "AetherDesk runs as a menu-bar-only application. It has no Dock presence.")
+        note.textColor = .secondaryLabelColor
+        note.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(note)
+
+        NSLayoutConstraint.activate([
+            launchAtLogin.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
+            launchAtLogin.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+
+            revealButton.topAnchor.constraint(equalTo: launchAtLogin.bottomAnchor, constant: 12),
+            revealButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+
+            note.topAnchor.constraint(equalTo: revealButton.bottomAnchor, constant: 20),
+            note.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            note.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20)
+        ])
+        return container
+    }
+
+    private func buildPerformanceTab() -> NSView {
+        let container = NSView()
+
+        let fpsLabel = NSTextField(labelWithString: "Default FPS cap:")
         fpsLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(fpsLabel)
+        container.addSubview(fpsLabel)
 
         let fpsPopup = NSPopUpButton()
         fpsPopup.translatesAutoresizingMaskIntoConstraints = false
         fpsPopup.addItems(withTitles: ["15", "30", "60"])
-        fpsPopup.selectItem(at: 1)
-        view.addSubview(fpsPopup)
+        fpsPopup.selectItem(withTitle: "\(Constants.Defaults.fpsCap)")
+        container.addSubview(fpsPopup)
 
-        let lowPowerCheckbox = NSButton(checkboxWithTitle: "Respect Low Power Mode", target: nil, action: nil)
-        lowPowerCheckbox.translatesAutoresizingMaskIntoConstraints = false
-        lowPowerCheckbox.state = .on
-        view.addSubview(lowPowerCheckbox)
+        let lowPower = NSButton(checkboxWithTitle: "Respect Low Power Mode",
+                                target: nil, action: nil)
+        lowPower.state = .on
+        lowPower.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(lowPower)
 
-        let pauseWhenOccludedCheckbox = NSButton(checkboxWithTitle: "Pause when wallpaper is not visible", target: nil, action: nil)
-        pauseWhenOccludedCheckbox.translatesAutoresizingMaskIntoConstraints = false
-        pauseWhenOccludedCheckbox.state = .on
-        view.addSubview(pauseWhenOccludedCheckbox)
+        let pauseOnOcclusion = NSButton(
+            checkboxWithTitle: "Pause when wallpaper is not visible",
+            target: nil, action: nil)
+        pauseOnOcclusion.state = .on
+        pauseOnOcclusion.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(pauseOnOcclusion)
+
+        let pauseOnBattery = NSButton(
+            checkboxWithTitle: "Pause when on battery power",
+            target: nil, action: nil)
+        pauseOnBattery.state = .off
+        pauseOnBattery.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(pauseOnBattery)
 
         NSLayoutConstraint.activate([
-            fpsLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-            fpsLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            fpsLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
+            fpsLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
             fpsPopup.centerYAnchor.constraint(equalTo: fpsLabel.centerYAnchor),
             fpsPopup.leadingAnchor.constraint(equalTo: fpsLabel.trailingAnchor, constant: 10),
 
-            lowPowerCheckbox.topAnchor.constraint(equalTo: fpsLabel.bottomAnchor, constant: 20),
-            lowPowerCheckbox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            lowPower.topAnchor.constraint(equalTo: fpsLabel.bottomAnchor, constant: 20),
+            lowPower.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
-            pauseWhenOccludedCheckbox.topAnchor.constraint(equalTo: lowPowerCheckbox.bottomAnchor, constant: 10),
-            pauseWhenOccludedCheckbox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20)
+            pauseOnOcclusion.topAnchor.constraint(equalTo: lowPower.bottomAnchor, constant: 10),
+            pauseOnOcclusion.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+
+            pauseOnBattery.topAnchor.constraint(equalTo: pauseOnOcclusion.bottomAnchor, constant: 10),
+            pauseOnBattery.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20)
         ])
+        return container
+    }
 
+    private func buildWallpaperTab() -> NSView {
+        // Split: picker on left, editor on right.
+        let container = NSView()
+
+        let picker = WallpaperPickerViewController { [weak self] bundle in
+            self?.installEditor(for: bundle)
+        }
+        addChild(picker)
+        picker.view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(picker.view)
+
+        wallpaperEditorContainer.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(wallpaperEditorContainer)
+
+        let placeholder = NSTextField(labelWithString: "Select a wallpaper to edit properties.")
+        placeholder.textColor = .secondaryLabelColor
+        placeholder.translatesAutoresizingMaskIntoConstraints = false
+        wallpaperEditorContainer.addSubview(placeholder)
+
+        NSLayoutConstraint.activate([
+            picker.view.topAnchor.constraint(equalTo: container.topAnchor),
+            picker.view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            picker.view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            picker.view.widthAnchor.constraint(equalToConstant: 220),
+
+            wallpaperEditorContainer.topAnchor.constraint(equalTo: container.topAnchor),
+            wallpaperEditorContainer.leadingAnchor.constraint(equalTo: picker.view.trailingAnchor, constant: 10),
+            wallpaperEditorContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            wallpaperEditorContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
+            placeholder.centerXAnchor.constraint(equalTo: wallpaperEditorContainer.centerXAnchor),
+            placeholder.centerYAnchor.constraint(equalTo: wallpaperEditorContainer.centerYAnchor)
+        ])
+        return container
+    }
+
+    private func buildAboutTab() -> NSView {
+        let view = NSView()
+
+        let title = NSTextField(labelWithString: "AetherDesk")
+        title.font = NSFont.boldSystemFont(ofSize: 24)
+        title.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(title)
+
+        let versionString = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+        let version = NSTextField(labelWithString: "Version \(versionString)")
+        version.textColor = .secondaryLabelColor
+        version.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(version)
+
+        let desc = NSTextField(wrappingLabelWithString:
+            "A native macOS live wallpaper host for a curated subset of Lively wallpapers.")
+        desc.textColor = .secondaryLabelColor
+        desc.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(desc)
+
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: view.topAnchor, constant: 30),
+            title.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+
+            version.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 5),
+            version.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+
+            desc.topAnchor.constraint(equalTo: version.bottomAnchor, constant: 20),
+            desc.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            desc.widthAnchor.constraint(lessThanOrEqualToConstant: 360)
+        ])
         return view
     }
 
-    private func createAboutTab() -> NSView {
-        let view = NSView()
+    // MARK: Editor swap-in
 
-        let appNameLabel = NSTextField(labelWithString: "AetherDesk")
-        appNameLabel.font = NSFont.boldSystemFont(ofSize: 24)
-        appNameLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(appNameLabel)
+    private func installEditor(for bundle: WallpaperBundle) {
+        wallpaperEditorContainer.subviews.forEach { $0.removeFromSuperview() }
 
-        let versionLabel = NSTextField(labelWithString: "Version 1.0.0")
-        versionLabel.textColor = .secondaryLabelColor
-        versionLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(versionLabel)
-
-        let descriptionLabel = NSTextField(wrappingLabelWithString: "A native macOS live wallpaper host for Lively-style wallpapers.")
-        descriptionLabel.textColor = .secondaryLabelColor
-        descriptionLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(descriptionLabel)
-
+        let editor = PropertyEditorViewController(bundle: bundle)
+        currentEditor = editor
+        addChild(editor)
+        editor.view.translatesAutoresizingMaskIntoConstraints = false
+        wallpaperEditorContainer.addSubview(editor.view)
         NSLayoutConstraint.activate([
-            appNameLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 30),
-            appNameLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-
-            versionLabel.topAnchor.constraint(equalTo: appNameLabel.bottomAnchor, constant: 5),
-            versionLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-
-            descriptionLabel.topAnchor.constraint(equalTo: versionLabel.bottomAnchor, constant: 20),
-            descriptionLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            descriptionLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 300)
+            editor.view.topAnchor.constraint(equalTo: wallpaperEditorContainer.topAnchor),
+            editor.view.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor),
+            editor.view.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor),
+            editor.view.bottomAnchor.constraint(equalTo: wallpaperEditorContainer.bottomAnchor)
         ])
+    }
 
-        return view
+    // MARK: Forward property edits to the running wallpaper
+
+    private func observePropertyChanges() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePropertyChanged(_:)),
+            name: PropertyEditorViewController.propertyChangedNotification,
+            object: nil)
+    }
+
+    @objc private func handlePropertyChanged(_ note: Notification) {
+        guard let key = note.userInfo?["key"] as? String,
+              let value = note.userInfo?["value"] else { return }
+
+        // Route to the global WallpaperManager via the shared AppDelegate.
+        guard let delegate = NSApp.delegate as? AppDelegate,
+              let manager = delegate.wallpaperManager else { return }
+
+        for screen in NSScreen.screens {
+            manager.updateProperty(key, value: value, for: screen.displayID)
+        }
+    }
+
+    // MARK: Actions
+
+    @objc private func revealWallpaperFolder() {
+        let importer = WallpaperImporter()
+        NSWorkspace.shared.open(importer.wallpapersDirectory)
+    }
+
+    // MARK: Window delegate
+
+    func windowWillClose(_ notification: Notification) {
+        // Keep the shared instance around; just let it deallocate children.
     }
 }

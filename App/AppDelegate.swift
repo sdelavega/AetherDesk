@@ -1,17 +1,27 @@
 import AppKit
+import Foundation
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+/// Top-level app delegate. Runs as an accessory app (menu-bar only, no Dock
+/// presence — see Info.plist LSUIElement).
+final class AppDelegate: NSObject, NSApplicationDelegate {
 
+    private(set) var wallpaperManager: WallpaperManager?
     private var menuBarController: MenuBarController?
-    private var wallpaperManager: WallpaperManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        wallpaperManager = WallpaperManager()
-        menuBarController = MenuBarController(wallpaperManager: wallpaperManager!)
+        let manager = WallpaperManager()
+        self.wallpaperManager = manager
+        self.menuBarController = MenuBarController(wallpaperManager: manager)
 
-        wallpaperManager?.start()
+        manager.start()
+
+        // Auto-select the first bundled wallpaper on all displays on first
+        // launch so the user sees something without having to import first.
+        if let first = WallpaperImporter().listBundledWallpapers().first {
+            manager.setWallpaperOnAllDisplays(first)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -19,6 +29,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
-        return true
+        true
     }
 }

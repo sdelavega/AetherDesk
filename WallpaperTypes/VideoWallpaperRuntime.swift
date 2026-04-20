@@ -3,26 +3,42 @@ import AVKit
 import AVFoundation
 import Foundation
 
-class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
+/// AVFoundation-backed video wallpaper runtime. Loops muted video at
+/// the wallpaper host's bounds. Accepts mp4 / mov / m4v / webm
+/// (via VideoToolbox where supported).
+final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
 
     let displayID: CGDirectDisplayID
     private(set) var isPaused: Bool = false
 
     private let bundle: WallpaperBundle
-    private var playerView: AVPlayerView!
-    private var player: AVPlayer!
-    private var playerItem: AVPlayerItem!
+    private let playerView: AVPlayerView
+    private let player: AVPlayer
+    private var playerItem: AVPlayerItem?
+    private var endObserver: NSObjectProtocol?
 
-    var contentView: NSView {
-        return playerView
-    }
+    var contentView: NSView { playerView }
 
     init(bundle: WallpaperBundle, displayID: CGDirectDisplayID) {
         self.bundle = bundle
         self.displayID = displayID
+        self.player = AVPlayer()
+        self.playerView = AVPlayerView()
         super.init()
 
-        setupPlayer()
+        player.isMuted = true
+        player.actionAtItemEnd = .none
+        player.automaticallyWaitsToMinimizeStalling = true
+
+        playerView.player = player
+        playerView.controlsStyle = .none
+        playerView.videoGravity = .resizeAspectFill
+        playerView.wantsLayer = true
+        playerView.layer?.backgroundColor = NSColor.black.cgColor
+    }
+
+    deinit {
+        removeEndObserver()
     }
 
     func start() throws {
@@ -30,20 +46,20 @@ class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
             throw WallpaperRuntimeError.contentNotFound
         }
 
-        playerItem = AVPlayerItem(url: videoURL)
-        if player == nil {
-            player = AVPlayer(playerItem: playerItem)
-            playerView.player = player
-        } else {
-            player.replaceCurrentItem(with: playerItem)
+        let item = AVPlayerItem(url: videoURL)
+        playerItem = item
+        player.replaceCurrentItem(with: item)
+
+        removeEndObserver()
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleItemDidReachEnd()
         }
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(playerDidReachEnd),
-            name: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem
-        )
+        if !isPaused { player.play() }
     }
 
     func pause() {
@@ -57,12 +73,10 @@ class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     func stop() {
+        removeEndObserver()
         player.pause()
         player.replaceCurrentItem(with: nil)
-    }
-
-    func updateProperty(_ key: String, value: Any) {
-        // Video wallpapers don't support property updates in v1
+        playerItem = nil
     }
 
     func reload() throws {
@@ -70,19 +84,23 @@ class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
         try start()
     }
 
-    private func setupPlayer() {
-        playerView = AVPlayerView()
-        player = AVPlayer()
-        playerView.player = player
-        // Hide playback controls for wallpaper usage on macOS
-        playerView.controlsStyle = .none
-        playerView.isHidden = false
-        playerView.wantsLayer = true
-        playerView.layer?.backgroundColor = NSColor.clear.cgColor
+    func updateProperty(_ key: String, value: Any) {
+        // v1: video wallpapers don't expose properties to the JS bridge.
+        // Allow a documented `volume` override for debugging.
+        if key == "volume", let v = value as? Double {
+            player.volume = Float(max(0.0, min(1.0, v)))
+        }
     }
 
-    @objc private func playerDidReachEnd(_ notification: Notification) {
+    private func handleItemDidReachEnd() {
         player.seek(to: .zero)
-        player.play()
+        if !isPaused { player.play() }
+    }
+
+    private func removeEndObserver() {
+        if let obs = endObserver {
+            NotificationCenter.default.removeObserver(obs)
+            endObserver = nil
+        }
     }
 }

@@ -1,176 +1,332 @@
 import AppKit
 import Foundation
+import UserNotifications
 
-class MenuBarController: NSObject {
+/// Menu-bar-only UI for AetherDesk. The app has no Dock presence (LSUIElement
+/// in Info.plist); this controller is the primary user-facing surface.
+///
+/// Menu layout, per prompt:
+///   AetherDesk
+///   ─────────
+///   Wallpapers ▸   (all available wallpapers, checkmark on current)
+///   Import Wallpaper…
+///   ─────────
+///   Reload Current Wallpaper
+///   Pause / Resume
+///   Safe Mode (toggle)
+///   ─────────
+///   Preferences…
+///   ─────────
+///   Quit
+final class MenuBarController: NSObject, NSMenuDelegate {
 
-    private var statusItem: NSStatusItem!
-    private var menu: NSMenu!
+    private let statusItem: NSStatusItem
+    private let menu: NSMenu
     private weak var wallpaperManager: WallpaperManager?
-    private let wallpaperImporter = WallpaperImporter()
+    private let importer = WallpaperImporter()
+
+    // Submenu + items that need dynamic updates.
+    private let wallpapersItem = NSMenuItem(title: "Wallpapers", action: nil, keyEquivalent: "")
+    private let pauseItem = NSMenuItem(title: "Pause", action: nil, keyEquivalent: "p")
+    private let safeModeItem = NSMenuItem(title: "Safe Mode", action: nil, keyEquivalent: "")
+
+    private var isPaused = false
 
     init(wallpaperManager: WallpaperManager) {
         self.wallpaperManager = wallpaperManager
+        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        self.menu = NSMenu()
         super.init()
 
         setupStatusItem()
         setupMenu()
+        menu.delegate = self
+
+        requestNotificationAuthIfPossible()
+
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(wallpaperDidChange),
+                                               name: Constants.Notifications.wallpaperDidChange,
+                                               object: nil)
     }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    // MARK: Status item
 
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "wallpaper", accessibilityDescription: "AetherDesk")
-            button.image?.isTemplate = true
+            let image = NSImage(systemSymbolName: "photo.on.rectangle.angled",
+                                accessibilityDescription: "AetherDesk")
+                ?? NSImage(systemSymbolName: "photo", accessibilityDescription: "AetherDesk")
+            image?.isTemplate = true
+            button.image = image
+            button.toolTip = "AetherDesk"
         }
-
-        statusItem.menu = nil
-        statusItem.button?.action = #selector(statusItemClicked)
-        statusItem.button?.target = self
+        statusItem.menu = menu
     }
 
+    // MARK: Menu construction
+
     private func setupMenu() {
-        menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "AetherDesk", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
+        menu.removeAllItems()
 
-        let wallpapersItem = NSMenuItem(title: "Wallpapers", action: nil, keyEquivalent: "")
-        let wallpapersSubmenu = NSMenu()
-        let installedWallpapers = wallpaperImporter.listWallpapers()
+        let title = NSMenuItem(title: "AetherDesk", action: nil, keyEquivalent: "")
+        title.isEnabled = false
+        menu.addItem(title)
+        menu.addItem(.separator())
 
-        if installedWallpapers.isEmpty {
-            let noWallpapersItem = NSMenuItem(title: "No wallpapers installed", action: nil, keyEquivalent: "")
-            noWallpapersItem.isEnabled = false
-            wallpapersSubmenu.addItem(noWallpapersItem)
-        } else {
-            for bundle in installedWallpapers {
-                let item = NSMenuItem(title: bundle.name, action: #selector(selectWallpaper(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = bundle
-                wallpapersSubmenu.addItem(item)
-            }
-        }
-
-        wallpapersItem.submenu = wallpapersSubmenu
+        wallpapersItem.submenu = buildWallpapersSubmenu()
         menu.addItem(wallpapersItem)
 
-        let importItem = NSMenuItem(title: "Import Wallpaper...", action: #selector(importWallpaper), keyEquivalent: "i")
+        let importItem = NSMenuItem(title: "Import Wallpaper…",
+                                    action: #selector(importWallpaper),
+                                    keyEquivalent: "i")
         importItem.target = self
         menu.addItem(importItem)
 
-        menu.addItem(NSMenuItem.separator())
+        let openFolderItem = NSMenuItem(title: "Open Wallpaper Folder",
+                                        action: #selector(openWallpaperFolder),
+                                        keyEquivalent: "")
+        openFolderItem.target = self
+        menu.addItem(openFolderItem)
 
-        let reloadItem = NSMenuItem(title: "Reload Current Wallpaper", action: #selector(reloadWallpaper), keyEquivalent: "r")
+        menu.addItem(.separator())
+
+        let reloadItem = NSMenuItem(title: "Reload Current Wallpaper",
+                                    action: #selector(reloadCurrent),
+                                    keyEquivalent: "r")
         reloadItem.target = self
         menu.addItem(reloadItem)
 
-        let pauseItem = NSMenuItem(title: "Pause All", action: #selector(togglePause), keyEquivalent: "p")
+        pauseItem.action = #selector(togglePause)
         pauseItem.target = self
         menu.addItem(pauseItem)
 
-        menu.addItem(NSMenuItem.separator())
+        safeModeItem.action = #selector(toggleSafeMode)
+        safeModeItem.target = self
+        menu.addItem(safeModeItem)
 
-        let preferencesItem = NSMenuItem(title: "Preferences...", action: #selector(showPreferences), keyEquivalent: ",")
+        menu.addItem(.separator())
+
+        let preferencesItem = NSMenuItem(title: "Preferences…",
+                                         action: #selector(showPreferences),
+                                         keyEquivalent: ",")
         preferencesItem.target = self
         menu.addItem(preferencesItem)
 
-        menu.addItem(NSMenuItem.separator())
+        menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit AetherDesk", action: #selector(quitApp), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
-
-        statusItem.menu = menu
+        let quit = NSMenuItem(title: "Quit AetherDesk",
+                              action: #selector(quit),
+                              keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
     }
 
-    @objc private func statusItemClicked() {
-        statusItem.menu = menu
-        statusItem.button?.performClick(nil)
+    private func buildWallpapersSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+
+        let all = importer.listWallpapers()
+        if all.isEmpty {
+            let placeholder = NSMenuItem(title: "No wallpapers installed", action: nil, keyEquivalent: "")
+            placeholder.isEnabled = false
+            submenu.addItem(placeholder)
+            return submenu
+        }
+
+        let primaryID = NSScreen.main?.displayID ?? 0
+        let current = wallpaperManager?.currentBundle(for: primaryID)
+
+        let bundled = all.filter { isBundled($0) }
+        let imported = all.filter { !isBundled($0) }
+
+        if !bundled.isEmpty {
+            let header = NSMenuItem(title: "Built-in", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            submenu.addItem(header)
+            for bundle in bundled { submenu.addItem(wallpaperMenuItem(bundle, current: current)) }
+            submenu.addItem(.separator())
+        }
+
+        if !imported.isEmpty {
+            let header = NSMenuItem(title: "Imported", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            submenu.addItem(header)
+            for bundle in imported { submenu.addItem(wallpaperMenuItem(bundle, current: current)) }
+        }
+
+        return submenu
     }
 
-    @objc private func selectWallpaper(_ sender: NSMenuItem) {
+    private func wallpaperMenuItem(_ bundle: WallpaperBundle,
+                                   current: WallpaperBundle?) -> NSMenuItem {
+        let item = NSMenuItem(title: bundle.name,
+                              action: #selector(selectWallpaperOnAllDisplays(_:)),
+                              keyEquivalent: "")
+        item.target = self
+        item.representedObject = bundle
+        if current?.id == bundle.id { item.state = .on }
+
+        // Add a per-display submenu (prompt requirement) if >1 display.
+        let screens = NSScreen.screens
+        if screens.count > 1 {
+            let perDisplay = NSMenu()
+
+            let allDisplaysItem = NSMenuItem(title: "All Displays",
+                                             action: #selector(selectWallpaperOnAllDisplays(_:)),
+                                             keyEquivalent: "")
+            allDisplaysItem.target = self
+            allDisplaysItem.representedObject = bundle
+            perDisplay.addItem(allDisplaysItem)
+            perDisplay.addItem(.separator())
+
+            for screen in screens {
+                let displayID = screen.displayID
+                let title = screen.localizedName
+                let subitem = NSMenuItem(title: title,
+                                         action: #selector(selectWallpaperForDisplay(_:)),
+                                         keyEquivalent: "")
+                subitem.target = self
+                subitem.representedObject = SelectionTarget(bundle: bundle, displayID: displayID)
+                if wallpaperManager?.currentBundle(for: displayID)?.id == bundle.id {
+                    subitem.state = .on
+                }
+                perDisplay.addItem(subitem)
+            }
+            item.submenu = perDisplay
+        }
+
+        return item
+    }
+
+    private func isBundled(_ bundle: WallpaperBundle) -> Bool {
+        guard let bundledDir = importer.bundledWallpapersDirectory else { return false }
+        return bundle.baseURL.path.hasPrefix(bundledDir.path)
+    }
+
+    // MARK: NSMenuDelegate
+
+    func menuWillOpen(_ menu: NSMenu) {
+        // Rebuild the Wallpapers submenu so check marks + per-display state
+        // are fresh every time the user opens the menu.
+        wallpapersItem.submenu = buildWallpapersSubmenu()
+        pauseItem.title = isPaused ? "Resume" : "Pause"
+        safeModeItem.state = (wallpaperManager?.isSafeMode ?? false) ? .on : .off
+    }
+
+    // MARK: Actions
+
+    @objc private func selectWallpaperOnAllDisplays(_ sender: NSMenuItem) {
         guard let bundle = sender.representedObject as? WallpaperBundle,
               let manager = wallpaperManager else { return }
+        manager.setWallpaperOnAllDisplays(bundle)
+    }
 
-        let screens = NSScreen.screens
-        for screen in screens {
-            if let displayID = screen.deviceDescription[NSScreen.DisplaysUUIDKey] as? String {
-                let id = CGDirectDisplayID()
-                manager.setWallpaper(bundle, for: id)
-            }
-        }
-
-        if let primaryScreen = screens.first {
-            manager.setWallpaper(bundle, for: primaryScreen.displayID ?? 0)
-        }
+    @objc private func selectWallpaperForDisplay(_ sender: NSMenuItem) {
+        guard let sel = sender.representedObject as? SelectionTarget,
+              let manager = wallpaperManager else { return }
+        manager.setWallpaper(sel.bundle, for: sel.displayID)
     }
 
     @objc private func importWallpaper() {
         let panel = NSOpenPanel()
-        panel.canChooseFiles = true
+        panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.message = "Select a Lively wallpaper folder to import"
         panel.prompt = "Import"
 
         panel.begin { [weak self] response in
-            if response == .OK, let url = panel.url {
-                self?.performImport(from: url)
-            }
+            guard response == .OK, let url = panel.url else { return }
+            self?.performImport(from: url)
         }
     }
 
     private func performImport(from url: URL) {
         do {
-            let (bundle, classification) = try wallpaperImporter.importWallpaper(from: url)
-
-            var message = "Wallpaper imported successfully."
-            switch classification {
-            case .allowed:
-                break
-            case .allowedWithLimits:
-                message += " Some features were limited for performance."
-            case .rejected:
-                message += " However, it was rejected due to policy violations."
-            }
-
-            showNotification(title: "Import Complete", message: message)
-            rebuildWallpapersSubmenu()
+            let (_, classification) = try importer.importWallpaper(from: url)
+            let (title, body) = Self.importReport(for: classification)
+            postNotification(title: title, body: body)
         } catch {
-            showNotification(title: "Import Failed", message: error.localizedDescription)
+            postNotification(title: "Import Failed", body: error.localizedDescription)
         }
     }
 
-    private func rebuildWallpapersSubmenu() {
-        setupMenu()
+    @objc private func openWallpaperFolder() {
+        let dir = importer.wallpapersDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
     }
 
-    @objc private func reloadWallpaper() {
-        guard let manager = wallpaperManager else { return }
-
-        for screen in NSScreen.screens {
-            manager.reloadWallpaper(for: screen.displayID ?? 0)
-        }
+    @objc private func reloadCurrent() {
+        wallpaperManager?.reloadAll()
     }
 
     @objc private func togglePause() {
         guard let manager = wallpaperManager else { return }
+        isPaused.toggle()
+        if isPaused { manager.pauseAll() } else { manager.resumeAll() }
+    }
 
-        manager.pauseAll()
+    @objc private func toggleSafeMode() {
+        guard let manager = wallpaperManager else { return }
+        manager.setSafeMode(!manager.isSafeMode)
     }
 
     @objc private func showPreferences() {
+        NSApp.activate(ignoringOtherApps: true)
         PreferencesWindowController.shared.showWindow(nil)
     }
 
-    @objc private func quitApp() {
+    @objc private func quit() {
         NSApplication.shared.terminate(nil)
     }
 
-    private func showNotification(title: String, message: String) {
-        let notification = NSUserNotification()
-        notification.title = title
-        notification.informativeText = message
-        NSUserNotificationCenter.default.deliver(notification)
+    @objc private func wallpaperDidChange() {
+        // Recompute check marks next time the menu opens; also cheap enough
+        // to rebuild immediately for the common case of <10 wallpapers.
+        wallpapersItem.submenu = buildWallpapersSubmenu()
+    }
+
+    // MARK: Notifications
+
+    private func requestNotificationAuthIfPossible() {
+        // UNUserNotificationCenter requires authorization in a bundled app;
+        // fail silently for unsigned/dev builds.
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert]) { _, _ in }
+    }
+
+    private func postNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        let request = UNNotificationRequest(identifier: UUID().uuidString,
+                                            content: content,
+                                            trigger: nil)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+
+    private static func importReport(for classification: WallpaperClassification) -> (String, String) {
+        switch classification {
+        case .allowed:
+            return ("Wallpaper imported", "The wallpaper was allowed without constraints.")
+        case .allowedWithLimits(let fps, let budget, let warnings):
+            let warningText = warnings.isEmpty ? "" : " Warnings: " + warnings.prefix(3).joined(separator: "; ")
+            return ("Wallpaper imported with limits",
+                    "FPS capped at \(fps). Network budget: \(budget) req/min.\(warningText)")
+        case .rejected(let reason):
+            return ("Wallpaper rejected", reason)
+        }
+    }
+
+    // MARK: Types
+
+    private struct SelectionTarget {
+        let bundle: WallpaperBundle
+        let displayID: CGDirectDisplayID
     }
 }

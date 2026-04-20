@@ -1,42 +1,67 @@
 import AppKit
 import Foundation
 
-class WallpaperHostWindow: NSWindow {
+/// A borderless, non-activating NSWindow that sits at the desktop layer
+/// (behind regular application windows but in front of the system wallpaper
+/// picture) and hosts one wallpaper runtime's content view.
+///
+/// Design notes:
+///  - `.desktopWindow` level places the window behind app windows.
+///  - `.canJoinAllSpaces` + `.stationary` + `.ignoresCycle` keep the host
+///    on every Space and stop it from participating in Cmd-` / Mission
+///    Control cycling.
+///  - Mouse events are ignored by default. `enableInteraction()` is only
+///    used for a debug / interaction mode (not part of the normal user flow).
+///  - `canBecomeKey` / `canBecomeMain` are overridden to `false` so the
+///    window never steals focus — important for a wallpaper host.
+final class WallpaperHostWindow: NSWindow {
 
-    private let targetDisplayID: CGDirectDisplayID
+    let targetDisplayID: CGDirectDisplayID
 
     init(screen: NSScreen) {
-        self.targetDisplayID = screen.displayID ?? 0
+        self.targetDisplayID = screen.displayID
 
         super.init(
             contentRect: screen.frame,
             styleMask: .borderless,
             backing: .buffered,
-            defer: false
+            defer: false,
+            screen: screen
         )
 
         configureWindow()
     }
 
     private func configureWindow() {
-        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
-        collectionBehavior = [.joinsAllSpaces, .stationary, .ignoresCycle]
+        level = WallpaperHostWindow.desktopLevel
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
         ignoresMouseEvents = true
         isReleasedWhenClosed = false
-        contentView = NSView(frame: self.frame)
-        contentView?.wantsLayer = true
-        contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        isMovable = false
+        isMovableByWindowBackground = false
+        animationBehavior = .none
+
+        let root = NSView(frame: frame)
+        root.wantsLayer = true
+        root.layer?.backgroundColor = NSColor.clear.cgColor
+        root.autoresizingMask = [.width, .height]
+        contentView = root
     }
 
+    /// Install a wallpaper runtime's content view as the current wallpaper.
+    /// Removes any previously installed runtime view.
     func setContentView(_ view: NSView) {
-        contentView?.addSubview(view)
+        contentView?.subviews.forEach { $0.removeFromSuperview() }
         view.frame = contentView?.bounds ?? .zero
         view.autoresizingMask = [.width, .height]
+        contentView?.addSubview(view)
     }
 
+    /// Optional debug / interaction mode. NOT used during normal wallpaper
+    /// display; only useful for developer-only debugging of HTML wallpapers.
     func enableInteraction() {
         ignoresMouseEvents = false
         level = .floating
@@ -44,14 +69,15 @@ class WallpaperHostWindow: NSWindow {
 
     func disableInteraction() {
         ignoresMouseEvents = true
-        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
+        level = WallpaperHostWindow.desktopLevel
     }
 
-    override var canBecomeKey: Bool {
-        return false
-    }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 
-    override var canBecomeMain: Bool {
-        return false
-    }
+    /// The AppKit `NSWindow.Level` that sits behind regular app windows
+    /// but above the system wallpaper picture.
+    private static let desktopLevel: NSWindow.Level = {
+        NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
+    }()
 }

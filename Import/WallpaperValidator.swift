@@ -1,130 +1,154 @@
 import Foundation
 
-class WallpaperValidator {
+/// Screens a candidate wallpaper bundle and classifies it as:
+///   .allowed                  – safe to run without constraints
+///   .allowedWithLimits(...)   – run but clamp FPS and cap network use
+///   .rejected(reason:)        – do not import (produces a human-readable reason)
+///
+/// Prompt requirement: treat import validation as a first-class feature,
+/// not an afterthought. We produce a detailed report with warnings and
+/// hard issues and reject bundles that look like resource hogs or like
+/// they want to behave as foreground apps.
+final class WallpaperValidator {
 
-    struct ValidationResult {
+    struct Report: CustomStringConvertible {
         let classification: WallpaperClassification
         let warnings: [String]
         let issues: [String]
+        let totalBundleBytes: Int64
+        let indexJSLength: Int
+
+        var description: String {
+            var lines: [String] = []
+            switch classification {
+            case .allowed:
+                lines.append("Allowed.")
+            case .allowedWithLimits(let fps, let budget, _):
+                lines.append("Allowed with limits. FPS cap: \(fps), network budget: \(budget) req/min.")
+            case .rejected(let reason):
+                lines.append("Rejected: \(reason)")
+            }
+            lines.append("Size: \(totalBundleBytes / 1024) KB, JS: \(indexJSLength) chars")
+            if !warnings.isEmpty {
+                lines.append("Warnings:")
+                warnings.forEach { lines.append("  - \($0)") }
+            }
+            if !issues.isEmpty {
+                lines.append("Issues:")
+                issues.forEach { lines.append("  - \($0)") }
+            }
+            return lines.joined(separator: "\n")
+        }
     }
+
+    // Tuning knobs.
+    private let maxBundleBytes: Int64 = 50 * 1024 * 1024   // 50 MB
+    private let defaultFPSLimit = Constants.Defaults.fpsCap
+    private let defaultNetworkBudget = 5                    // requests / minute
 
     func validate(at url: URL) -> WallpaperClassification {
+        report(at: url).classification
+    }
+
+    func report(at url: URL) -> Report {
         var warnings: [String] = []
         var issues: [String] = []
 
-        if let jsWarnings = checkJavaScript(at: url) {
-            warnings.append(contentsOf: jsWarnings.warnings)
-            issues.append(contentsOf: jsWarnings.issues)
+        let totalSize = bundleSize(at: url)
+        if totalSize > maxBundleBytes {
+            issues.append("Bundle size \(totalSize / 1024 / 1024) MB exceeds \(maxBundleBytes / 1024 / 1024) MB limit")
         }
 
-        if let fileIssue = checkFileSize(at: url) {
-            warnings.append(fileIssue)
+        let indexURL = url.appendingPathComponent(Constants.Keys.indexFile)
+        let js = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? ""
+
+        if !js.isEmpty {
+            inspectJavaScript(js, warnings: &warnings, issues: &issues)
         }
 
-        if let networkIssue = checkNetworkUsage(at: url) {
-            issues.append(networkIssue)
+        if let info = LivelyInfoParser().parse(from: url), let typeString = info.type?.lowercased() {
+            if typeString == "application" {
+                issues.append("Executable wallpapers are not supported on macOS")
+            }
+            if typeString == "unity" || typeString == "godot" {
+                issues.append("\(typeString) wallpapers require platform-specific runtime not supported on macOS")
+            }
         }
 
+        let classification: WallpaperClassification
         if !issues.isEmpty {
-            let reason = issues.joined(separator: "; ")
-            return .rejected(reason: reason)
+            classification = .rejected(reason: issues.joined(separator: "; "))
+        } else if !warnings.isEmpty {
+            classification = .allowedWithLimits(fps: defaultFPSLimit,
+                                                networkBudget: defaultNetworkBudget,
+                                                warnings: warnings)
+        } else {
+            classification = .allowed
         }
 
-        if !warnings.isEmpty {
-            return .allowedWithLimits(fps: 30, networkBudget: 5)
-        }
-
-        return .allowed
+        return Report(classification: classification,
+                      warnings: warnings,
+                      issues: issues,
+                      totalBundleBytes: totalSize,
+                      indexJSLength: js.count)
     }
 
-    private func checkJavaScript(at url: URL) -> (warnings: [String], issues: [String])? {
-        var warnings: [String] = []
-        var issues: [String] = []
+    // MARK: Heuristics
 
-        let indexURL = url.appendingPathComponent(Constants.Keys.indexFile)
-        guard let jsContent = try? String(contentsOf: indexURL, encoding: .utf8) else {
-            return nil
+    private func inspectJavaScript(_ js: String,
+                                   warnings: inout [String],
+                                   issues: inout [String]) {
+        let setIntervalCount = count(of: "setInterval", in: js)
+        if setIntervalCount > 3 {
+            warnings.append("Uses setInterval \(setIntervalCount) times — possible timer storm")
         }
 
-        if jsContent.contains("eval(") {
-            warnings.append("JavaScript contains eval() usage which may indicate dynamic code execution")
+        let fetchCount = count(of: "fetch(", in: js) + count(of: "XMLHttpRequest", in: js)
+        if fetchCount > 10 {
+            issues.append("Excessive network call sites (\(fetchCount)) — exceeds budget")
+        } else if fetchCount > 0 {
+            warnings.append("Performs network requests (\(fetchCount) call sites) — will be rate-limited")
         }
 
-        let timerPattern = "setInterval"
-        let matches = jsContent.components(separatedBy: timerPattern)
-        if matches.count > 2 {
-            warnings.append("Multiple setInterval calls detected - animation may be intensive")
+        if js.contains("while(true)") || js.contains("while (true)") {
+            issues.append("Contains infinite while(true) loop")
         }
 
-        if jsContent.contains("fetch(") || jsContent.contains("XMLHttpRequest") {
-            if jsContent.contains("setInterval") && matches.count > 3 {
-                issues.append("Network requests combined with frequent timers detected")
+        if js.contains("navigator.geolocation") {
+            warnings.append("Requests geolocation")
+        }
+        if js.contains("Notification.requestPermission") {
+            warnings.append("Requests system notification permission")
+        }
+
+        let suspicious = ["document.write(", "eval(", "Function(",
+                          "WebAssembly", "googletagmanager", "google-analytics",
+                          "doubleclick", "facebook.net"]
+        for pattern in suspicious {
+            if js.contains(pattern) {
+                if pattern.contains(".") { // tracker/ad domains -> hard reject
+                    issues.append("References \(pattern) (tracker/ad script)")
+                } else {
+                    warnings.append("Uses \(pattern)")
+                }
             }
         }
-
-        let suspiciousPatterns = [
-            "document.write",
-            "innerHTML =",
-            "outerHTML =",
-            "eval(",
-            "Function(",
-            "crypto.",
-            "WebAssembly"
-        ]
-
-        for pattern in suspiciousPatterns {
-            if jsContent.contains(pattern) {
-                warnings.append("Contains \(pattern) which may indicate potentially problematic code")
-            }
-        }
-
-        return (warnings, issues)
     }
 
-    private func checkFileSize(at url: URL) -> String? {
-        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else {
-            return nil
-        }
-
-        var totalSize: Int64 = 0
-
+    private func bundleSize(at url: URL) -> Int64 {
+        guard let enumerator = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        var total: Int64 = 0
         while let fileURL = enumerator.nextObject() as? URL {
-            if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                totalSize += Int64(fileSize)
+            if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                total += Int64(size)
             }
         }
-
-        let maxSize = 50 * 1024 * 1024
-
-        if totalSize > maxSize {
-            return "Bundle size exceeds \(maxSize / 1024 / 1024)MB limit"
-        }
-
-        return nil
+        return total
     }
 
-    private func checkNetworkUsage(at url: URL) -> String? {
-        let indexURL = url.appendingPathComponent(Constants.Keys.indexFile)
-        guard let jsContent = try? String(contentsOf: indexURL, encoding: .utf8) else {
-            return nil
-        }
-
-        let networkCalls = (jsContent.components(separatedBy: "fetch(").count - 1) +
-                           (jsContent.components(separatedBy: "XMLHttpRequest").count - 1) +
-                           (jsContent.components(separatedBy: "axios").count - 1)
-
-        if networkCalls > 10 {
-            return "Excessive network calls (\(networkCalls)) detected"
-        }
-
-        if jsContent.contains("while") && jsContent.contains("fetch(") {
-            return "Potential infinite network loop detected"
-        }
-
-        return nil
-    }
-
-    private var fileManager: FileManager {
-        return FileManager.default
+    private func count(of needle: String, in haystack: String) -> Int {
+        guard !needle.isEmpty else { return 0 }
+        return haystack.components(separatedBy: needle).count - 1
     }
 }

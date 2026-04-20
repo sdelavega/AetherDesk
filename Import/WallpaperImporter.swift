@@ -1,95 +1,145 @@
 import Foundation
+import AppKit
 
+/// Structured result of screening a candidate wallpaper bundle.
+/// Returned alongside the imported bundle so the UI can surface a human
+/// readable import report (prompt requirement).
 enum WallpaperClassification {
     case allowed
-    case allowedWithLimits(fps: Int, networkBudget: Int)
+    case allowedWithLimits(fps: Int, networkBudget: Int, warnings: [String])
     case rejected(reason: String)
 }
 
-class WallpaperImporter {
+enum ImportError: Error, LocalizedError {
+    case rejected(reason: String)
+    case invalidBundle
+    case copyFailed(underlying: Error)
+    case directoryCreationFailed(underlying: Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .rejected(let r):            return "Wallpaper rejected: \(r)"
+        case .invalidBundle:              return "Invalid wallpaper bundle"
+        case .copyFailed(let e):          return "Copy failed: \(e.localizedDescription)"
+        case .directoryCreationFailed(let e): return "Could not create wallpaper directory: \(e.localizedDescription)"
+        }
+    }
+}
+
+/// Imports wallpaper bundles from disk into the user's library, and also
+/// exposes the read-only bundled (in-app) sample wallpapers.
+final class WallpaperImporter {
 
     private let validator = WallpaperValidator()
     private let fileManager = FileManager.default
 
+    /// User-writable library in ~/Library/Application Support/AetherDesk/Wallpapers.
     var wallpapersDirectory: URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent(Constants.appName).appendingPathComponent(Constants.Directories.wallpapersSubfolder)
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory,
+                                          in: .userDomainMask).first!
+        return appSupport
+            .appendingPathComponent(Constants.appName, isDirectory: true)
+            .appendingPathComponent(Constants.Directories.wallpapersSubfolder, isDirectory: true)
+    }
+
+    /// Read-only sample wallpapers shipped inside the app bundle's Resources.
+    var bundledWallpapersDirectory: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent("Wallpapers", isDirectory: true)
     }
 
     init() {
-        createWallpapersDirectoryIfNeeded()
+        // Non-throwing; log on failure. Import-time operations will retry.
+        try? createWallpapersDirectoryIfNeeded()
     }
 
-    func importWallpaper(from sourceURL: URL) throws -> (WallpaperBundle, WallpaperClassification) {
+    // MARK: Import
+
+    func importWallpaper(from sourceURL: URL) throws
+        -> (bundle: WallpaperBundle, classification: WallpaperClassification)
+    {
         let classification = validator.validate(at: sourceURL)
 
-        switch classification {
-        case .rejected(let reason):
+        if case .rejected(let reason) = classification {
             throw ImportError.rejected(reason: reason)
-        default:
-            break
         }
 
         let bundle = try copyToWallpapersDirectory(from: sourceURL)
-
         return (bundle, classification)
     }
 
-    func importWallpaperFromFolder(_ folderURL: URL) throws -> (WallpaperBundle, WallpaperClassification) {
-        return try importWallpaper(from: folderURL)
+    // MARK: Listing
+
+    /// All available wallpapers: bundled samples + user-imported.
+    func listWallpapers() -> [WallpaperBundle] {
+        listBundledWallpapers() + listImportedWallpapers()
     }
 
-    func listWallpapers() -> [WallpaperBundle] {
-        var bundles: [WallpaperBundle] = []
+    /// User-imported wallpapers from Application Support.
+    func listImportedWallpapers() -> [WallpaperBundle] {
+        directoryBundles(at: wallpapersDirectory)
+    }
 
-        guard let contents = try? fileManager.contentsOfDirectory(at: wallpapersDirectory, includingPropertiesForKeys: nil) else {
-            return bundles
-        }
+    /// Read-only sample wallpapers shipped with the app.
+    func listBundledWallpapers() -> [WallpaperBundle] {
+        guard let dir = bundledWallpapersDirectory else { return [] }
+        return directoryBundles(at: dir)
+    }
 
+    private func directoryBundles(at dir: URL) -> [WallpaperBundle] {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]) else { return [] }
+
+        var out: [WallpaperBundle] = []
         for item in contents {
-            var isDirectory: ObjCBool = false
-            if fileManager.fileExists(atPath: item.path, isDirectory: &isDirectory), isDirectory.boolValue {
-                if let bundle = WallpaperBundle(from: item) {
-                    bundles.append(bundle)
-                }
-            }
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: item.path, isDirectory: &isDir), isDir.boolValue
+            else { continue }
+            if let b = WallpaperBundle(from: item) { out.append(b) }
         }
-
-        return bundles
+        return out.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     func deleteWallpaper(_ bundle: WallpaperBundle) throws {
+        // Refuse to delete bundled (read-only) wallpapers.
+        if let bundled = bundledWallpapersDirectory,
+           bundle.baseURL.path.hasPrefix(bundled.path) {
+            throw ImportError.invalidBundle
+        }
         try fileManager.removeItem(at: bundle.baseURL)
     }
 
+    // MARK: Plumbing
+
     private func copyToWallpapersDirectory(from sourceURL: URL) throws -> WallpaperBundle {
-        if !fileManager.fileExists(atPath: wallpapersDirectory.path) {
-            try createWallpapersDirectoryIfNeeded()
-        }
+        try createWallpapersDirectoryIfNeeded()
 
         let destinationName = UUID().uuidString
-        let destinationURL = wallpapersDirectory.appendingPathComponent(destinationName)
+        let destinationURL = wallpapersDirectory
+            .appendingPathComponent(destinationName, isDirectory: true)
 
-        try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        do {
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        } catch {
+            throw ImportError.copyFailed(underlying: error)
+        }
 
         guard let bundle = WallpaperBundle(from: destinationURL) else {
             try? fileManager.removeItem(at: destinationURL)
             throw ImportError.invalidBundle
         }
-
         return bundle
     }
 
     private func createWallpapersDirectoryIfNeeded() throws {
         if !fileManager.fileExists(atPath: wallpapersDirectory.path) {
-            try fileManager.createDirectory(at: wallpapersDirectory, withIntermediateDirectories: true)
+            do {
+                try fileManager.createDirectory(at: wallpapersDirectory,
+                                                withIntermediateDirectories: true)
+            } catch {
+                throw ImportError.directoryCreationFailed(underlying: error)
+            }
         }
     }
-}
-
-enum ImportError: Error {
-    case rejected(reason: String)
-    case invalidBundle
-    case copyFailed
-    case directoryCreationFailed
 }

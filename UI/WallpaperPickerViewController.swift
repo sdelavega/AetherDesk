@@ -1,12 +1,18 @@
 import AppKit
 import Foundation
 
-class WallpaperPickerViewController: NSViewController {
+/// A simple list-style picker used inside the Preferences window. Emits a
+/// single WallpaperBundle via the `onSelection` closure whenever the user
+/// picks a row.
+///
+/// We use an NSTableView here (not NSCollectionView) because the layout is
+/// simple and NSTableView is much less fiddly without Interface Builder.
+final class WallpaperPickerViewController: NSViewController {
 
-    private var collectionView: NSCollectionView!
-    private var wallpapers: [WallpaperBundle] = []
     private let importer = WallpaperImporter()
-    private var onSelection: ((WallpaperBundle) -> Void)?
+    private var wallpapers: [WallpaperBundle] = []
+    private let tableView = NSTableView()
+    private let onSelection: (WallpaperBundle) -> Void
 
     init(onSelection: @escaping (WallpaperBundle) -> Void) {
         self.onSelection = onSelection
@@ -18,63 +24,72 @@ class WallpaperPickerViewController: NSViewController {
     }
 
     override func loadView() {
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.drawsBackground = false
+        scroll.borderType = .lineBorder
 
-        collectionView = NSCollectionView()
-        collectionView.dataSource = self
-        collectionView.delegate = self
-        collectionView.isSelectable = true
-        collectionView.backgroundColors = [.clear]
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
+        column.title = "Wallpapers"
+        column.isEditable = false
+        tableView.addTableColumn(column)
 
-        let flowLayout = NSCollectionViewFlowLayout()
-        flowLayout.itemSize = NSSize(width: 120, height: 80)
-        flowLayout.minimumInteritemSpacing = 10
-        flowLayout.minimumLineSpacing = 10
-        flowLayout.sectionInset = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
-        collectionView.collectionViewLayout = flowLayout
+        tableView.headerView = nil
+        tableView.usesAutomaticRowHeights = false
+        tableView.rowHeight = 22
+        tableView.allowsMultipleSelection = false
+        tableView.style = .sourceList
+        tableView.backgroundColor = .clear
+        tableView.dataSource = self
+        tableView.delegate = self
 
-        collectionView.register(NSCollectionViewItem.self, forItemWithIdentifier: NSUserInterfaceItemIdentifier("WallpaperItem"))
-
-        scrollView.documentView = collectionView
-
-        self.view = scrollView
+        scroll.documentView = tableView
+        self.view = scroll
 
         loadWallpapers()
     }
+
+    func reload() { loadWallpapers() }
 
     private func loadWallpapers() {
         wallpapers = importer.listWallpapers()
-        collectionView.reloadData()
-    }
-
-    func reload() {
-        loadWallpapers()
+        tableView.reloadData()
     }
 }
 
-extension WallpaperPickerViewController: NSCollectionViewDataSource {
-    func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
-        return wallpapers.count
-    }
-
-    func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
-        let item = collectionView.makeItem(withIdentifier: NSUserInterfaceItemIdentifier("WallpaperItem"), for: indexPath)
-
-        let bundle = wallpapers[indexPath.item]
-        if let collectionItem = item as? NSCollectionViewItem {
-            collectionItem.textField?.stringValue = bundle.name
-        }
-
-        return item
-    }
+extension WallpaperPickerViewController: NSTableViewDataSource {
+    func numberOfRows(in tableView: NSTableView) -> Int { wallpapers.count }
 }
 
-extension WallpaperPickerViewController: NSCollectionViewDelegate {
-    func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
-        guard let indexPath = indexPaths.first else { return }
-        let bundle = wallpapers[indexPath.item]
-        onSelection?(bundle)
+extension WallpaperPickerViewController: NSTableViewDelegate {
+    func tableView(_ tableView: NSTableView,
+                   viewFor tableColumn: NSTableColumn?,
+                   row: Int) -> NSView? {
+        let identifier = NSUserInterfaceItemIdentifier("WallpaperCell")
+        let cell = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView
+            ?? {
+                let c = NSTableCellView()
+                c.identifier = identifier
+                let tf = NSTextField(labelWithString: "")
+                tf.translatesAutoresizingMaskIntoConstraints = false
+                c.addSubview(tf)
+                c.textField = tf
+                NSLayoutConstraint.activate([
+                    tf.leadingAnchor.constraint(equalTo: c.leadingAnchor, constant: 6),
+                    tf.trailingAnchor.constraint(equalTo: c.trailingAnchor, constant: -6),
+                    tf.centerYAnchor.constraint(equalTo: c.centerYAnchor)
+                ])
+                return c
+            }()
+        let bundle = wallpapers[row]
+        cell.textField?.stringValue = bundle.name
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        let row = tableView.selectedRow
+        guard row >= 0, row < wallpapers.count else { return }
+        onSelection(wallpapers[row])
     }
 }
