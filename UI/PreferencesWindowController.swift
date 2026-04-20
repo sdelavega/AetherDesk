@@ -70,15 +70,25 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Tabs
 
+    private let launchAtLoginCheckbox = NSButton(
+        checkboxWithTitle: "Launch at login", target: nil, action: nil)
+    private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
+
     private func buildGeneralTab() -> NSView {
         let container = NSView()
 
-        let launchAtLogin = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
-        launchAtLogin.translatesAutoresizingMaskIntoConstraints = false
-        // NOTE: actual launch-at-login integration (SMAppService on macOS 13+)
-        // is left to a follow-up; the checkbox is disabled to avoid pretending.
-        launchAtLogin.isEnabled = false
-        container.addSubview(launchAtLogin)
+        launchAtLoginCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        launchAtLoginCheckbox.target = self
+        launchAtLoginCheckbox.action = #selector(toggleLaunchAtLogin(_:))
+        launchAtLoginCheckbox.isEnabled = LoginItem.isSupported
+        launchAtLoginCheckbox.state = LoginItem.isEnabled ? .on : .off
+        container.addSubview(launchAtLoginCheckbox)
+
+        launchAtLoginStatusLabel.translatesAutoresizingMaskIntoConstraints = false
+        launchAtLoginStatusLabel.font = NSFont.systemFont(ofSize: 11)
+        launchAtLoginStatusLabel.textColor = .secondaryLabelColor
+        launchAtLoginStatusLabel.stringValue = LoginItem.statusDescription
+        container.addSubview(launchAtLoginStatusLabel)
 
         let revealButton = NSButton(title: "Reveal wallpaper folder",
                                     target: self,
@@ -93,10 +103,14 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         container.addSubview(note)
 
         NSLayoutConstraint.activate([
-            launchAtLogin.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
-            launchAtLogin.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            launchAtLoginCheckbox.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
+            launchAtLoginCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
-            revealButton.topAnchor.constraint(equalTo: launchAtLogin.bottomAnchor, constant: 12),
+            launchAtLoginStatusLabel.topAnchor.constraint(equalTo: launchAtLoginCheckbox.bottomAnchor, constant: 2),
+            launchAtLoginStatusLabel.leadingAnchor.constraint(equalTo: launchAtLoginCheckbox.leadingAnchor, constant: 20),
+            launchAtLoginStatusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+
+            revealButton.topAnchor.constraint(equalTo: launchAtLoginStatusLabel.bottomAnchor, constant: 12),
             revealButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
             note.topAnchor.constraint(equalTo: revealButton.bottomAnchor, constant: 20),
@@ -104,6 +118,25 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             note.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20)
         ])
         return container
+    }
+
+    @objc private func toggleLaunchAtLogin(_ sender: NSButton) {
+        let desired = sender.state == .on
+        do {
+            try LoginItem.setEnabled(desired)
+            launchAtLoginStatusLabel.stringValue = LoginItem.statusDescription
+        } catch {
+            // Revert the checkbox to the actual state and surface the error.
+            sender.state = LoginItem.isEnabled ? .on : .off
+            launchAtLoginStatusLabel.stringValue = LoginItem.statusDescription
+
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn't update Launch at Login"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
     }
 
     private func buildPerformanceTab() -> NSView {

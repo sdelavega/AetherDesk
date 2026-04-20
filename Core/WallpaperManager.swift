@@ -47,6 +47,29 @@ final class WallpaperManager {
         }
     }
 
+    /// Boot-time convenience: start hosts, then restore the persisted
+    /// (display -> bundle) mapping from `WallpaperStore`. Any display with
+    /// no saved assignment (or whose saved bundle is no longer resolvable)
+    /// gets `fallback` instead. If `fallback` is nil, such displays stay on
+    /// the safe black view.
+    func startAndRestore(availableBundles: [WallpaperBundle],
+                         fallback: WallpaperBundle?) {
+        start()
+
+        let byID = Dictionary(uniqueKeysWithValues: availableBundles.map { ($0.id, $0) })
+        wallpaperStore.pruneMissing(knownBundleIDs: Set(byID.keys))
+
+        let saved = wallpaperStore.loadAssignments()
+
+        for displayID in displayManager.displayIDs {
+            if let savedID = saved[displayID], let bundle = byID[savedID] {
+                setWallpaper(bundle, for: displayID)
+            } else if let fallback = fallback {
+                setWallpaper(fallback, for: displayID)
+            }
+        }
+    }
+
     func stopAll() {
         isRunning = false
         for (_, runtime) in runtimes { runtime.stop() }
@@ -82,6 +105,9 @@ final class WallpaperManager {
             // Replay persisted property overrides if any.
             let overrides = propertyStore.load(for: bundle.id)
             for (k, v) in overrides { runtime.updateProperty(k, value: v) }
+
+            // Persist (displayID -> bundleID) so next launch restores this.
+            wallpaperStore.setAssignment(bundleID: bundle.id, for: displayID)
 
             NotificationCenter.default.post(name: Constants.Notifications.wallpaperDidChange,
                                             object: nil,
@@ -232,6 +258,13 @@ final class WallpaperManager {
                          name: NSWorkspace.screensDidSleepNotification, object: nil)
         wsnc.addObserver(self, selector: #selector(screenDidWake),
                          name: NSWorkspace.screensDidWakeNotification, object: nil)
+
+        // Runtime self-reports: watchdog trip, web content termination, AV
+        // playback failure. Demote the affected display to safe content.
+        nc.addObserver(self,
+                       selector: #selector(runtimeDidFail(_:)),
+                       name: Constants.Notifications.runtimeDidFail,
+                       object: nil)
     }
 
     @objc private func displayConfigurationDidChange(_ notification: Notification) {
@@ -250,6 +283,8 @@ final class WallpaperManager {
             hosts[id]?.orderOut(nil)
             hosts[id]?.close()
             hosts.removeValue(forKey: id)
+            // Don't wipe the persisted assignment — the display may come back
+            // later. pruneMissing() at next launch handles the truly-stale case.
         }
 
         for id in added { ensureHost(for: id) }
@@ -280,5 +315,15 @@ final class WallpaperManager {
         else { resumeAll() }
         NotificationCenter.default.post(name: Constants.Notifications.lowPowerModeDidChange,
                                         object: nil)
+    }
+
+    @objc private func runtimeDidFail(_ note: Notification) {
+        guard let displayID = note.userInfo?["displayID"] as? CGDirectDisplayID else { return }
+        let reason = (note.userInfo?["reason"] as? String) ?? "unknown"
+        NSLog("AetherDesk: runtime on display %u reported failure (%@); demoting to safe content",
+              displayID, reason)
+        DispatchQueue.main.async { [weak self] in
+            self?.installSafeModeContent(for: displayID)
+        }
     }
 }

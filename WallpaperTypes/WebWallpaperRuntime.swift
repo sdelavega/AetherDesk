@@ -13,6 +13,14 @@ import Foundation
 /// Properties defined by the bundle's `LivelyProperties.json` are injected
 /// into the page as soon as navigation finishes (`didFinish`). Subsequent
 /// live updates flow through `PropertyBridge`.
+///
+/// Watchdog:
+///   A `setInterval` in the injected bootstrap pings
+///   `webkit.messageHandlers.aetherDesk` with `{action:"heartbeat"}` every
+///   `watchdogHeartbeatInterval` seconds. The native side resets a
+///   `WatchdogTimer`; if the timer trips (no heartbeat for
+///   `watchdogTimeout` seconds), or if `webContentProcessDidTerminate` fires,
+///   we post `runtimeDidFail` so the manager can demote the display.
 final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     let displayID: CGDirectDisplayID
@@ -22,6 +30,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private let webView: WKWebView
     private let propertyBridge: PropertyBridge
     private let messageHandler: ScriptMessageHandler
+    private let watchdog: WatchdogTimer
 
     var contentView: NSView { webView }
 
@@ -34,6 +43,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
         let handler = ScriptMessageHandler(bridge: bridge)
         self.messageHandler = handler
+
+        self.watchdog = WatchdogTimer(
+            timeout: Constants.Defaults.watchdogTimeout,
+            onTimeout: { [displayID] in
+                NotificationCenter.default.post(
+                    name: Constants.Notifications.runtimeDidFail,
+                    object: nil,
+                    userInfo: ["displayID": displayID,
+                               "reason": "watchdog timeout"])
+            })
 
         // Configure the web view.
         let userContent = WKUserContentController()
@@ -50,10 +69,15 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
         super.init()
 
-        // Inject the bridge shim at document start so wallpapers that call
-        // window.aetherDesk during parse see a valid object.
+        // Route heartbeats from the message handler back to our watchdog.
+        handler.onHeartbeat = { [weak self] in self?.watchdog.heartbeat() }
+
+        // Inject the bridge shim + heartbeat at document start so wallpapers
+        // that call window.aetherDesk during parse see a valid object.
         let bootstrap = WKUserScript(
-            source: Self.bridgeBootstrapScript(displayID: displayID),
+            source: Self.bridgeBootstrapScript(
+                displayID: displayID,
+                heartbeatInterval: Constants.Defaults.watchdogHeartbeatInterval),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         )
@@ -70,6 +94,10 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         propertyBridge.setWebView(webView)
     }
 
+    deinit {
+        watchdog.stop()
+    }
+
     // MARK: WallpaperRuntime
 
     func start() throws {
@@ -77,16 +105,18 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             throw WallpaperRuntimeError.contentNotFound
         }
         webView.loadFileURL(indexURL, allowingReadAccessTo: bundle.baseURL)
+        watchdog.start()
     }
 
     func pause() {
         isPaused = true
+        // Suspend watchdog while paused — the JS interval also pauses when
+        // the view is hidden.
+        watchdog.stop()
         webView.evaluateJavaScript(
             "window.aetherDesk && window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(false);",
             completionHandler: nil
         )
-        // Reduce work. The content still exists, but rAF loops pause naturally
-        // when the view is hidden from the window server.
         webView.isHidden = true
     }
 
@@ -97,9 +127,11 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             "window.aetherDesk && window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(true);",
             completionHandler: nil
         )
+        watchdog.start()
     }
 
     func stop() {
+        watchdog.stop()
         webView.stopLoading()
         webView.loadHTMLString("", baseURL: nil)
     }
@@ -115,10 +147,12 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     // MARK: Bridge bootstrap
 
-    private static func bridgeBootstrapScript(displayID: CGDirectDisplayID) -> String {
+    private static func bridgeBootstrapScript(displayID: CGDirectDisplayID,
+                                              heartbeatInterval: TimeInterval) -> String {
         // Note: display geometry & scale are injected lazily via
         // `window.aetherDesk._setEnvironment` from Swift so we don't race
         // `NSScreen.screens` at WKUserScript compile time.
+        let intervalMs = Int(heartbeatInterval * 1000)
         return """
         (function() {
             if (window.aetherDesk) return;
@@ -144,6 +178,18 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                 },
                 onVisibility: function(cb) { callbacks.visibility = cb; }
             };
+            // Watchdog heartbeat: pure setInterval, no dependency on rAF so a
+            // wallpaper that stops drawing (tab throttling, bug) still pings.
+            try {
+                setInterval(function() {
+                    try {
+                        window.webkit && window.webkit.messageHandlers &&
+                        window.webkit.messageHandlers.aetherDesk &&
+                        window.webkit.messageHandlers.aetherDesk.postMessage(
+                            { action: 'heartbeat' });
+                    } catch (e) {}
+                }, \(intervalMs));
+            } catch (e) {}
         })();
         """
     }
@@ -170,12 +216,25 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         NSLog("AetherDesk: WebView provisional navigation failed: %@", error.localizedDescription)
     }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        NSLog("AetherDesk: web content process terminated on display %u", displayID)
+        watchdog.stop()
+        NotificationCenter.default.post(
+            name: Constants.Notifications.runtimeDidFail,
+            object: nil,
+            userInfo: ["displayID": displayID,
+                       "reason": "web content process terminated"])
+    }
 }
 
 // MARK: - JS -> native message handler
 
 private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
     weak var bridge: PropertyBridge?
+
+    /// Fired on every `{action:"heartbeat"}` message from the page.
+    var onHeartbeat: (() -> Void)?
 
     init(bridge: PropertyBridge?) {
         self.bridge = bridge
@@ -187,6 +246,11 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
               let body = message.body as? [String: Any],
               let action = body["action"] as? String
         else { return }
+
+        if action == "heartbeat" {
+            onHeartbeat?()
+            return
+        }
         bridge?.handleJSMessages(action: action, data: body)
     }
 }

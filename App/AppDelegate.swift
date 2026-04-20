@@ -15,13 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.wallpaperManager = manager
         self.menuBarController = MenuBarController(wallpaperManager: manager)
 
-        manager.start()
-
-        // Auto-select the first bundled wallpaper on all displays on first
-        // launch so the user sees something without having to import first.
-        if let first = WallpaperImporter().listBundledWallpapers().first {
-            manager.setWallpaperOnAllDisplays(first)
-        }
+        // Restore per-display wallpaper from persisted state, falling back
+        // to the first bundled sample for any display without a prior
+        // assignment (so first launch is never blank).
+        let importer = WallpaperImporter()
+        let available = importer.listWallpapers()
+        let fallback = importer.listBundledWallpapers().first
+        manager.startAndRestore(availableBundles: available, fallback: fallback)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

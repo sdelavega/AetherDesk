@@ -6,6 +6,12 @@ import Foundation
 /// AVFoundation-backed video wallpaper runtime. Loops muted video at
 /// the wallpaper host's bounds. Accepts mp4 / mov / m4v / webm
 /// (via VideoToolbox where supported).
+///
+/// Failure signalling:
+///   Observes `AVPlayerItemFailedToPlayToEndTime`, `AVPlayerItemNewErrorLogEntry`
+///   with fatal status, and KVO on the item's `status` / `error`. On a
+///   hard failure we post `runtimeDidFail` so the manager can demote the
+///   display to safe content.
 final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
 
     let displayID: CGDirectDisplayID
@@ -15,7 +21,10 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
     private let playerView: AVPlayerView
     private let player: AVPlayer
     private var playerItem: AVPlayerItem?
-    private var endObserver: NSObjectProtocol?
+
+    private var endObserver:    NSObjectProtocol?
+    private var failedObserver: NSObjectProtocol?
+    private var statusObservation: NSKeyValueObservation?
 
     var contentView: NSView { playerView }
 
@@ -38,7 +47,7 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     deinit {
-        removeEndObserver()
+        removeObservers()
     }
 
     func start() throws {
@@ -50,13 +59,31 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
         playerItem = item
         player.replaceCurrentItem(with: item)
 
-        removeEndObserver()
+        removeObservers()
+
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
         ) { [weak self] _ in
             self?.handleItemDidReachEnd()
+        }
+
+        failedObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] note in
+            let reason = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?
+                .localizedDescription ?? "failed to play to end"
+            self?.reportFailure(reason: "AVPlayer: \(reason)")
+        }
+
+        statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            if item.status == .failed {
+                let reason = item.error?.localizedDescription ?? "AVPlayerItem failed"
+                DispatchQueue.main.async { self?.reportFailure(reason: reason) }
+            }
         }
 
         if !isPaused { player.play() }
@@ -73,7 +100,7 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     func stop() {
-        removeEndObserver()
+        removeObservers()
         player.pause()
         player.replaceCurrentItem(with: nil)
         playerItem = nil
@@ -92,15 +119,31 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
         }
     }
 
+    // MARK: Internals
+
     private func handleItemDidReachEnd() {
         player.seek(to: .zero)
         if !isPaused { player.play() }
     }
 
-    private func removeEndObserver() {
+    private func reportFailure(reason: String) {
+        NSLog("AetherDesk: video runtime failure on display %u: %@", displayID, reason)
+        NotificationCenter.default.post(
+            name: Constants.Notifications.runtimeDidFail,
+            object: nil,
+            userInfo: ["displayID": displayID, "reason": reason])
+    }
+
+    private func removeObservers() {
         if let obs = endObserver {
             NotificationCenter.default.removeObserver(obs)
             endObserver = nil
         }
+        if let obs = failedObserver {
+            NotificationCenter.default.removeObserver(obs)
+            failedObserver = nil
+        }
+        statusObservation?.invalidate()
+        statusObservation = nil
     }
 }
