@@ -12,24 +12,24 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     static let shared = PreferencesWindowController()
 
-    private let tabView = NSTabView()
-    private var currentEditor: PropertyEditorViewController?
-    private let wallpaperEditorContainer = NSView()
+    private let rootViewController = PreferencesViewController()
 
     private convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 520),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "AetherDesk Preferences"
         window.center()
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 600, height: 400)
         self.init(window: window)
         window.delegate = self
-        setupTabs()
-        observePropertyChanges()
+        window.contentViewController = rootViewController
+        rootViewController.setupTabs()
+        rootViewController.observePropertyChanges()
     }
 
     override init(window: NSWindow?) {
@@ -40,10 +40,31 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // MARK: Window delegate
+
+    func windowWillClose(_ notification: Notification) {
+        // Keep the shared instance around; just let it deallocate children.
+    }
+}
+
+// MARK: - Root view controller
+
+/// The actual NSViewController that owns child view controllers.
+/// PreferencesWindowController sets this as the window's contentViewController.
+private final class PreferencesViewController: NSViewController {
+
+    private let tabView = NSTabView()
+    private var currentEditor: PropertyEditorViewController?
+    private let wallpaperEditorContainer = NSView()
+
+    override func loadView() {
+        view = NSView()
+    }
+
     // MARK: Layout
 
-    private func setupTabs() {
-        guard let contentView = window?.contentView else { return }
+    fileprivate func setupTabs() {
+        let contentView = view
 
         tabView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -281,7 +302,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Forward property edits to the running wallpaper
 
-    private func observePropertyChanges() {
+    fileprivate func observePropertyChanges() {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handlePropertyChanged(_:)),
@@ -307,11 +328,5 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     @objc private func revealWallpaperFolder() {
         let importer = WallpaperImporter()
         NSWorkspace.shared.open(importer.wallpapersDirectory)
-    }
-
-    // MARK: Window delegate
-
-    func windowWillClose(_ notification: Notification) {
-        // Keep the shared instance around; just let it deallocate children.
     }
 }

@@ -25,8 +25,7 @@ final class WallpaperHostWindow: NSWindow {
             contentRect: screen.frame,
             styleMask: .borderless,
             backing: .buffered,
-            defer: false,
-            screen: screen
+            defer: false
         )
 
         configureWindow()

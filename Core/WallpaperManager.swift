@@ -311,8 +311,10 @@ final class WallpaperManager {
     }
 
     @objc private func powerStateChanged() {
-        if ProcessInfo.processInfo.isLowPowerModeEnabled { pauseAll() }
-        else { resumeAll() }
+        if #available(macOS 12.0, *) {
+            if ProcessInfo.processInfo.isLowPowerModeEnabled { pauseAll() }
+            else { resumeAll() }
+        }
         NotificationCenter.default.post(name: Constants.Notifications.lowPowerModeDidChange,
                                         object: nil)
     }

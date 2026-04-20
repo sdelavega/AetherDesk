@@ -90,8 +90,14 @@ final class PropertyBridge: NSObject {
             "scaleFactor": Double(screen?.backingScaleFactor ?? 2.0),
             "isPrimary":   CGDisplayIsMain(displayID) != 0
         ]
+        let isLowPower: Bool
+        if #available(macOS 12.0, *) {
+            isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        } else {
+            isLowPower = false
+        }
         let systemDict: [String: Any] = [
-            "isLowPowerMode": ProcessInfo.processInfo.isLowPowerModeEnabled,
+            "isLowPowerMode": isLowPower,
             "isOnline":       true,
             "fpsCap":         Constants.Defaults.fpsCap,
             "qualityMode":    "balanced"

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gradient Wave</title>
+    <style>
+        * { margin: 0; padding: 0; }
+        body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="c"></canvas>
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        let hueShift = 1;
+        let t = 0;
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        function draw() {
+            const w = canvas.width, h = canvas.height;
+            t += hueShift * 0.5;
+            for (let y = 0; y < h; y += 4) {
+                const hue = (t + y * 0.3) % 360;
+                ctx.fillStyle = 'hsl(' + hue + ', 80%, 50%)';
+                ctx.fillRect(0, y, w, 4);
+            }
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', resize);
+        if (window.aetherDesk) {
+            window.aetherDesk.properties.onUpdate(function(props) {
+                if (props.hueShift !== undefined) hueShift = props.hueShift;
+            });
+        }
+        resize();
+        draw();
+    </script>
+</body>
+</html>

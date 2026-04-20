@@ -9,18 +9,21 @@
 /* Begin PBXBuildFile section */
 		002FC486B3B43B95FE63F8E9 /* PropertyEditorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8936261CAEA0EF2D9207BB49 /* PropertyEditorViewController.swift */; };
 		03AD7D808BB33D2E635F66E6 /* WallpaperHostWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5541FB5CC0A24981DF4C273C /* WallpaperHostWindow.swift */; };
+		08C811B07942DA61542292F3 /* ThumbnailRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56596F20DD3981A01565D5CC /* ThumbnailRenderer.swift */; };
+		10F09300BA827BC8CB6F2E56 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2584D8E47F04174E05D64538 /* LoginItem.swift */; };
 		1164B184B8B1C5FE7DB1892B /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A74692D4B147BBA9D3AA7CE /* main.swift */; };
+		1D024C17E28E42960A887119 /* WatchdogTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10FE53163C37066B55500D80 /* WatchdogTimer.swift */; };
 		22B3FCE24DCF444BED5D0AE4 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 022ACF5815E12B15CB225F19 /* AppDelegate.swift */; };
 		24FDB37B59340E86228031F3 /* WallpaperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37CBB8BCBB05D37AA8D53492 /* WallpaperRuntime.swift */; };
 		27B3278F1975C13EE91312FF /* WallpaperImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04B03643280158BFF785663C /* WallpaperImporter.swift */; };
 		3CFC19D2D801B17E8A139F3B /* WallpaperManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C223490A825EC7DC647923B /* WallpaperManager.swift */; };
-		40E3AAD87A7F6E4B4E247083 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = E91A5A37CF524E0D1D610610 /* index.html */; };
 		411C4614EFEF05285669EC7E /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C476B645061802CF459825 /* DisplayManager.swift */; };
 		42FC9DB954D773E5C1FE518B /* ImageWallpaperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17DAEF60D2CE29631100941 /* ImageWallpaperRuntime.swift */; };
 		530748697797E24FD4D05644 /* LivelyPropertiesParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45DAB3153526CEE51E91A29F /* LivelyPropertiesParser.swift */; };
 		56F914CA655082A86E7C0A27 /* NSScreen+DisplayID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091DB393FB7DF2CC71862D13 /* NSScreen+DisplayID.swift */; };
 		691D7DD086D3B65BC9CE93F9 /* PropertyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB582A33665FBD285E639DE /* PropertyStore.swift */; };
 		6A726A9FAA68650ACA4CC047 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9FD59CBE2151FBDB438D622 /* Constants.swift */; };
+		7D27A3BA5BE947BC1A313E96 /* Wallpapers in Resources */ = {isa = PBXBuildFile; fileRef = 1BAB9458127C41856430DF97 /* Wallpapers */; };
 		7D890AF43F05A70163185402 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C06DE68F8CFC0AE61C8DF1 /* MenuBarController.swift */; };
 		8B5516A7DCE9F20BE66CC9D5 /* WallpaperStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20049C9827EFFDCACEED99B3 /* WallpaperStore.swift */; };
 		9121F64C2ED8FF86F41B2FCF /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBB3BE29B292D329A033486A /* PreferencesWindowController.swift */; };
@@ -28,49 +31,42 @@
 		A0E64217B437431C8918842B /* WallpaperPickerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE1411C035D69BB46BE76A5 /* WallpaperPickerViewController.swift */; };
 		B2AEEBA3C42E22B662E0C923 /* WallpaperBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C3218192802CFBD09055DB /* WallpaperBundle.swift */; };
 		C6D6C9095E5E70737475B934 /* LivelyInfoParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DB79B3DFB527A58682E106 /* LivelyInfoParser.swift */; };
-		D1FC707FF282DFE57A69C365 /* LivelyProperties.json in Resources */ = {isa = PBXBuildFile; fileRef = C5D4D5715114FFB7FD1A86A3 /* LivelyProperties.json */; };
 		D84317A7966DB95215415E8C /* VideoWallpaperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E87AFB31AE0E5A97D33020B /* VideoWallpaperRuntime.swift */; };
 		D8B401735A92E123B4EB51AA /* WallpaperValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5F7C2EC02ADBC313D9907A2 /* WallpaperValidator.swift */; };
 		D9208E923D8622B95DCECCD1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B2905E6608492517F7A57F98 /* Assets.xcassets */; };
 		DCB0CC17C7ACD570A4734DC7 /* WebWallpaperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD00B1030FECE39D49DEDFE2 /* WebWallpaperRuntime.swift */; };
-		E0F842330F40537542F6F587 /* LivelyInfo.json in Resources */ = {isa = PBXBuildFile; fileRef = 582B58545782D6C428B550B2 /* LivelyInfo.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		022ACF5815E12B15CB225F19 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		04B03643280158BFF785663C /* WallpaperImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperImporter.swift; sourceTree = "<group>"; };
 		091DB393FB7DF2CC71862D13 /* NSScreen+DisplayID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSScreen+DisplayID.swift"; sourceTree = "<group>"; };
+		10FE53163C37066B55500D80 /* WatchdogTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchdogTimer.swift; sourceTree = "<group>"; };
+		1BAB9458127C41856430DF97 /* Wallpapers */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Wallpapers; path = Resources/Wallpapers; sourceTree = SOURCE_ROOT; };
 		20049C9827EFFDCACEED99B3 /* WallpaperStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperStore.swift; sourceTree = "<group>"; };
+		2584D8E47F04174E05D64538 /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		30DB79B3DFB527A58682E106 /* LivelyInfoParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivelyInfoParser.swift; sourceTree = "<group>"; };
 		37CBB8BCBB05D37AA8D53492 /* WallpaperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperRuntime.swift; sourceTree = "<group>"; };
 		45DAB3153526CEE51E91A29F /* LivelyPropertiesParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivelyPropertiesParser.swift; sourceTree = "<group>"; };
 		4EE2A5244E91F92E34F1397D /* PropertyBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PropertyBridge.swift; sourceTree = "<group>"; };
 		5541FB5CC0A24981DF4C273C /* WallpaperHostWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperHostWindow.swift; sourceTree = "<group>"; };
 		5574512524A0173A02DBBB44 /* AetherDesk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AetherDesk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		56596F20DD3981A01565D5CC /* ThumbnailRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailRenderer.swift; sourceTree = "<group>"; };
 		56C476B645061802CF459825 /* DisplayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayManager.swift; sourceTree = "<group>"; };
 		57C3218192802CFBD09055DB /* WallpaperBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperBundle.swift; sourceTree = "<group>"; };
-		582B58545782D6C428B550B2 /* LivelyInfo.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = LivelyInfo.json; sourceTree = "<group>"; };
 		5A74692D4B147BBA9D3AA7CE /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		8936261CAEA0EF2D9207BB49 /* PropertyEditorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PropertyEditorViewController.swift; sourceTree = "<group>"; };
 		8E87AFB31AE0E5A97D33020B /* VideoWallpaperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoWallpaperRuntime.swift; sourceTree = "<group>"; };
 		8EE1411C035D69BB46BE76A5 /* WallpaperPickerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperPickerViewController.swift; sourceTree = "<group>"; };
 		9C223490A825EC7DC647923B /* WallpaperManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperManager.swift; sourceTree = "<group>"; };
-		AE74183218EC185D7A6AB7E4 /* AetherDesk.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AetherDesk.entitlements; sourceTree = "<group>"; };
 		B2905E6608492517F7A57F98 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BBB3BE29B292D329A033486A /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
-		C5D4D5715114FFB7FD1A86A3 /* LivelyProperties.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = LivelyProperties.json; sourceTree = "<group>"; };
 		C5F7C2EC02ADBC313D9907A2 /* WallpaperValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperValidator.swift; sourceTree = "<group>"; };
 		CEB582A33665FBD285E639DE /* PropertyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PropertyStore.swift; sourceTree = "<group>"; };
 		D17DAEF60D2CE29631100941 /* ImageWallpaperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageWallpaperRuntime.swift; sourceTree = "<group>"; };
 		D4C06DE68F8CFC0AE61C8DF1 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		DD00B1030FECE39D49DEDFE2 /* WebWallpaperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebWallpaperRuntime.swift; sourceTree = "<group>"; };
-		E6CB0C3D5D9D8AA9D4755689 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		E91A5A37CF524E0D1D610610 /* index.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = index.html; sourceTree = "<group>"; };
 		F9FD59CBE2151FBDB438D622 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
-		FCA5B0A92F95A9440097B8ED /* mac-lively-wrapper-expert-prompt.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "mac-lively-wrapper-expert-prompt.md"; sourceTree = "<group>"; };
-		FCA5B0AA2F95A9F60097B8ED /* WallpaperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperRuntime.swift; sourceTree = "<group>"; };
-		FCA5B0AB2F95AA050097B8ED /* VideoWallpaperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoWallpaperRuntime.swift; sourceTree = "<group>"; };
-		FCA5B0AC2F95AA160097B8ED /* WallpaperManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -87,7 +83,6 @@
 		12411E9D8C2EF2E84C806B8E = {
 			isa = PBXGroup;
 			children = (
-				FCA5B0A92F95A9440097B8ED /* mac-lively-wrapper-expert-prompt.md */,
 				67298C9EB62CC2B52436AF32 /* App */,
 				FBC65A86FD923A19CF0B9AB4 /* Core */,
 				F7EA90FACA208C6776496B48 /* Import */,
@@ -97,9 +92,6 @@
 				BD827BE4F62232579DE90852 /* UI */,
 				EE51295409E1C89CCA3D96A3 /* WallpaperTypes */,
 				D666DA5448374AAC8B8B951D /* Products */,
-				FCA5B0AA2F95A9F60097B8ED /* WallpaperRuntime.swift */,
-				FCA5B0AB2F95AA050097B8ED /* VideoWallpaperRuntime.swift */,
-				FCA5B0AC2F95AA160097B8ED /* WallpaperManager.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -122,24 +114,6 @@
 			path = App;
 			sourceTree = "<group>";
 		};
-		9D09F3A3C0246EA0DC1DE3AF /* Wallpapers */ = {
-			isa = PBXGroup;
-			children = (
-				B0B8273FCC2C8565712C28B9 /* MatrixRain */,
-			);
-			path = Wallpapers;
-			sourceTree = "<group>";
-		};
-		B0B8273FCC2C8565712C28B9 /* MatrixRain */ = {
-			isa = PBXGroup;
-			children = (
-				E91A5A37CF524E0D1D610610 /* index.html */,
-				582B58545782D6C428B550B2 /* LivelyInfo.json */,
-				C5D4D5715114FFB7FD1A86A3 /* LivelyProperties.json */,
-			);
-			path = MatrixRain;
-			sourceTree = "<group>";
-		};
 		BD827BE4F62232579DE90852 /* UI */ = {
 			isa = PBXGroup;
 			children = (
@@ -154,10 +128,8 @@
 		D633B046F05042D6A8A02658 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				AE74183218EC185D7A6AB7E4 /* AetherDesk.entitlements */,
 				B2905E6608492517F7A57F98 /* Assets.xcassets */,
-				E6CB0C3D5D9D8AA9D4755689 /* Info.plist */,
-				9D09F3A3C0246EA0DC1DE3AF /* Wallpapers */,
+				1BAB9458127C41856430DF97 /* Wallpapers */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -194,10 +166,13 @@
 			isa = PBXGroup;
 			children = (
 				56C476B645061802CF459825 /* DisplayManager.swift */,
+				2584D8E47F04174E05D64538 /* LoginItem.swift */,
 				091DB393FB7DF2CC71862D13 /* NSScreen+DisplayID.swift */,
+				56596F20DD3981A01565D5CC /* ThumbnailRenderer.swift */,
 				5541FB5CC0A24981DF4C273C /* WallpaperHostWindow.swift */,
 				9C223490A825EC7DC647923B /* WallpaperManager.swift */,
 				37CBB8BCBB05D37AA8D53492 /* WallpaperRuntime.swift */,
+				10FE53163C37066B55500D80 /* WatchdogTimer.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -230,7 +205,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					AEB4D9527CC5534AC2256AC7 = {
 						ProvisioningStyle = Automatic;
@@ -262,9 +237,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D9208E923D8622B95DCECCD1 /* Assets.xcassets in Resources */,
-				E0F842330F40537542F6F587 /* LivelyInfo.json in Resources */,
-				D1FC707FF282DFE57A69C365 /* LivelyProperties.json in Resources */,
-				40E3AAD87A7F6E4B4E247083 /* index.html in Resources */,
+				7D27A3BA5BE947BC1A313E96 /* Wallpapers in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,12 +254,14 @@
 				42FC9DB954D773E5C1FE518B /* ImageWallpaperRuntime.swift in Sources */,
 				C6D6C9095E5E70737475B934 /* LivelyInfoParser.swift in Sources */,
 				530748697797E24FD4D05644 /* LivelyPropertiesParser.swift in Sources */,
+				10F09300BA827BC8CB6F2E56 /* LoginItem.swift in Sources */,
 				7D890AF43F05A70163185402 /* MenuBarController.swift in Sources */,
 				56F914CA655082A86E7C0A27 /* NSScreen+DisplayID.swift in Sources */,
 				9121F64C2ED8FF86F41B2FCF /* PreferencesWindowController.swift in Sources */,
 				93F9B498C69E3F361EB23552 /* PropertyBridge.swift in Sources */,
 				002FC486B3B43B95FE63F8E9 /* PropertyEditorViewController.swift in Sources */,
 				691D7DD086D3B65BC9CE93F9 /* PropertyStore.swift in Sources */,
+				08C811B07942DA61542292F3 /* ThumbnailRenderer.swift in Sources */,
 				D84317A7966DB95215415E8C /* VideoWallpaperRuntime.swift in Sources */,
 				B2AEEBA3C42E22B662E0C923 /* WallpaperBundle.swift in Sources */,
 				03AD7D808BB33D2E635F66E6 /* WallpaperHostWindow.swift in Sources */,
@@ -296,6 +271,7 @@
 				24FDB37B59340E86228031F3 /* WallpaperRuntime.swift in Sources */,
 				8B5516A7DCE9F20BE66CC9D5 /* WallpaperStore.swift in Sources */,
 				D8B401735A92E123B4EB51AA /* WallpaperValidator.swift in Sources */,
+				1D024C17E28E42960A887119 /* WatchdogTimer.swift in Sources */,
 				DCB0CC17C7ACD570A4734DC7 /* WebWallpaperRuntime.swift in Sources */,
 				1164B184B8B1C5FE7DB1892B /* main.swift in Sources */,
 			);
@@ -310,10 +286,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/AetherDesk.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.aetherdesk.AetherDesk;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -322,7 +296,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -358,11 +331,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = N5PUFD82GV;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -382,11 +353,12 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aetherdesk.AetherDesk;
 				PRODUCT_NAME = AetherDesk;
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.9;
 			};
 			name = Debug;
@@ -395,7 +367,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -431,11 +402,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = N5PUFD82GV;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -448,11 +417,12 @@
 				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aetherdesk.AetherDesk;
 				PRODUCT_NAME = AetherDesk;
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.9;
 			};
 			name = Release;
@@ -463,10 +433,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/AetherDesk.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.aetherdesk.AetherDesk;
 				SDKROOT = macosx;
 			};
 			name = Debug;
