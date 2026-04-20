@@ -251,9 +251,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let (_, classification) = try importer.importWallpaper(from: url)
             menuNeedsFullRebuild = true
             let (title, body) = Self.importReport(for: classification)
-            postNotification(title: title, body: body)
+            if case .allowedWithLimits = classification {
+                showAlert(style: .informational, title: title, body: body)
+            } else {
+                postNotification(title: title, body: body)
+            }
         } catch {
-            postNotification(title: "Import Failed", body: error.localizedDescription)
+            showAlert(style: .critical, title: "Import Failed", body: error.localizedDescription)
         }
     }
 
@@ -298,6 +302,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // fail silently for unsigned/dev builds.
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert]) { _, _ in }
+    }
+
+    private func showAlert(style: NSAlert.Style, title: String, body: String) {
+        let alert = NSAlert()
+        alert.alertStyle = style
+        alert.messageText = title
+        alert.informativeText = body
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func postNotification(title: String, body: String) {

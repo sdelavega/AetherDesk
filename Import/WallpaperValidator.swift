@@ -121,16 +121,21 @@ final class WallpaperValidator {
             warnings.append("Requests system notification permission")
         }
 
+        // Tracker / ad domains → hard reject
+        let trackers = ["googletagmanager", "google-analytics",
+                        "doubleclick", "facebook.net"]
+        for pattern in trackers {
+            if js.contains(pattern) {
+                issues.append("References \(pattern) (tracker/ad script)")
+            }
+        }
+
+        // Suspicious but non-fatal JS patterns → warn + limit
         let suspicious = ["document.write(", "eval(", "Function(",
-                          "WebAssembly", "googletagmanager", "google-analytics",
-                          "doubleclick", "facebook.net"]
+                          "WebAssembly"]
         for pattern in suspicious {
             if js.contains(pattern) {
-                if pattern.contains(".") { // tracker/ad domains -> hard reject
-                    issues.append("References \(pattern) (tracker/ad script)")
-                } else {
-                    warnings.append("Uses \(pattern)")
-                }
+                warnings.append("Uses \(pattern)")
             }
         }
     }
