@@ -27,7 +27,8 @@ final class WallpaperManager {
     // MARK: Lifecycle
 
     init() {
-        displayManager.updateDisplayList()
+        // DisplayManager.init() already calls updateDisplayList(); no need to
+        // duplicate it here. start() will call it again if needed.
         registerObservers()
     }
 

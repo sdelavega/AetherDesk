@@ -33,6 +33,14 @@ final class ThumbnailRenderer {
     private var pendingWebRenders: [UUID: WebRender] = [:]
     private let pendingLock = NSLock()
 
+    /// In-memory cache of bundle directory modification dates to avoid
+    /// repeated filesystem stat calls for cache validation.
+    private var bundleModDates: [URL: Date] = [:]
+
+    /// Pool of reusable offscreen WKWebViews for thumbnail rendering.
+    private var webViewPool: [WKWebView] = []
+    private static let maxPoolSize = 2
+
     init() {
         let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
@@ -96,10 +104,18 @@ final class ThumbnailRenderer {
     }
 
     /// Shallow mtime probe of the bundle directory. Good enough for cache
-    /// invalidation; we don't recursively walk.
+    /// invalidation; we don't recursively walk. Results are cached in memory
+    /// for the session to avoid repeated stat calls.
     private func bundleModificationDate(at url: URL) -> Date? {
+        if let cached = bundleModDates[url] { return cached }
         guard let attrs = try? fileManager.attributesOfItem(atPath: url.path) else { return nil }
-        return attrs[.modificationDate] as? Date
+        let date = attrs[.modificationDate] as? Date
+        if let date = date { bundleModDates[url] = date }
+        return date
+    }
+
+    func invalidateModificationDateCache() {
+        bundleModDates.removeAll()
     }
 
     private func writeCache(image: NSImage, to url: URL) {
@@ -181,23 +197,52 @@ final class ThumbnailRenderer {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { completion(nil); return }
             let token = UUID()
+            let wv = self.checkoutWebView(size: size)
             let render = WebRender(token: token,
                                    size: size,
-                                   onFinish: { [weak self] image in
+                                   webView: wv,
+                                   onFinish: { [weak self] image, usedView in
                 guard let self = self else { return }
                 self.pendingLock.lock()
                 self.pendingWebRenders.removeValue(forKey: token)
                 self.pendingLock.unlock()
-                // The closure may be called on the main thread already (from
-                // the snapshot completion); hop to our worker queue so the
-                // caller gets consistent threading before we jump back to
-                // main in `thumbnail(for:…)`.
+                if let usedView = usedView {
+                    self.returnWebView(usedView)
+                }
                 completion(image)
             })
             self.pendingLock.lock()
             self.pendingWebRenders[token] = render
             self.pendingLock.unlock()
             render.load(indexURL: indexURL, baseURL: baseURL)
+        }
+    }
+
+    // MARK: WebView pool
+
+    private func checkoutWebView(size: NSSize) -> WKWebView {
+        if let wv = webViewPool.popLast() {
+            wv.frame = NSRect(x: 0, y: 0,
+                              width: max(size.width, 320),
+                              height: max(size.height, 180))
+            return wv
+        }
+        let frame = NSRect(x: 0, y: 0,
+                           width: max(size.width, 320),
+                           height: max(size.height, 180))
+        let config = WKWebViewConfiguration()
+        let wv = WKWebView(frame: frame, configuration: config)
+        wv.setValue(false, forKey: "drawsBackground")
+        wv.wantsLayer = true
+        return wv
+    }
+
+    private func returnWebView(_ wv: WKWebView) {
+        wv.stopLoading()
+        wv.navigationDelegate = nil
+        wv.loadHTMLString("", baseURL: nil)
+        if webViewPool.count < Self.maxPoolSize {
+            webViewPool.append(wv)
         }
     }
 }
@@ -210,7 +255,7 @@ final class ThumbnailRenderer {
 private final class WebRender: NSObject, WKNavigationDelegate {
     let token: UUID
     let size: NSSize
-    let onFinish: (NSImage?) -> Void
+    let onFinish: (NSImage?, WKWebView?) -> Void
 
     private var webView: WKWebView?
     private var didFinish = false
@@ -223,23 +268,18 @@ private final class WebRender: NSObject, WKNavigationDelegate {
     /// Hard cap: if the page never loads, give up and return nil.
     private static let hardTimeout: TimeInterval = 8.0
 
-    init(token: UUID, size: NSSize, onFinish: @escaping (NSImage?) -> Void) {
+    init(token: UUID, size: NSSize, webView: WKWebView,
+         onFinish: @escaping (NSImage?, WKWebView?) -> Void) {
         self.token = token
         self.size = size
+        self.webView = webView
         self.onFinish = onFinish
         super.init()
     }
 
     func load(indexURL: URL, baseURL: URL) {
-        let frame = NSRect(x: 0, y: 0,
-                           width: max(size.width, 320),
-                           height: max(size.height, 180))
-        let config = WKWebViewConfiguration()
-        let wv = WKWebView(frame: frame, configuration: config)
+        guard let wv = webView else { onFinish(nil, nil); return }
         wv.navigationDelegate = self
-        wv.setValue(false, forKey: "drawsBackground")
-        wv.wantsLayer = true
-        self.webView = wv
         wv.loadFileURL(indexURL, allowingReadAccessTo: baseURL)
 
         // Hard timeout so we never leak the offscreen view forever.
@@ -268,7 +308,7 @@ private final class WebRender: NSObject, WKNavigationDelegate {
     private func takeSnapshot() {
         guard let wv = webView, !didFinish else { return }
         let config = WKSnapshotConfiguration()
-        config.afterScreenUpdates = true
+        config.afterScreenUpdates = false
         wv.takeSnapshot(with: config) { [weak self] image, _ in
             guard let self = self else { return }
             if let image = image {
@@ -284,10 +324,9 @@ private final class WebRender: NSObject, WKNavigationDelegate {
         didFinish = true
         timeoutWork?.cancel()
         timeoutWork = nil
-        webView?.stopLoading()
-        webView?.navigationDelegate = nil
+        let wv = webView
         webView = nil
-        onFinish(image)
+        onFinish(image, wv)
     }
 }
 

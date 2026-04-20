@@ -23,7 +23,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let menu: NSMenu
     private weak var wallpaperManager: WallpaperManager?
-    private let importer = WallpaperImporter()
+    private var importer: WallpaperImporter { WallpaperImporter.shared }
+    private var menuNeedsFullRebuild = true
 
     // Submenu + items that need dynamic updates.
     private let wallpapersItem = NSMenuItem(title: "Wallpapers", action: nil, keyEquivalent: "")
@@ -248,6 +249,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func performImport(from url: URL) {
         do {
             let (_, classification) = try importer.importWallpaper(from: url)
+            menuNeedsFullRebuild = true
             let (title, body) = Self.importReport(for: classification)
             postNotification(title: title, body: body)
         } catch {
@@ -286,9 +288,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func wallpaperDidChange() {
-        // Recompute check marks next time the menu opens; also cheap enough
-        // to rebuild immediately for the common case of <10 wallpapers.
-        wallpapersItem.submenu = buildWallpapersSubmenu()
+        // Just refresh checkmarks on next menu open — no directory rescan needed.
     }
 
     // MARK: Notifications

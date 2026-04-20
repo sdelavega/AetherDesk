@@ -11,7 +11,7 @@ enum Constants {
 
         /// How often web wallpapers should ping the native side with a
         /// heartbeat. Set from JS via setInterval.
-        static let watchdogHeartbeatInterval: TimeInterval = 2.0
+        static let watchdogHeartbeatInterval: TimeInterval = 5.0
 
         /// Seconds of heartbeat silence before a runtime is considered
         /// unresponsive and demoted to safe content for its display.

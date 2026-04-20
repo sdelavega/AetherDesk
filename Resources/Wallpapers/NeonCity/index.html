@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Neon City</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#000}
+  canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const CFG = { rainIntensity:60, fogDensity:30, neonBrightness:100, vehicleCount:8 };
+function livelyPropertyListener(name, val) {
+  if (name in CFG) { CFG[name]=val; if(name==='rainIntensity')initRain(); if(name==='vehicleCount')initVehicles(); }
+}
+
+let seed = Math.floor((screen.width*9301+screen.height*49297+performance.timeOrigin)%233280);
+const rng  = ()=>{ seed=(seed*9301+49297)%233280; return seed/233280; };
+const rR   = (a,b)=>a+rng()*(b-a);
+const rI   = (a,b)=>Math.floor(a+rng()*(b-a+1));
+const pick = a=>a[Math.floor(rng()*a.length)];
+
+const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+const cityC=document.createElement('canvas'), cX=cityC.getContext('2d');
+
+let W,H,HZ; // horizon Y
+
+function resize(){
+  W=canvas.width=cityC.width=window.innerWidth;
+  H=canvas.height=cityC.height=window.innerHeight;
+  HZ=Math.floor(H*0.78); // horizon at 78% — city fills top 78%, foreground just 22%
+  buildCity(); initRain(); initVehicles();
+}
+window.addEventListener('resize',resize);
+
+const NEONS=['#ff1a5e','#ff6a00','#ffe600','#00ffe0','#00aaff','#bb00ff','#ff00bb','#44ff00','#ff4466','#00ffaa'];
+
+let signs=[], antennas=[];
+
+// ─────────────────────────────────────────────────────────────────────────────
+function buildCity(){
+  signs=[]; antennas=[];
+  const c=cX; c.clearRect(0,0,W,H);
+
+  // Sky
+  const sky=c.createLinearGradient(0,0,0,HZ);
+  sky.addColorStop(0,'#020518'); sky.addColorStop(0.65,'#081430'); sky.addColorStop(1,'#0c1a38');
+  c.fillStyle=sky; c.fillRect(0,0,W,HZ);
+
+  // Stars
+  for(let i=0;i<200;i++){
+    c.fillStyle=`rgba(200,215,255,${0.15+rng()*0.75})`;
+    c.beginPath(); c.arc(rng()*W,rng()*HZ*0.9,rR(0.2,0.75),0,Math.PI*2); c.fill();
+  }
+
+  // Moon
+  const mx=rR(W*0.12,W*0.82),my=rR(HZ*0.06,HZ*0.22),mr=rR(22,40);
+  const mg=c.createRadialGradient(mx,my,0,mx,my,mr*3.5);
+  mg.addColorStop(0,'rgba(255,248,220,0.15)'); mg.addColorStop(0.35,'rgba(255,242,195,0.06)'); mg.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=mg; c.fillRect(mx-mr*4,my-mr*4,mr*8,mr*8);
+  c.beginPath(); c.arc(mx,my,mr,0,Math.PI*2); c.fillStyle='rgba(255,252,230,0.09)'; c.fill();
+
+  // ── Three building layers back→front ─────────────────────────────────
+  // Critical: silhouette-first approach — each layer is near-black, with
+  // just enough face variation to hint at structure. Windows are sparse.
+  const LAYERS=[
+    {minH:0.52,maxH:0.80,minW:26,maxW:68},   // 0: distant
+    {minH:0.28,maxH:0.54,minW:46,maxW:112},  // 1: mid
+    {minH:0.13,maxH:0.36,minW:62,maxW:165},  // 2: near
+  ];
+
+  for(let li=0;li<3;li++){
+    const L=LAYERS[li];
+    const bldgs=[];
+    let x=rR(-50,0);
+    while(x<W+80){
+      const bw=rR(L.minW,L.maxW), bh=rR(L.minH,L.maxH)*HZ;
+      bldgs.push({x,y:HZ-bh,w:bw,h:bh});
+      x+=bw+rR(0,4);
+    }
+
+    // Silhouette path — solid, no gaps
+    c.beginPath(); c.moveTo(0,HZ);
+    for(const b of bldgs){ c.lineTo(b.x,HZ); c.lineTo(b.x,b.y); c.lineTo(b.x+b.w,b.y); c.lineTo(b.x+b.w,HZ); }
+    c.lineTo(W,HZ); c.closePath();
+    c.fillStyle=`hsl(225,${[10,12,15][li]}%,${[4,6,8][li]}%)`; c.fill();
+
+    for(const b of bldgs){
+      // Face — barely a shade above silhouette
+      const fL=[5,7,10][li]+rI(0,3);
+      c.fillStyle=`hsl(${rI(218,238)},${rI(10,18)}%,${fL}%)`; c.fillRect(b.x+1,b.y,b.w-2,b.h);
+
+      // Atmospheric haze
+      if(li===0){ c.fillStyle='rgba(2,5,14,0.58)'; c.fillRect(b.x,b.y,b.w,b.h); }
+      else if(li===1){ c.fillStyle='rgba(2,5,14,0.20)'; c.fillRect(b.x,b.y,b.w,b.h); }
+
+      drawRooftop(c,b.x,b.y,b.w,b.h,li,b.h>HZ*0.36,li===0?0.20:1.0);
+      drawWindows(c,b.x,b.y,b.w,b.h,li);
+      if(li===2&&rng()<0.80) pushSign(b.x,b.y,b.w,b.h,1.0);
+      if(li===1&&rng()<0.45) pushSign(b.x,b.y,b.w,b.h,1.0);
+      if(li===0&&rng()<0.25) pushSign(b.x,b.y,b.w,b.h,0.18);
+    }
+  }
+
+  // ── Street/ground ────────────────────────────────────────────────────
+  const sg=c.createLinearGradient(0,HZ,0,H);
+  sg.addColorStop(0,'#060810'); sg.addColorStop(0.35,'#04060c'); sg.addColorStop(1,'#020306');
+  c.fillStyle=sg; c.fillRect(0,HZ,W,H-HZ);
+
+  // Horizon atmosphere glow
+  const hg=c.createLinearGradient(0,HZ-20,0,HZ+40);
+  hg.addColorStop(0,'rgba(0,0,0,0)'); hg.addColorStop(0.4,'rgba(12,30,85,0.28)'); hg.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=hg; c.fillRect(0,HZ-20,W,60);
+
+  // Wet road sheen — thin horizontal bands, no perspective lines
+  for(let i=0;i<6;i++){
+    const ry=HZ+rR(4,(H-HZ)*0.6), rh=rR(0.8,2);
+    const rg=c.createLinearGradient(0,0,W,0);
+    rg.addColorStop(0,'rgba(0,0,0,0)');
+    rg.addColorStop(0.25,`rgba(16,40,85,${rR(0.03,0.08)})`);
+    rg.addColorStop(0.5,`rgba(20,55,110,${rR(0.05,0.11)})`);
+    rg.addColorStop(0.75,`rgba(16,40,85,${rR(0.03,0.08)})`);
+    rg.addColorStop(1,'rgba(0,0,0,0)');
+    c.fillStyle=rg; c.fillRect(0,ry,W,rh);
+  }
+
+  // ── Foreground: thin dark ground strip only ───────────────────────────
+  const groundH=H*0.05;
+  const grd=c.createLinearGradient(0,H-groundH,0,H);
+  grd.addColorStop(0,'rgba(4,6,14,0.9)'); grd.addColorStop(1,'rgba(2,3,8,1)');
+  c.fillStyle=grd; c.fillRect(0,H-groundH,W,groundH);
+}
+
+// ── Rooftop ───────────────────────────────────────────────────────────────────
+function drawRooftop(c,bx,by,bw,bh,layer,isTall,antDim=1.0){
+  const t=rI(0,2);
+  if(t===0){ c.fillStyle='rgba(70,95,175,0.14)'; c.fillRect(bx,by-2,bw,2); }
+  else if(t===1){
+    const tw=rR(bw*0.14,bw*0.38),th=rR(7,Math.min(26,bh*0.22));
+    const tx=bx+rR(4,Math.max(5,bw-tw-4));
+    c.fillStyle=`hsl(225,${rI(10,18)}%,${rI(5,9)}%)`; c.fillRect(tx,by-th,tw,th);
+    if(isTall&&rng()<0.68) antennas.push({x:tx+tw/2,y:by-th-3,phase:rng()*Math.PI*2,dim:antDim});
+  } else {
+    const tw=rR(2,4),th=rR(8,28),tx=bx+bw/2-tw/2;
+    c.fillStyle='rgba(55,80,145,0.45)'; c.fillRect(tx,by-th,tw,th);
+    if(isTall) antennas.push({x:tx+tw/2,y:by-th-3,phase:rng()*Math.PI*2,dim:antDim});
+  }
+}
+
+// ── Windows — sparse, mostly dark ────────────────────────────────────────────
+function drawWindows(c,bx,by,bw,bh,layer){
+  const density=[0.12,0.20,0.30][layer];
+  const ww=rR(2,3.5),wh=rR(2,3.5);
+  const gx=rR(5,11),gy=rR(5,10);
+  const sx=bx+rR(4,8),sy=by+rR(5,10);
+  const maxL=[30,45,58][layer];
+  for(let wy=sy;wy<by+bh-wh-4;wy+=wh+gy){
+    for(let wx=sx;wx<bx+bw-ww-4;wx+=ww+gx){
+      if(rng()>density) continue;
+      c.fillStyle=rng()<0.82
+        ?`hsl(${rI(36,54)},${rI(42,68)}%,${rI(16,maxL)}%)`
+        :`hsl(${rI(200,225)},${rI(28,52)}%,${rI(18,maxL*0.85)}%)`;
+      c.fillRect(wx,wy,ww,wh);
+    }
+  }
+}
+
+// ── Neon signs ────────────────────────────────────────────────────────────────
+function pushSign(bx,by,bw,bh,dimScale=1.0){
+  const color=pick(NEONS);
+  const margin=10, maxW=bw-margin*2;
+  if(maxW<14) return;
+  const sw=rR(14,Math.min(48,maxW));
+  const x=bx+margin+rng()*Math.max(0,maxW-sw);
+  // Keep sign away from rooftop (20% buffer) and well above bottom (30% clearance)
+  const minY=by+Math.max(12,bh*0.20), maxY=by+bh*0.68;
+  if(maxY-minY<6) return;
+  const y=rR(minY,maxY);
+  const h=rR(2.5,4.0);
+  const color2=rng()<0.38?pick(NEONS):null;
+  const gap=rR(3,6), w2sc=rR(0.55,0.88);
+  const totalH=color2?h+gap+h:h;
+  const safeY=Math.min(y,by+bh-totalH-10);
+  if(safeY<by+8) return; // bail if no room
+  signs.push({
+    x, y:safeY, w:sw, h, color, color2, gap, w2sc,
+    glow:rR(4,10), flicker:rng()<0.18, phase:rng()*Math.PI*2, _off:false, dim:dimScale,
+    // Clip rect — sign must never draw outside its building face
+    clip:{x:bx+2, y:by+2, w:bw-4, h:bh-4},
+  });
+}
+
+// ── Flicker ───────────────────────────────────────────────────────────────────
+const flickerT={};
+function updateFlicker(t){
+  for(let i=0;i<signs.length;i++){
+    const s=signs[i]; if(!s.flicker) continue;
+    if(!flickerT[i]) flickerT[i]=t+rR(800,5000);
+    if(t>flickerT[i]){ s._off=!s._off; flickerT[i]=t+(s._off?rR(40,200):rR(400,6000)); }
+  }
+}
+const signAlpha=s=>(s.flicker&&s._off)?0.08:1.0;
+
+// ── Neon tube draw ────────────────────────────────────────────────────────────
+function drawNeonTube(ctx,x,y,w,h,color,alpha,nb){
+  if(alpha<0.02||w<4) return;
+  ctx.save(); ctx.lineCap='round';
+  const cy=y+h/2, x1=x+h*0.5, x2=x+w-h*0.5;
+  if(x2<=x1){ctx.restore();return;}
+  ctx.strokeStyle=color; ctx.shadowColor=color;
+  ctx.globalAlpha=alpha*0.18*nb; ctx.shadowBlur=h*5; ctx.lineWidth=h*3.0;
+  ctx.beginPath(); ctx.moveTo(x1,cy); ctx.lineTo(x2,cy); ctx.stroke();
+  ctx.globalAlpha=alpha*0.78*nb; ctx.shadowBlur=h*2.0; ctx.lineWidth=h*0.90;
+  ctx.beginPath(); ctx.moveTo(x1,cy); ctx.lineTo(x2,cy); ctx.stroke();
+  ctx.globalAlpha=alpha*0.88*nb; ctx.strokeStyle='#fff'; ctx.shadowColor='#fff'; ctx.shadowBlur=h*0.55; ctx.lineWidth=Math.max(0.7,h*0.20);
+  ctx.beginPath(); ctx.moveTo(x1,cy); ctx.lineTo(x2,cy); ctx.stroke();
+  ctx.restore();
+}
+function drawSign(ctx,s,alpha){
+  const nb=CFG.neonBrightness/80*(s.dim??1.0);
+  ctx.save();
+  // Hard clip to building face — glow cannot bleed outside
+  if(s.clip){
+    ctx.beginPath();
+    ctx.rect(s.clip.x, s.clip.y, s.clip.w, s.clip.h);
+    ctx.clip();
+  }
+  drawNeonTube(ctx,s.x,s.y,s.w,s.h,s.color,alpha,nb);
+  if(s.color2) drawNeonTube(ctx,s.x,s.y+s.h+s.gap,s.w*s.w2sc,s.h,s.color2,alpha*0.82,nb);
+  ctx.restore();
+}
+
+// ── Antennas ──────────────────────────────────────────────────────────────────
+function drawAntennas(ctx,t){
+  ctx.save();
+  for(const a of antennas){
+    const p=Math.sin(t*0.0018+a.phase); if(p<0.45) continue;
+    const dim=a.dim??1.0;
+    ctx.globalAlpha=(0.65+0.28*p)*dim; ctx.fillStyle='#ff2222'; ctx.shadowColor='#ff0000'; ctx.shadowBlur=9*dim;
+    ctx.beginPath(); ctx.arc(a.x,a.y,2.2*(0.5+0.5*dim),0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Rain ──────────────────────────────────────────────────────────────────────
+let rain=[];
+function initRain(){
+  rain=[];
+  const n=Math.floor(CFG.rainIntensity*(W/1920)*(H/1080)*2.4);
+  for(let i=0;i<n;i++) rain.push(mkDrop(true));
+}
+function mkDrop(rand){return{x:rng()*W,y:rand?rng()*H:-rR(5,20),spd:rR(15,32),len:rR(8,20),a:rR(0.10,0.36),drift:rR(-0.3,1.0)};}
+function updateRain(){for(const d of rain){d.y+=d.spd;d.x+=d.drift;if(d.y>H+d.len)Object.assign(d,mkDrop(false));}}
+function drawRain(ctx){
+  ctx.save(); ctx.strokeStyle='rgba(155,200,238,1)'; ctx.lineWidth=0.52;
+  for(const d of rain){ctx.globalAlpha=d.a;ctx.beginPath();ctx.moveTo(d.x,d.y);ctx.lineTo(d.x+d.drift*0.6,d.y+d.len);ctx.stroke();}
+  ctx.restore();
+}
+
+// ── Splashes ──────────────────────────────────────────────────────────────────
+let splashes=[];
+function spawnSplash(){
+  if(rng()>0.07||!CFG.rainIntensity) return;
+  splashes.push({x:rng()*W,y:HZ+rR(4,(H-HZ)*0.65),r:0,max:rR(3,10),a:rR(0.22,0.55),color:rng()<0.22?pick(NEONS):'rgba(115,165,210,1)'});
+}
+function drawSplashes(ctx){
+  ctx.save();
+  for(let i=splashes.length-1;i>=0;i--){
+    const s=splashes[i]; ctx.globalAlpha=s.a*(1-s.r/s.max);
+    ctx.strokeStyle=s.color; ctx.lineWidth=0.65; ctx.shadowColor=s.color; ctx.shadowBlur=4;
+    ctx.beginPath(); ctx.ellipse(s.x,s.y,s.r*2.1,s.r*0.38,0,0,Math.PI*2); ctx.stroke();
+    s.r+=0.55; if(s.r>=s.max) splashes.splice(i,1);
+  }
+  ctx.restore();
+}
+
+// ── Vehicles — sky only, well above buildings ─────────────────────────────────
+let vehicles=[];
+function initVehicles(){vehicles=[];for(let i=0;i<CFG.vehicleCount;i++) vehicles.push(mkVehicle(true));}
+function mkVehicle(rand){
+  const dir=rng()<0.5?1:-1, spd=rR(0.5,2.2)*dir;
+  // Constrain to upper sky — between 5% and 55% of horizon height
+  return{x:rand?rng()*W:(dir>0?-80:W+80),y:rR(H*0.04,HZ*0.72),spd,dir,size:rR(1.2,2.8),color:pick(NEONS),trail:rR(20,58)};
+}
+function updateVehicles(){
+  for(let i=0;i<vehicles.length;i++){
+    const v=vehicles[i]; v.x+=v.spd;
+    if(v.dir>0&&v.x>W+v.trail+20) vehicles[i]=mkVehicle(false);
+    if(v.dir<0&&v.x<-v.trail-20)  vehicles[i]=mkVehicle(false);
+  }
+}
+function drawVehicles(ctx){
+  ctx.save(); const nb=CFG.neonBrightness/80;
+  for(const v of vehicles){
+    const tg=ctx.createLinearGradient(v.x,0,v.x-v.trail*v.dir,0);
+    tg.addColorStop(0,v.color); tg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.globalAlpha=0.45*nb; ctx.strokeStyle=tg; ctx.lineWidth=v.size*0.5; ctx.shadowColor=v.color; ctx.shadowBlur=v.size*5;
+    ctx.beginPath(); ctx.moveTo(v.x,v.y); ctx.lineTo(v.x-v.trail*v.dir,v.y); ctx.stroke();
+    ctx.globalAlpha=0.88*nb; ctx.fillStyle='#fff'; ctx.shadowBlur=v.size*9;
+    ctx.beginPath(); ctx.arc(v.x,v.y,v.size,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=0.42; ctx.fillStyle=v.color; ctx.shadowBlur=v.size*14;
+    ctx.beginPath(); ctx.arc(v.x,v.y,v.size*1.8,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Neon reflections ─────────────────────────────────────────────────────────
+function drawReflections(ctx,t){
+  ctx.save(); ctx.globalCompositeOperation='screen';
+  const nb=CFG.neonBrightness/80;
+  for(const s of signs){
+    const baseA=signAlpha(s)*0.09*nb; if(baseA<0.01) continue;
+    const baseY=HZ+(HZ-s.y)*0.08; if(baseY>H) continue;
+    for(let li=0;li<3;li++){
+      const wx=Math.sin(t*0.004+s.x*0.017+li*2.1)*0.8+Math.cos(t*0.007+s.x*0.023+li*1.4)*0.5;
+      ctx.globalAlpha=baseA*(1-li*0.28); ctx.strokeStyle=s.color; ctx.shadowColor=s.color; ctx.shadowBlur=7;
+      ctx.lineWidth=Math.max(0.45,s.h*0.28-li*0.12); ctx.lineCap='butt';
+      ctx.beginPath(); ctx.moveTo(s.x+wx,baseY+li*2.4+s.h*0.15); ctx.lineTo(s.x+s.w+wx,baseY+li*2.4+s.h*0.15); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// ── Fog ───────────────────────────────────────────────────────────────────────
+function drawFog(ctx,t){
+  const d=CFG.fogDensity/100; if(d<0.01) return;
+  ctx.save();
+  for(let i=0;i<3;i++){
+    const ox=((t*(0.011+i*0.005)+i*W*0.38)%(W*1.6))-W*0.2;
+    const fg=ctx.createRadialGradient(ox,HZ*0.82,0,ox,HZ*0.82,W*0.52);
+    fg.addColorStop(0,`rgba(5,12,32,${d*0.17})`); fg.addColorStop(0.6,`rgba(3,8,20,${d*0.08})`); fg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=fg; ctx.fillRect(0,0,W,HZ);
+  }
+  const gf=ctx.createLinearGradient(0,HZ,0,HZ+H*0.18);
+  gf.addColorStop(0,`rgba(6,14,36,${d*0.42})`); gf.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=gf; ctx.fillRect(0,HZ,W,H*0.18);
+  ctx.restore();
+}
+
+function drawVignette(ctx){
+  const vg=ctx.createRadialGradient(W*.5,H*.5,H*.2,W*.5,H*.5,H*.88);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.4)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+}
+
+let last=0; const MS=1000/30;
+function frame(t){
+  requestAnimationFrame(frame);
+  if(t-last<MS) return; last=t;
+  updateRain(); updateVehicles(); updateFlicker(t); spawnSplash();
+  const c=ctx; c.clearRect(0,0,W,H);
+  c.drawImage(cityC,0,0);
+  for(const s of signs) drawSign(c,s,signAlpha(s));
+  drawAntennas(c,t);
+  drawFog(c,t);
+  drawVehicles(c);
+  drawRain(c);
+  drawSplashes(c);
+  drawReflections(c,t);
+  drawVignette(c);
+}
+
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

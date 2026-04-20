@@ -27,12 +27,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private(set) var isPaused: Bool = false
 
     private let bundle: WallpaperBundle
-    private let webView: WKWebView
+    private var webView: WKWebView?
     private let propertyBridge: PropertyBridge
     private let messageHandler: ScriptMessageHandler
     private let watchdog: WatchdogTimer
 
-    var contentView: NSView { webView }
+    /// Stable container view returned as contentView. The actual WKWebView
+    /// is added/removed as a subview during start/stop.
+    private let containerView: NSView
+
+    var contentView: NSView { containerView }
 
     init(bundle: WallpaperBundle, displayID: CGDirectDisplayID) {
         self.bundle = bundle
@@ -54,26 +58,34 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                                "reason": "watchdog timeout"])
             })
 
-        // Configure the web view.
+        self.containerView = NSView()
+
+        super.init()
+
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor.clear.cgColor
+        containerView.autoresizingMask = [.width, .height]
+
+        handler.onHeartbeat = { [weak self] in self?.watchdog.heartbeat() }
+    }
+
+    deinit {
+        watchdog.stop()
+    }
+
+    // MARK: WebView lifecycle
+
+    private func createWebView() -> WKWebView {
         let userContent = WKUserContentController()
-        userContent.add(handler, name: "aetherDesk")
+        userContent.add(messageHandler, name: "aetherDesk")
 
         let config = WKWebViewConfiguration()
         config.userContentController = userContent
 
-        let pagePrefs = WKWebpagePreferences()
-        pagePrefs.allowsContentJavaScript = true
-        config.defaultWebpagePreferences = pagePrefs
+        if #available(macOS 12.3, *) {
+            config.preferences.isElementFullscreenEnabled = false
+        }
 
-        self.webView = WKWebView(frame: .zero, configuration: config)
-
-        super.init()
-
-        // Route heartbeats from the message handler back to our watchdog.
-        handler.onHeartbeat = { [weak self] in self?.watchdog.heartbeat() }
-
-        // Inject the bridge shim + heartbeat at document start so wallpapers
-        // that call window.aetherDesk during parse see a valid object.
         let bootstrap = WKUserScript(
             source: Self.bridgeBootstrapScript(
                 displayID: displayID,
@@ -83,19 +95,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         )
         userContent.addUserScript(bootstrap)
 
-        webView.navigationDelegate = self
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.autoresizingMask = [.width, .height]
-        webView.wantsLayer = true
-        webView.layer?.backgroundColor = NSColor.clear.cgColor
-        webView.allowsMagnification = false
-        webView.allowsBackForwardNavigationGestures = false
+        let wv = WKWebView(frame: .zero, configuration: config)
+        wv.navigationDelegate = self
+        wv.setValue(false, forKey: "drawsBackground")
+        wv.wantsLayer = true
+        wv.layer?.backgroundColor = NSColor.clear.cgColor
+        wv.allowsMagnification = false
+        wv.allowsBackForwardNavigationGestures = false
 
-        propertyBridge.setWebView(webView)
-    }
-
-    deinit {
-        watchdog.stop()
+        propertyBridge.setWebView(wv)
+        return wv
     }
 
     // MARK: WallpaperRuntime
@@ -104,27 +113,48 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         guard let indexURL = bundle.indexURL else {
             throw WallpaperRuntimeError.contentNotFound
         }
-        webView.loadFileURL(indexURL, allowingReadAccessTo: bundle.baseURL)
+        if webView == nil {
+            let wv = createWebView()
+            containerView.subviews.forEach { $0.removeFromSuperview() }
+            wv.translatesAutoresizingMaskIntoConstraints = false
+            containerView.addSubview(wv)
+            NSLayoutConstraint.activate([
+                wv.topAnchor.constraint(equalTo: containerView.topAnchor),
+                wv.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+                wv.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+                wv.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            ])
+            self.webView = wv
+        }
+        webView?.loadFileURL(indexURL, allowingReadAccessTo: bundle.baseURL)
         watchdog.start()
     }
 
     func pause() {
         isPaused = true
-        // Suspend watchdog while paused — the JS interval also pauses when
-        // the view is hidden.
         watchdog.stop()
-        webView.evaluateJavaScript(
-            "window.aetherDesk && window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(false);",
+        webView?.evaluateJavaScript(
+            """
+            if (window.aetherDesk) {
+                window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(false);
+                window.aetherDesk._suspend && window.aetherDesk._suspend();
+            }
+            """,
             completionHandler: nil
         )
-        webView.isHidden = true
+        webView?.isHidden = true
     }
 
     func resume() {
         isPaused = false
-        webView.isHidden = false
-        webView.evaluateJavaScript(
-            "window.aetherDesk && window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(true);",
+        webView?.isHidden = false
+        webView?.evaluateJavaScript(
+            """
+            if (window.aetherDesk) {
+                window.aetherDesk._resume && window.aetherDesk._resume();
+                window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(true);
+            }
+            """,
             completionHandler: nil
         )
         watchdog.start()
@@ -132,8 +162,13 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     func stop() {
         watchdog.stop()
-        webView.stopLoading()
-        webView.loadHTMLString("", baseURL: nil)
+        propertyBridge.flushNow()
+        webView?.stopLoading()
+        webView?.loadHTMLString("", baseURL: nil)
+        webView?.navigationDelegate = nil
+        webView?.removeFromSuperview()
+        webView = nil
+        propertyBridge.setWebView(nil)
     }
 
     func reload() throws {
@@ -157,6 +192,8 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         (function() {
             if (window.aetherDesk) return;
             var callbacks = { property: null, visibility: null };
+            var suspended = false;
+            var savedTimers = { timeouts: [], intervals: [] };
             window._aetherDeskProperties = window._aetherDeskProperties || {};
             window.aetherDesk = {
                 display: { id: \(displayID), width: 0, height: 0, scaleFactor: 1, isPrimary: false },
@@ -176,8 +213,33 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                     Object.assign(window.aetherDesk.display, env.display || {});
                     Object.assign(window.aetherDesk.system,  env.system  || {});
                 },
-                onVisibility: function(cb) { callbacks.visibility = cb; }
+                onVisibility: function(cb) { callbacks.visibility = cb; },
+                _suspend: function() {
+                    suspended = true;
+                },
+                _resume: function() {
+                    suspended = false;
+                }
             };
+
+            // rAF throttle: enforce fpsCap from the native side.
+            var _origRAF = window.requestAnimationFrame;
+            var _lastFrame = 0;
+            window.requestAnimationFrame = function(cb) {
+                return _origRAF.call(window, function(ts) {
+                    if (suspended) return;
+                    var fpsCap = (window.aetherDesk && window.aetherDesk.system.fpsCap) || 30;
+                    var minInterval = 1000.0 / fpsCap;
+                    if (ts - _lastFrame < minInterval) {
+                        // Schedule for next frame instead of dropping entirely
+                        _origRAF.call(window, function(ts2) { cb(ts2); });
+                        return;
+                    }
+                    _lastFrame = ts;
+                    cb(ts);
+                });
+            };
+
             // Watchdog heartbeat: pure setInterval, no dependency on rAF so a
             // wallpaper that stops drawing (tab throttling, bug) still pings.
             try {
@@ -220,6 +282,8 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         NSLog("AetherDesk: web content process terminated on display %u", displayID)
         watchdog.stop()
+        self.webView = nil
+        propertyBridge.setWebView(nil)
         NotificationCenter.default.post(
             name: Constants.Notifications.runtimeDidFail,
             object: nil,

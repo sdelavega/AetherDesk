@@ -18,9 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Restore per-display wallpaper from persisted state, falling back
         // to the first bundled sample for any display without a prior
         // assignment (so first launch is never blank).
-        let importer = WallpaperImporter()
-        let available = importer.listWallpapers()
-        let fallback = importer.listBundledWallpapers().first
+        let available = WallpaperImporter.shared.listWallpapers()
+        let fallback = WallpaperImporter.shared.listBundledWallpapers().first
         manager.startAndRestore(availableBundles: available, fallback: fallback)
     }
 

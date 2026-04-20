@@ -30,8 +30,11 @@ enum ImportError: Error, LocalizedError {
 /// exposes the read-only bundled (in-app) sample wallpapers.
 final class WallpaperImporter {
 
+    static let shared = WallpaperImporter()
+
     private let validator = WallpaperValidator()
     private let fileManager = FileManager.default
+    private var cachedWallpapers: [WallpaperBundle]?
 
     /// User-writable library in ~/Library/Application Support/AetherDesk/Wallpapers.
     var wallpapersDirectory: URL {
@@ -64,14 +67,23 @@ final class WallpaperImporter {
         }
 
         let bundle = try copyToWallpapersDirectory(from: sourceURL)
+        invalidateCache()
         return (bundle, classification)
     }
 
     // MARK: Listing
 
     /// All available wallpapers: bundled samples + user-imported.
+    /// Results are cached; call `invalidateCache()` after import/delete.
     func listWallpapers() -> [WallpaperBundle] {
-        listBundledWallpapers() + listImportedWallpapers()
+        if let cached = cachedWallpapers { return cached }
+        let all = listBundledWallpapers() + listImportedWallpapers()
+        cachedWallpapers = all
+        return all
+    }
+
+    func invalidateCache() {
+        cachedWallpapers = nil
     }
 
     /// User-imported wallpapers from Application Support.
@@ -108,6 +120,7 @@ final class WallpaperImporter {
             throw ImportError.invalidBundle
         }
         try fileManager.removeItem(at: bundle.baseURL)
+        invalidateCache()
     }
 
     // MARK: Plumbing
