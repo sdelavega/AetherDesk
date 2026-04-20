@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix Rain - AetherDesk Sample</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+        }
+        #fps {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="fps">FPS: --</div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const fpsDisplay = document.getElementById('fps');
+
+        let width, height;
+        let columns = [];
+        let fontSize = 14;
+        let columnCount;
+        let lastTime = performance.now();
+        let frameCount = 0;
+        let fps = 0;
+
+        const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF';
+        const defaultSpeed = 5;
+        const defaultDensity = 0.02;
+
+        let config = {
+            speed: defaultSpeed,
+            density: defaultDensity,
+            color: '#0f0',
+            backgroundColor: 'rgba(0, 0, 0, 0.05)'
+        };
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            columnCount = Math.floor(width / fontSize);
+            columns = [];
+            for (let i = 0; i < columnCount; i++) {
+                columns[i] = Math.random() * height;
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = config.backgroundColor;
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.fillStyle = config.color;
+            ctx.font = fontSize + 'px monospace';
+
+            for (let i = 0; i < columns.length; i++) {
+                const char = chars[Math.floor(Math.random() * chars.length)];
+                const x = i * fontSize;
+                const y = columns[i];
+
+                ctx.fillText(char, x, y);
+
+                if (y > height && Math.random() > config.density) {
+                    columns[i] = 0;
+                }
+
+                columns[i] += fontSize * (config.speed / defaultSpeed);
+            }
+
+            frameCount++;
+            const now = performance.now();
+            if (now - lastTime >= 1000) {
+                fps = frameCount;
+                frameCount = 0;
+                lastTime = now;
+                fpsDisplay.textContent = 'FPS: ' + fps;
+            }
+        }
+
+        function animate() {
+            draw();
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', resize);
+
+        if (window.aetherDesk) {
+            window.aetherDesk.properties.onUpdate((props) => {
+                if (props.speed !== undefined) config.speed = props.speed;
+                if (props.density !== undefined) config.density = props.density;
+                if (props.color !== undefined) config.color = props.color;
+            });
+        }
+
+        resize();
+        animate();
+    </script>
+</body>
+</html>
