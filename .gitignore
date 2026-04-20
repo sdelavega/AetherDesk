@@ -56,3 +56,7 @@ fastlane/test_output
 # Runtime / user data (imported wallpapers live in user Application Support)
 /var/
 /tmp/
+
+# Development-only docs (not shipped)
+OPTIMIZATION.md
+mac-lively-wrapper-expert-prompt.md
