@@ -168,4 +168,4 @@ Build and run (`Cmd+R`). No SPM dependencies, no CocoaPods, no external framewor
 
 ## License
 
-MIT
+MIT License — Copyright (c) 2026 Stephen de la Vega. See [LICENSE](LICENSE) for details.
