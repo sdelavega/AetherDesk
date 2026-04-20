@@ -50,6 +50,10 @@ final class PropertyBridge: NSObject {
             } else {
                 window._aetherDeskProperties = \(json);
             }
+            if (typeof livelyPropertyListener === 'function') {
+                var props = \(json);
+                for (var k in props) { livelyPropertyListener(k, props[k]); }
+            }
         })();
         """
         evaluate(script, on: webView, tag: "injectProperties")
@@ -67,6 +71,9 @@ final class PropertyBridge: NSObject {
             window._aetherDeskProperties[\(keyJSON)] = \(valJSON);
             if (window.aetherDesk && window.aetherDesk._notify) {
                 window.aetherDesk._notify(window._aetherDeskProperties);
+            }
+            if (typeof livelyPropertyListener === 'function') {
+                livelyPropertyListener(\(keyJSON), \(valJSON));
             }
         })();
         """

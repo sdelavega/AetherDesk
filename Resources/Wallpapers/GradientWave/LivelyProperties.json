@@ -1,8 +1,8 @@
 {
     "properties": [
         {
-            "Name": "hueShift",
-            "Description": "Hue rotation speed",
+            "Name": "speed",
+            "Description": "Animation speed",
             "Type": "range",
             "Value": 1,
             "Min": 0.1,

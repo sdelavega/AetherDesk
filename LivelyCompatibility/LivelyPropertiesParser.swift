@@ -41,7 +41,11 @@ enum PropertyType: String {
     case unknown
 
     init(from string: String) {
-        self = PropertyType(rawValue: string.lowercased()) ?? .unknown
+        let normalized = string.lowercased()
+        switch normalized {
+        case "slider": self = .range
+        default: self = PropertyType(rawValue: normalized) ?? .unknown
+        }
     }
 }
 
@@ -64,14 +68,37 @@ class LivelyPropertiesParser {
     }
 
     func parse(from data: Data) -> [LivelyProperty]? {
-        do {
-            let decoder = JSONDecoder()
-            let properties = try decoder.decode(LivelyProperties.self, from: data)
+        // Try array format first: { "properties": [...] }
+        if let properties = try? JSONDecoder().decode(LivelyProperties.self, from: data) {
             return properties.properties
-        } catch {
-            print("AetherDesk: Failed to parse LivelyProperties: \(error)")
+        }
+
+        // Try per-key format: { "propName": { "type": "slider", ... } }
+        return parsePerKeyFormat(from: data)
+    }
+
+    private func parsePerKeyFormat(from data: Data) -> [LivelyProperty]? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
+
+        var propertiesArray: [[String: Any]] = []
+        for (key, value) in json {
+            guard let dict = value as? [String: Any] else { continue }
+            var mapped: [String: Any] = ["Name": key]
+            if let type = dict["type"] as? String { mapped["Type"] = type }
+            if let val = dict["value"] { mapped["Value"] = val }
+            if let min = dict["min"] { mapped["Min"] = min }
+            if let max = dict["max"] { mapped["Max"] = max }
+            if let step = dict["step"] { mapped["Increment"] = step }
+            if let text = dict["text"] as? String { mapped["Description"] = text }
+            propertiesArray.append(mapped)
+        }
+
+        guard !propertiesArray.isEmpty else { return nil }
+        let wrapped: [String: Any] = ["properties": propertiesArray]
+        guard let reencoded = try? JSONSerialization.data(withJSONObject: wrapped) else { return nil }
+        return try? JSONDecoder().decode(LivelyProperties.self, from: reencoded).properties
     }
 }
 

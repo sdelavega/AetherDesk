@@ -5,7 +5,7 @@
     <title>Gradient Wave</title>
     <style>
         * { margin: 0; padding: 0; }
-        body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+        body { background: #0a0a1a; overflow: hidden; width: 100vw; height: 100vh; }
         canvas { display: block; }
     </style>
 </head>
@@ -14,8 +14,17 @@
     <script>
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        let hueShift = 1;
+        let speed = 1;
         let t = 0;
+
+        // Muted, dark color palette — deep blues, teals, purples
+        const blobs = [
+            { x: 0.25, y: 0.35, r: 0.45, vx:  0.012, vy:  0.008, color: [30, 60, 120] },
+            { x: 0.70, y: 0.60, r: 0.50, vx: -0.009, vy:  0.011, color: [50, 30, 100] },
+            { x: 0.50, y: 0.20, r: 0.40, vx:  0.007, vy: -0.010, color: [20, 80, 100] },
+            { x: 0.30, y: 0.75, r: 0.35, vx: -0.011, vy: -0.006, color: [60, 40, 90]  },
+            { x: 0.80, y: 0.30, r: 0.38, vx:  0.006, vy:  0.013, color: [25, 50, 80]  },
+        ];
 
         function resize() {
             canvas.width = window.innerWidth;
@@ -24,19 +33,39 @@
 
         function draw() {
             const w = canvas.width, h = canvas.height;
-            t += hueShift * 0.5;
-            for (let y = 0; y < h; y += 4) {
-                const hue = (t + y * 0.3) % 360;
-                ctx.fillStyle = 'hsl(' + hue + ', 80%, 50%)';
-                ctx.fillRect(0, y, w, 4);
+            t += 0.003 * speed;
+
+            // Dark base
+            ctx.fillStyle = '#0a0a1a';
+            ctx.fillRect(0, 0, w, h);
+
+            // Draw each blob as a radial gradient
+            for (var i = 0; i < blobs.length; i++) {
+                var b = blobs[i];
+                // Gentle orbital drift
+                var cx = (b.x + Math.sin(t * b.vx * 60 + i * 1.8) * 0.15) * w;
+                var cy = (b.y + Math.cos(t * b.vy * 60 + i * 2.3) * 0.15) * h;
+                var radius = b.r * Math.min(w, h);
+
+                var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+                var c = b.color;
+                grad.addColorStop(0, 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ', 0.6)');
+                grad.addColorStop(0.5, 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ', 0.2)');
+                grad.addColorStop(1, 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ', 0)');
+
+                ctx.globalCompositeOperation = 'screen';
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+                ctx.globalCompositeOperation = 'source-over';
             }
+
             requestAnimationFrame(draw);
         }
 
         window.addEventListener('resize', resize);
         if (window.aetherDesk) {
             window.aetherDesk.properties.onUpdate(function(props) {
-                if (props.hueShift !== undefined) hueShift = props.hueShift;
+                if (props.speed !== undefined) speed = props.speed;
             });
         }
         resize();
