@@ -138,6 +138,56 @@ final class WallpaperValidator {
                 warnings.append("Uses \(pattern)")
             }
         }
+
+        // ── GPU / rendering resource checks ──────────────────────────────
+
+        // shadowBlur is the single most expensive Canvas 2D operation.
+        // A few instances are fine; many usually means every-frame glow
+        // effects that hammer the GPU (the old NeonCity pattern).
+        let shadowBlurCount = count(of: "shadowBlur", in: js)
+        if shadowBlurCount > 5 {
+            warnings.append("Heavy GPU shadow usage (\(shadowBlurCount) shadowBlur calls) — may drain battery")
+        }
+
+        // Composite blend modes (screen, overlay, multiply, etc.) are
+        // expensive when layered repeatedly per frame.
+        let compositeCount = count(of: "globalCompositeOperation", in: js)
+        if compositeCount > 5 {
+            warnings.append("Heavy composite blending (\(compositeCount) mode switches)")
+        }
+
+        // WebGL is legitimate but GPU-intensive; flag so the user knows.
+        if js.contains("getContext('webgl")
+            || js.contains("getContext(\"webgl")
+            || js.contains("getContext(`webgl") {
+            warnings.append("Uses WebGL (GPU-intensive)")
+        }
+
+        // Very large script payloads are a code-smell for bloated or
+        // bundled applications rather than lightweight wallpapers.
+        if js.count > 500_000 {
+            warnings.append("Large script payload (\(js.count / 1024) KB)")
+        }
+
+        // ── Hard rejects: patterns that have no place in a wallpaper ─────
+
+        let miners = ["coinhive", "CoinHive", "cryptonight", "CryptoMiner",
+                       "minero", "hashrate", "stratum+tcp"]
+        for pattern in miners {
+            if js.contains(pattern) {
+                issues.append("Contains crypto mining code (\(pattern))")
+            }
+        }
+
+        if js.contains("navigator.serviceWorker") {
+            issues.append("Registers a ServiceWorker (not appropriate for wallpapers)")
+        }
+        if js.contains("SharedWorker") {
+            issues.append("Uses SharedWorker (not appropriate for wallpapers)")
+        }
+        if js.contains("window.open(") || js.contains("window.open (") {
+            issues.append("Attempts to open browser windows")
+        }
     }
 
     private func bundleSize(at url: URL) -> Int64 {
