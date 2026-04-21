@@ -160,6 +160,16 @@ final class WallpaperManager {
         }
     }
 
+    func updateProperty(_ key: String, value: Any, forBundleID bundleID: UUID) {
+        for (displayID, bundle) in currentBundles where bundle.id == bundleID {
+            runtimes[displayID]?.updateProperty(key, value: value)
+        }
+
+        var overrides = propertyStore.load(for: bundleID)
+        overrides[key] = value
+        propertyStore.save(overrides, for: bundleID)
+    }
+
     /// Flip safe mode on/off. In safe mode all runtimes are paused and the
     /// hosts are filled with a static, inert fallback so a misbehaving
     /// wallpaper can't continue to churn CPU.

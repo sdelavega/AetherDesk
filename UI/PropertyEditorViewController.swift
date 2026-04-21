@@ -3,8 +3,9 @@ import Foundation
 import ObjectiveC.runtime
 
 /// Renders a native AppKit editor for the current wallpaper's
-/// `LivelyProperties.json`. Changes fire a notification on the
-/// shared NotificationCenter with `{ "key": String, "value": Any }`.
+/// `LivelyProperties.json`. Changes fire a notification on the shared
+/// NotificationCenter with the selected bundle ID as `object` and
+/// `{ "key": String, "value": Any }` in `userInfo`.
 ///
 /// Observers (PreferencesWindowController) forward the event to
 /// WallpaperManager.updateProperty(_:value:for:).

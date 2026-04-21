@@ -312,15 +312,14 @@ private final class PreferencesViewController: NSViewController {
 
     @objc private func handlePropertyChanged(_ note: Notification) {
         guard let key = note.userInfo?["key"] as? String,
-              let value = note.userInfo?["value"] else { return }
+              let value = note.userInfo?["value"],
+              let bundleID = note.object as? UUID else { return }
 
         // Route to the global WallpaperManager via the shared AppDelegate.
         guard let delegate = NSApp.delegate as? AppDelegate,
               let manager = delegate.wallpaperManager else { return }
 
-        for screen in NSScreen.screens {
-            manager.updateProperty(key, value: value, for: screen.displayID)
-        }
+        manager.updateProperty(key, value: value, forBundleID: bundleID)
     }
 
     // MARK: Actions
