@@ -38,6 +38,10 @@ final class WallpaperBundle {
         self.name = livelyInfo?.Title ?? url.lastPathComponent
 
         // Resolve resource URLs without touching `self.*` properties before init ends.
+        // Lively bundles often declare the real entry file in FileName instead
+        // of using ÆtherDesk's conventional index.html / first-media fallback.
+        let declaredResource = WallpaperBundle.declaredResourceURL(from: livelyInfo?.FileName,
+                                                                   in: url)
         let hasIndex = FileManager.default.fileExists(
             atPath: url.appendingPathComponent(Constants.Keys.indexFile).path)
         let foundVideo = WallpaperBundle.firstFile(in: url,
@@ -46,11 +50,14 @@ final class WallpaperBundle {
                                                    withExtensions: WallpaperBundle.imageExtensions,
                                                    excludingNameContaining: "preview")
 
-        if hasIndex {
+        if let declaredResource,
+           WallpaperBundle.webExtensions.contains(declaredResource.pathExtension.lowercased()) {
             self.type = .web
-        } else if foundVideo != nil {
+        } else if let declaredResource,
+                  WallpaperBundle.videoExtensions.contains(declaredResource.pathExtension.lowercased()) {
             self.type = .video
-        } else if foundImage != nil {
+        } else if let declaredResource,
+                  WallpaperBundle.imageExtensions.contains(declaredResource.pathExtension.lowercased()) {
             self.type = .image
         } else if let typeString = livelyInfo?.type?.lowercased() {
             switch typeString {
@@ -59,6 +66,12 @@ final class WallpaperBundle {
             case "web", "html", "webpage":  self.type = .web
             default:                        self.type = .unknown
             }
+        } else if hasIndex {
+            self.type = .web
+        } else if foundVideo != nil {
+            self.type = .video
+        } else if foundImage != nil {
+            self.type = .image
         } else {
             self.type = .unknown
         }
@@ -67,18 +80,31 @@ final class WallpaperBundle {
     // MARK: Resource URLs
 
     var indexURL: URL? {
+        if let declared = Self.declaredResourceURL(from: livelyInfo?.FileName, in: baseURL),
+           Self.webExtensions.contains(declared.pathExtension.lowercased()) {
+            return declared
+        }
         let url = baseURL.appendingPathComponent(Constants.Keys.indexFile)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     var videoURL: URL? {
-        WallpaperBundle.firstFile(in: baseURL, withExtensions: WallpaperBundle.videoExtensions)
+        if let declared = Self.declaredResourceURL(from: livelyInfo?.FileName, in: baseURL),
+           Self.videoExtensions.contains(declared.pathExtension.lowercased()) {
+            return declared
+        }
+        return WallpaperBundle.firstFile(in: baseURL, withExtensions: WallpaperBundle.videoExtensions)
     }
 
     var imageURL: URL? {
-        WallpaperBundle.firstFile(in: baseURL,
-                                  withExtensions: WallpaperBundle.imageExtensions,
-                                  excludingNameContaining: "preview")
+        if let declared = Self.declaredResourceURL(from: livelyInfo?.FileName, in: baseURL),
+           Self.imageExtensions.contains(declared.pathExtension.lowercased()),
+           !declared.lastPathComponent.localizedCaseInsensitiveContains("preview") {
+            return declared
+        }
+        return WallpaperBundle.firstFile(in: baseURL,
+                                         withExtensions: WallpaperBundle.imageExtensions,
+                                         excludingNameContaining: "preview")
     }
 
     var previewImageURL: URL? {
@@ -95,8 +121,39 @@ final class WallpaperBundle {
 
     // MARK: Helpers
 
+    private static let webExtensions = ["html", "htm"]
     private static let videoExtensions = ["mp4", "mov", "m4v", "webm"]
     private static let imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "heic"]
+
+    private static func declaredResourceURL(from fileName: String?, in dir: URL) -> URL? {
+        guard var fileName = fileName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !fileName.isEmpty else {
+            return nil
+        }
+
+        fileName = fileName.replacingOccurrences(of: "\\", with: "/")
+        guard !fileName.hasPrefix("/"),
+              !fileName.contains(":") else {
+            return nil
+        }
+
+        let pathComponents = fileName.split(separator: "/").map(String.init)
+        guard !pathComponents.isEmpty,
+              !pathComponents.contains("..") else {
+            return nil
+        }
+
+        let base = dir.standardizedFileURL
+        let candidate = pathComponents.reduce(base) { partial, component in
+            partial.appendingPathComponent(component)
+        }.standardizedFileURL
+
+        guard candidate.path.hasPrefix(base.path + "/"),
+              FileManager.default.fileExists(atPath: candidate.path) else {
+            return nil
+        }
+        return candidate
+    }
 
     private static func firstFile(in dir: URL,
                                   withExtensions exts: [String],

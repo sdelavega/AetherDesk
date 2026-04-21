@@ -65,10 +65,11 @@
 		D33BDCDB00293911DB11350A /* WallpaperPickerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperPickerViewController.swift; sourceTree = "<group>"; };
 		DF3B864FB40C46E23FEEEC9E /* WallpaperStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperStore.swift; sourceTree = "<group>"; };
 		E04A987A0321686D87E070C7 /* ContentRuleListManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentRuleListManager.swift; sourceTree = "<group>"; };
-		E42CA635A05EC8721B5D20FA /* AetherDesk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AetherDesk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E42CA635A05EC8721B5D20FA /* AetherDesk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = AetherDesk.app; path = "ÆtherDesk.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA23BE36E934681DA0AD0A1B /* LivelyPropertiesParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivelyPropertiesParser.swift; sourceTree = "<group>"; };
 		F56E4E2EB0CF0D8FFC0953DE /* WallpaperHostWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperHostWindow.swift; sourceTree = "<group>"; };
 		F82F9DD359864D9A05F723A5 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		FC3FEB5B2F97B83000FAF698 /* TODO.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TODO.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -84,6 +85,7 @@
 				2E501AD340FBE994A2F819A6 /* UI */,
 				EAD7A64043732368B777D160 /* WallpaperTypes */,
 				CDA03E8A8C251F03B8B0BFFB /* Products */,
+				FC3FEB5B2F97B83000FAF698 /* TODO.md */,
 			);
 			sourceTree = "<group>";
 		};
