@@ -13,6 +13,8 @@ enum WallpaperClassification {
 enum ImportError: Error, LocalizedError {
     case rejected(reason: String)
     case invalidBundle
+    case unsupportedImportType
+    case archiveExtractionFailed(underlying: Error)
     case copyFailed(underlying: Error)
     case directoryCreationFailed(underlying: Error)
 
@@ -20,6 +22,8 @@ enum ImportError: Error, LocalizedError {
         switch self {
         case .rejected(let r):            return "Wallpaper rejected: \(r)"
         case .invalidBundle:              return "Invalid wallpaper bundle"
+        case .unsupportedImportType:       return "Select a wallpaper folder, .zip, or .lively package"
+        case .archiveExtractionFailed(let e): return "Archive extraction failed: \(e.localizedDescription)"
         case .copyFailed(let e):          return "Copy failed: \(e.localizedDescription)"
         case .directoryCreationFailed(let e): return "Could not create wallpaper directory: \(e.localizedDescription)"
         }
@@ -61,13 +65,20 @@ final class WallpaperImporter {
     func importWallpaper(from sourceURL: URL) throws
         -> (bundle: WallpaperBundle, classification: WallpaperClassification)
     {
-        let classification = validator.validate(at: sourceURL)
+        let prepared = try prepareImportSource(sourceURL)
+        defer {
+            if let tempDirectory = prepared.tempDirectory {
+                try? fileManager.removeItem(at: tempDirectory)
+            }
+        }
+
+        let classification = validator.validate(at: prepared.bundleURL)
 
         if case .rejected(let reason) = classification {
             throw ImportError.rejected(reason: reason)
         }
 
-        let bundle = try copyToWallpapersDirectory(from: sourceURL)
+        let bundle = try copyToWallpapersDirectory(from: prepared.bundleURL)
         runtimePolicyStore.save(WallpaperRuntimePolicy(classification: classification),
                                 for: bundle.id)
         invalidateCache()
@@ -128,6 +139,81 @@ final class WallpaperImporter {
     }
 
     // MARK: Plumbing
+
+    private func prepareImportSource(_ sourceURL: URL) throws -> (bundleURL: URL, tempDirectory: URL?) {
+        var isDirectory: ObjCBool = false
+        if fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory),
+           isDirectory.boolValue {
+            return (sourceURL, nil)
+        }
+
+        guard ["zip", "lively"].contains(sourceURL.pathExtension.lowercased()) else {
+            throw ImportError.unsupportedImportType
+        }
+
+        let tempDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("AetherDeskImport-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+
+        do {
+            try extractArchive(sourceURL, to: tempDirectory)
+            let bundleURL = try resolvedBundleRoot(in: tempDirectory)
+            return (bundleURL, tempDirectory)
+        } catch {
+            try? fileManager.removeItem(at: tempDirectory)
+            if let importError = error as? ImportError {
+                throw importError
+            }
+            throw ImportError.archiveExtractionFailed(underlying: error)
+        }
+    }
+
+    private func extractArchive(_ archiveURL: URL, to destinationURL: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-x", "-k", archiveURL.path, destinationURL.path]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw ImportError.archiveExtractionFailed(underlying: error)
+        }
+
+        guard process.terminationStatus == 0 else {
+            throw ImportError.archiveExtractionFailed(
+                underlying: NSError(domain: "ÆtherDesk.Import",
+                                    code: Int(process.terminationStatus),
+                                    userInfo: [NSLocalizedDescriptionKey: "ditto exited with status \(process.terminationStatus)"])
+            )
+        }
+    }
+
+    private func resolvedBundleRoot(in extractedDirectory: URL) throws -> URL {
+        if WallpaperBundle(from: extractedDirectory) != nil {
+            return extractedDirectory
+        }
+
+        let contents = try fileManager.contentsOfDirectory(
+            at: extractedDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        let directories = contents.filter { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+
+        if directories.count == 1, WallpaperBundle(from: directories[0]) != nil {
+            return directories[0]
+        }
+
+        if let bundleDirectory = directories.first(where: { WallpaperBundle(from: $0) != nil }) {
+            return bundleDirectory
+        }
+
+        throw ImportError.invalidBundle
+    }
 
     private func copyToWallpapersDirectory(from sourceURL: URL) throws -> WallpaperBundle {
         try createWallpapersDirectoryIfNeeded()

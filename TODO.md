@@ -13,7 +13,7 @@ Prioritized follow-ups from project review.
 
 - [x] Strengthen monitor identity persistence beyond raw `CGDirectDisplayID`, using display metadata where available and falling back gracefully.
 - [x] Add runtime network policy for web wallpapers: block external navigation by default and enforce any configured allowlist or request budget.
-- Support `.zip` and `.lively` package imports by extracting to a temporary directory, validating, then copying into Application Support.
+- [x] Support `.zip` and `.lively` package imports by extracting to a temporary directory, validating, then copying into Application Support.
 
 ## Testing
 

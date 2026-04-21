@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 import UserNotifications
 
 /// Menu-bar-only UI for ÆtherDesk. The app has no Dock presence (LSUIElement
@@ -234,10 +235,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func importWallpaper() {
         let panel = NSOpenPanel()
-        panel.canChooseFiles = false
+        panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.message = "Select a Lively wallpaper folder to import"
+        panel.allowedContentTypes = [
+            UTType(filenameExtension: "zip"),
+            UTType(filenameExtension: "lively")
+        ].compactMap { $0 }
+        panel.message = "Select a Lively wallpaper folder, .zip, or .lively package to import"
         panel.prompt = "Import"
 
         panel.begin { [weak self] response in
