@@ -5,7 +5,7 @@ Prioritized follow-ups from project review.
 ## High Impact
 
 - [x] Honor `LivelyInfo.FileName` when resolving wallpaper entry resources for web, video, and image bundles. Many Lively wallpapers do not use `index.html` or rely on a specific media file.
-- Make import classifications enforceable. `allowedWithLimits(fps:networkBudget:warnings:)` is currently surfaced to users, but runtime enforcement is incomplete.
+- [x] Make import classifications enforceable. `allowedWithLimits(fps:networkBudget:warnings:)` is currently surfaced to users, but runtime enforcement is incomplete.
 - Fix property editor routing so edits apply only to displays running the selected wallpaper, or expose an explicit target display/all-displays choice.
 - Wire Performance preferences into persisted settings and runtime behavior instead of showing static controls.
 

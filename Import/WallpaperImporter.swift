@@ -33,6 +33,7 @@ final class WallpaperImporter {
     static let shared = WallpaperImporter()
 
     private let validator = WallpaperValidator()
+    private let runtimePolicyStore = RuntimePolicyStore.shared
     private let fileManager = FileManager.default
     private var cachedWallpapers: [WallpaperBundle]?
 
@@ -67,6 +68,8 @@ final class WallpaperImporter {
         }
 
         let bundle = try copyToWallpapersDirectory(from: sourceURL)
+        runtimePolicyStore.save(WallpaperRuntimePolicy(classification: classification),
+                                for: bundle.id)
         invalidateCache()
         return (bundle, classification)
     }
@@ -120,6 +123,7 @@ final class WallpaperImporter {
             throw ImportError.invalidBundle
         }
         try fileManager.removeItem(at: bundle.baseURL)
+        runtimePolicyStore.delete(for: bundle.id)
         invalidateCache()
     }
 

@@ -27,6 +27,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private(set) var isPaused: Bool = false
 
     private let bundle: WallpaperBundle
+    private let policy: WallpaperRuntimePolicy
     private var webView: WKWebView?
     private let propertyBridge: PropertyBridge
     private let messageHandler: ScriptMessageHandler
@@ -41,13 +42,17 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private var lastTerminationUptime: TimeInterval = 0
     private var rapidTerminationCount: Int = 0
 
+    private var networkWindowStart = Date()
+    private var networkRequestsInWindow = 0
+
     var contentView: NSView { containerView }
 
     init(bundle: WallpaperBundle, displayID: CGDirectDisplayID) {
         self.bundle = bundle
         self.displayID = displayID
+        self.policy = RuntimePolicyStore.shared.load(for: bundle.id)
 
-        let bridge = PropertyBridge(displayID: displayID)
+        let bridge = PropertyBridge(displayID: displayID, fpsCap: policy.fpsCap)
         self.propertyBridge = bridge
 
         let handler = ScriptMessageHandler(bridge: bridge)
@@ -72,6 +77,10 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         containerView.autoresizingMask = [.width, .height]
 
         handler.onHeartbeat = { [weak self] in self?.watchdog.heartbeat() }
+        handler.onNetworkBudgetExceeded = { [displayID] in
+            NSLog("ÆtherDesk: web wallpaper on display %u exceeded its JS network budget",
+                  displayID)
+        }
     }
 
     deinit {
@@ -101,7 +110,9 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         let bootstrap = WKUserScript(
             source: Self.bridgeBootstrapScript(
                 displayID: displayID,
-                heartbeatInterval: Constants.Defaults.watchdogHeartbeatInterval),
+                heartbeatInterval: Constants.Defaults.watchdogHeartbeatInterval,
+                fpsCap: policy.fpsCap,
+                networkBudgetPerMinute: policy.networkBudgetPerMinute),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         )
@@ -125,6 +136,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         guard let indexURL = bundle.indexURL else {
             throw WallpaperRuntimeError.contentNotFound
         }
+        resetNetworkWindow()
         if webView == nil {
             let wv = createWebView()
             containerView.subviews.forEach { $0.removeFromSuperview() }
@@ -195,21 +207,28 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     // MARK: Bridge bootstrap
 
     private static func bridgeBootstrapScript(displayID: CGDirectDisplayID,
-                                              heartbeatInterval: TimeInterval) -> String {
+                                              heartbeatInterval: TimeInterval,
+                                              fpsCap: Int,
+                                              networkBudgetPerMinute: Int?) -> String {
         // Note: display geometry & scale are injected lazily via
         // `window.aetherDesk._setEnvironment` from Swift so we don't race
         // `NSScreen.screens` at WKUserScript compile time.
         let intervalMs = Int(heartbeatInterval * 1000)
+        let clampedFPS = min(Constants.Defaults.maxFPS,
+                             max(Constants.Defaults.minFPS, fpsCap))
+        let networkBudget = networkBudgetPerMinute ?? -1
         return """
         (function() {
             if (window.aetherDesk) return;
             var callbacks = { property: null, visibility: null };
             var suspended = false;
-            var savedTimers = { timeouts: [], intervals: [] };
+            var networkBudgetPerMinute = \(networkBudget);
+            var networkWindowStart = Date.now();
+            var networkRequestsInWindow = 0;
             window._aetherDeskProperties = window._aetherDeskProperties || {};
             window.aetherDesk = {
                 display: { id: \(displayID), width: 0, height: 0, scaleFactor: 1, isPrimary: false },
-                system:  { isLowPowerMode: false, isOnline: navigator.onLine, fpsCap: 30, qualityMode: 'balanced' },
+                system:  { isLowPowerMode: false, isOnline: navigator.onLine, fpsCap: \(clampedFPS), qualityMode: 'balanced' },
                 properties: {
                     get: function() { return window._aetherDeskProperties || {}; },
                     onUpdate: function(cb) { callbacks.property = cb; }
@@ -231,8 +250,54 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                 },
                 _resume: function() {
                     suspended = false;
+                },
+                _consumeNetworkBudget: function() {
+                    if (networkBudgetPerMinute < 0) return true;
+                    var now = Date.now();
+                    if (now - networkWindowStart >= 60000) {
+                        networkWindowStart = now;
+                        networkRequestsInWindow = 0;
+                    }
+                    if (networkRequestsInWindow >= networkBudgetPerMinute) return false;
+                    networkRequestsInWindow += 1;
+                    return true;
                 }
             };
+
+            function networkBlockedError() {
+                try {
+                    window.webkit && window.webkit.messageHandlers &&
+                    window.webkit.messageHandlers.aetherDesk &&
+                    window.webkit.messageHandlers.aetherDesk.postMessage(
+                        { action: 'networkBudgetExceeded' });
+                } catch (e) {}
+                return new Error('ÆtherDesk network budget exceeded');
+            }
+
+            if (typeof window.fetch === 'function') {
+                var _origFetch = window.fetch.bind(window);
+                window.fetch = function() {
+                    if (!window.aetherDesk._consumeNetworkBudget()) {
+                        return Promise.reject(networkBlockedError());
+                    }
+                    return _origFetch.apply(window, arguments);
+                };
+            }
+
+            if (typeof window.XMLHttpRequest === 'function') {
+                var _OrigXHR = window.XMLHttpRequest;
+                window.XMLHttpRequest = function() {
+                    var xhr = new _OrigXHR();
+                    var _open = xhr.open;
+                    xhr.open = function() {
+                        if (!window.aetherDesk._consumeNetworkBudget()) {
+                            throw networkBlockedError();
+                        }
+                        return _open.apply(xhr, arguments);
+                    };
+                    return xhr;
+                };
+            }
 
             // rAF throttle: enforce fpsCap from the native side.
             // Uses setTimeout to sleep between frames so the JS thread
@@ -277,6 +342,22 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 // MARK: - Navigation delegate
 
 extension WebWallpaperRuntime: WKNavigationDelegate {
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+
+        if shouldAllowNavigation(to: url) {
+            decisionHandler(.allow)
+        } else {
+            NSLog("ÆtherDesk: blocked web wallpaper navigation to %@", url.absoluteString)
+            decisionHandler(.cancel)
+        }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // Push initial environment info.
         propertyBridge.injectEnvironment()
@@ -338,6 +419,38 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
             }
         }
     }
+
+    private func shouldAllowNavigation(to url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return true }
+        switch scheme {
+        case "file", "data", "about", "blob":
+            return true
+        case "http", "https":
+            return consumeNetworkBudget()
+        default:
+            return false
+        }
+    }
+
+    private func resetNetworkWindow() {
+        networkWindowStart = Date()
+        networkRequestsInWindow = 0
+    }
+
+    private func consumeNetworkBudget() -> Bool {
+        guard let budget = policy.networkBudgetPerMinute else { return true }
+        guard budget > 0 else { return false }
+
+        let now = Date()
+        if now.timeIntervalSince(networkWindowStart) >= 60 {
+            networkWindowStart = now
+            networkRequestsInWindow = 0
+        }
+
+        guard networkRequestsInWindow < budget else { return false }
+        networkRequestsInWindow += 1
+        return true
+    }
 }
 
 // MARK: - JS -> native message handler
@@ -347,6 +460,7 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
 
     /// Fired on every `{action:"heartbeat"}` message from the page.
     var onHeartbeat: (() -> Void)?
+    var onNetworkBudgetExceeded: (() -> Void)?
 
     init(bridge: PropertyBridge?) {
         self.bridge = bridge
@@ -361,6 +475,10 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
 
         if action == "heartbeat" {
             onHeartbeat?()
+            return
+        }
+        if action == "networkBudgetExceeded" {
+            onNetworkBudgetExceeded?()
             return
         }
         bridge?.handleJSMessages(action: action, data: body)

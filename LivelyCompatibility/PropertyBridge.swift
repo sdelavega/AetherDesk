@@ -16,6 +16,7 @@ import WebKit
 final class PropertyBridge: NSObject {
 
     private let displayID: CGDirectDisplayID
+    private let fpsCap: Int
     private var properties: [String: Any] = [:]
     private weak var webView: WKWebView?
 
@@ -24,8 +25,11 @@ final class PropertyBridge: NSObject {
     private var flushWorkItem: DispatchWorkItem?
     private static let debounceInterval: TimeInterval = 0.05
 
-    init(displayID: CGDirectDisplayID) {
+    init(displayID: CGDirectDisplayID,
+         fpsCap: Int = Constants.Defaults.fpsCap) {
         self.displayID = displayID
+        self.fpsCap = min(Constants.Defaults.maxFPS,
+                          max(Constants.Defaults.minFPS, fpsCap))
         super.init()
     }
 
@@ -139,7 +143,7 @@ final class PropertyBridge: NSObject {
         let systemDict: [String: Any] = [
             "isLowPowerMode": isLowPower,
             "isOnline":       true,
-            "fpsCap":         Constants.Defaults.fpsCap,
+            "fpsCap":         fpsCap,
             "qualityMode":    "balanced"
         ]
         let env: [String: Any] = ["display": displayDict, "system": systemDict]

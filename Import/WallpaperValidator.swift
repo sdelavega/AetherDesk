@@ -59,7 +59,8 @@ final class WallpaperValidator {
             issues.append("Bundle size \(totalSize / 1024 / 1024) MB exceeds \(maxBundleBytes / 1024 / 1024) MB limit")
         }
 
-        let indexURL = url.appendingPathComponent(Constants.Keys.indexFile)
+        let indexURL = WallpaperBundle(from: url)?.indexURL
+            ?? url.appendingPathComponent(Constants.Keys.indexFile)
         let js = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? ""
 
         if !js.isEmpty {
