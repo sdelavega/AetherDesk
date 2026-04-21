@@ -106,6 +106,10 @@ private final class PreferencesViewController: NSViewController {
         checkboxWithTitle: "Pause when on battery power",
         target: nil,
         action: nil)
+    private let blockExternalNetworkCheckbox = NSButton(
+        checkboxWithTitle: "Block external network requests",
+        target: nil,
+        action: nil)
 
     private func buildGeneralTab() -> NSView {
         let container = NSView()
@@ -200,6 +204,11 @@ private final class PreferencesViewController: NSViewController {
         pauseOnBatteryCheckbox.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(pauseOnBatteryCheckbox)
 
+        blockExternalNetworkCheckbox.target = self
+        blockExternalNetworkCheckbox.action = #selector(performanceSettingsChanged(_:))
+        blockExternalNetworkCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(blockExternalNetworkCheckbox)
+
         loadPerformanceSettingsIntoControls()
 
         NSLayoutConstraint.activate([
@@ -216,7 +225,10 @@ private final class PreferencesViewController: NSViewController {
             pauseOnOcclusionCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
             pauseOnBatteryCheckbox.topAnchor.constraint(equalTo: pauseOnOcclusionCheckbox.bottomAnchor, constant: 10),
-            pauseOnBatteryCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20)
+            pauseOnBatteryCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+
+            blockExternalNetworkCheckbox.topAnchor.constraint(equalTo: pauseOnBatteryCheckbox.bottomAnchor, constant: 10),
+            blockExternalNetworkCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20)
         ])
         return container
     }
@@ -227,6 +239,7 @@ private final class PreferencesViewController: NSViewController {
         lowPowerCheckbox.state = settings.respectLowPowerMode ? .on : .off
         pauseOnOcclusionCheckbox.state = settings.pauseWhenNotVisible ? .on : .off
         pauseOnBatteryCheckbox.state = settings.pauseOnBatteryPower ? .on : .off
+        blockExternalNetworkCheckbox.state = settings.blockExternalNetwork ? .on : .off
     }
 
     @objc private func performanceSettingsChanged(_ sender: Any) {
@@ -235,7 +248,8 @@ private final class PreferencesViewController: NSViewController {
             fpsCap: selectedFPS,
             respectLowPowerMode: lowPowerCheckbox.state == .on,
             pauseWhenNotVisible: pauseOnOcclusionCheckbox.state == .on,
-            pauseOnBatteryPower: pauseOnBatteryCheckbox.state == .on
+            pauseOnBatteryPower: pauseOnBatteryCheckbox.state == .on,
+            blockExternalNetwork: blockExternalNetworkCheckbox.state == .on
         )
         AppSettingsStore.shared.savePerformanceSettings(settings)
     }

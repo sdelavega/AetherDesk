@@ -378,7 +378,8 @@ final class WallpaperManager {
             performanceSettings = AppSettingsStore.shared.loadPerformanceSettings()
         }
 
-        if performanceSettings.clampedFPSCap != oldSettings.clampedFPSCap {
+        if performanceSettings.clampedFPSCap != oldSettings.clampedFPSCap ||
+            performanceSettings.blockExternalNetwork != oldSettings.blockExternalNetwork {
             reloadAll()
         }
         applyPowerPerformancePolicy()

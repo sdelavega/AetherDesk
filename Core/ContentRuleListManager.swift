@@ -17,10 +17,12 @@ final class ContentRuleListManager {
     static let shared = ContentRuleListManager()
 
     /// Available after `prepare(completion:)` fires. Nil only when compilation
-    /// failed — non-fatal; WebViews load without content filtering.
+    /// failed — non-fatal; WebViews load without this content filtering.
     private(set) var ruleList: WKContentRuleList?
+    private(set) var externalNetworkBlockRuleList: WKContentRuleList?
 
-    private static let storeIdentifier = "com.aetherdesk.WallpaperBlocklist.v1"
+    private static let blocklistStoreIdentifier = "com.aetherdesk.WallpaperBlocklist.v1"
+    private static let externalNetworkStoreIdentifier = "com.aetherdesk.ExternalNetworkBlock.v1"
 
     // MARK: - Blocklist
 
@@ -57,6 +59,15 @@ final class ContentRuleListManager {
     ]
     """#
 
+    private static let externalNetworkBlockJSON = #"""
+    [
+      {
+        "trigger": { "url-filter": "^https?://.*" },
+        "action": { "type": "block" }
+      }
+    ]
+    """#
+
     // MARK: - Lifecycle
 
     private init() {}
@@ -70,29 +81,47 @@ final class ContentRuleListManager {
             completion()
             return
         }
-        store.lookUpContentRuleList(forIdentifier: Self.storeIdentifier) { [weak self] list, _ in
+        compileOrLoadRuleList(store: store,
+                              identifier: Self.blocklistStoreIdentifier,
+                              encodedRuleList: Self.blocklistJSON,
+                              label: "content blocklist") { [weak self] list in
+            self?.ruleList = list
+            self?.compileOrLoadRuleList(store: store,
+                                        identifier: Self.externalNetworkStoreIdentifier,
+                                        encodedRuleList: Self.externalNetworkBlockJSON,
+                                        label: "external network blocklist") { [weak self] list in
+                self?.externalNetworkBlockRuleList = list
+                DispatchQueue.main.async { completion() }
+            }
+        }
+    }
+
+    private func compileOrLoadRuleList(store: WKContentRuleListStore,
+                                       identifier: String,
+                                       encodedRuleList: String,
+                                       label: String,
+                                       completion: @escaping (WKContentRuleList?) -> Void) {
+        store.lookUpContentRuleList(forIdentifier: identifier) { list, _ in
             if let list {
                 // Cache hit — ready immediately.
-                self?.ruleList = list
-                NSLog("ÆtherDesk: content rule list loaded from cache")
-                DispatchQueue.main.async { completion() }
+                NSLog("ÆtherDesk: %@ loaded from cache", label)
+                completion(list)
                 return
             }
             // Not cached — compile. WKContentRuleListStore persists the
             // compiled result to disk automatically.
-            NSLog("ÆtherDesk: compiling content rule list…")
+            NSLog("ÆtherDesk: compiling %@…", label)
             store.compileContentRuleList(
-                forIdentifier: Self.storeIdentifier,
-                encodedContentRuleList: Self.blocklistJSON
-            ) { [weak self] compiled, error in
+                forIdentifier: identifier,
+                encodedContentRuleList: encodedRuleList
+            ) { compiled, error in
                 if let error {
-                    NSLog("ÆtherDesk: content rule list compilation failed: %@",
-                          error.localizedDescription)
+                    NSLog("ÆtherDesk: %@ compilation failed: %@",
+                          label, error.localizedDescription)
                 } else {
-                    self?.ruleList = compiled
-                    NSLog("ÆtherDesk: content rule list compiled and cached")
+                    NSLog("ÆtherDesk: %@ compiled and cached", label)
                 }
-                DispatchQueue.main.async { completion() }
+                completion(compiled)
             }
         }
     }

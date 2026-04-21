@@ -28,6 +28,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     private let bundle: WallpaperBundle
     private let policy: WallpaperRuntimePolicy
+    private let settings: PerformanceSettings
     private let fpsCap: Int
     private var webView: WKWebView?
     private let propertyBridge: PropertyBridge
@@ -52,9 +53,9 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         self.bundle = bundle
         self.displayID = displayID
         self.policy = RuntimePolicyStore.shared.load(for: bundle.id)
-        self.fpsCap = policy.effectiveFPSCap(
-            with: AppSettingsStore.shared.loadPerformanceSettings()
-        )
+        let settings = AppSettingsStore.shared.loadPerformanceSettings()
+        self.settings = settings
+        self.fpsCap = policy.effectiveFPSCap(with: settings)
 
         let bridge = PropertyBridge(displayID: displayID, fpsCap: fpsCap)
         self.propertyBridge = bridge
@@ -101,6 +102,10 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         // The rule list is guaranteed compiled before the first WebView is
         // created (AppDelegate waits for ContentRuleListManager.prepare).
         if let ruleList = ContentRuleListManager.shared.ruleList {
+            userContent.add(ruleList)
+        }
+        if settings.blockExternalNetwork,
+           let ruleList = ContentRuleListManager.shared.externalNetworkBlockRuleList {
             userContent.add(ruleList)
         }
 

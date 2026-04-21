@@ -5,12 +5,14 @@ struct PerformanceSettings: Codable, Equatable {
     var respectLowPowerMode: Bool
     var pauseWhenNotVisible: Bool
     var pauseOnBatteryPower: Bool
+    var blockExternalNetwork: Bool
 
     static let defaults = PerformanceSettings(
         fpsCap: Constants.Defaults.fpsCap,
         respectLowPowerMode: true,
         pauseWhenNotVisible: true,
-        pauseOnBatteryPower: false
+        pauseOnBatteryPower: false,
+        blockExternalNetwork: true
     )
 
     var clampedFPSCap: Int {
@@ -44,7 +46,8 @@ final class AppSettingsStore {
             fpsCap: settings.clampedFPSCap,
             respectLowPowerMode: settings.respectLowPowerMode,
             pauseWhenNotVisible: settings.pauseWhenNotVisible,
-            pauseOnBatteryPower: settings.pauseOnBatteryPower
+            pauseOnBatteryPower: settings.pauseOnBatteryPower,
+            blockExternalNetwork: settings.blockExternalNetwork
         )
         cache = normalized
         return normalized
@@ -55,7 +58,8 @@ final class AppSettingsStore {
             fpsCap: settings.clampedFPSCap,
             respectLowPowerMode: settings.respectLowPowerMode,
             pauseWhenNotVisible: settings.pauseWhenNotVisible,
-            pauseOnBatteryPower: settings.pauseOnBatteryPower
+            pauseOnBatteryPower: settings.pauseOnBatteryPower,
+            blockExternalNetwork: settings.blockExternalNetwork
         )
         cache = normalized
         guard let data = try? JSONEncoder().encode(normalized) else { return }
