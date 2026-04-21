@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let available = WallpaperImporter.shared.listWallpapers()
             let fallback = WallpaperImporter.shared.listBundledWallpapers().first
             manager.startAndRestore(availableBundles: available, fallback: fallback)
+            UpdateManager.shared.startPeriodicChecks()
         }
     }
 

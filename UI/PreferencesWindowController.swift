@@ -94,6 +94,10 @@ private final class PreferencesViewController: NSViewController {
     private let launchAtLoginCheckbox = NSButton(
         checkboxWithTitle: "Launch at login", target: nil, action: nil)
     private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
+    private let autoCheckUpdatesCheckbox = NSButton(
+        checkboxWithTitle: "Automatically check for updates", target: nil, action: nil)
+    private let autoInstallUpdatesCheckbox = NSButton(
+        checkboxWithTitle: "Automatically install updates", target: nil, action: nil)
     private let fpsPopup = NSPopUpButton()
     private let lowPowerCheckbox = NSButton(checkboxWithTitle: "Respect Low Power Mode",
                                            target: nil,
@@ -127,6 +131,16 @@ private final class PreferencesViewController: NSViewController {
         launchAtLoginStatusLabel.stringValue = LoginItem.statusDescription
         container.addSubview(launchAtLoginStatusLabel)
 
+        autoCheckUpdatesCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        autoCheckUpdatesCheckbox.target = self
+        autoCheckUpdatesCheckbox.action = #selector(updateSettingsChanged(_:))
+        container.addSubview(autoCheckUpdatesCheckbox)
+
+        autoInstallUpdatesCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        autoInstallUpdatesCheckbox.target = self
+        autoInstallUpdatesCheckbox.action = #selector(updateSettingsChanged(_:))
+        container.addSubview(autoInstallUpdatesCheckbox)
+
         let revealButton = NSButton(title: "Reveal wallpaper folder",
                                     target: self,
                                     action: #selector(revealWallpaperFolder))
@@ -139,6 +153,8 @@ private final class PreferencesViewController: NSViewController {
         note.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(note)
 
+        loadUpdateSettingsIntoControls()
+
         NSLayoutConstraint.activate([
             launchAtLoginCheckbox.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
             launchAtLoginCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
@@ -147,7 +163,13 @@ private final class PreferencesViewController: NSViewController {
             launchAtLoginStatusLabel.leadingAnchor.constraint(equalTo: launchAtLoginCheckbox.leadingAnchor, constant: 20),
             launchAtLoginStatusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
 
-            revealButton.topAnchor.constraint(equalTo: launchAtLoginStatusLabel.bottomAnchor, constant: 12),
+            autoCheckUpdatesCheckbox.topAnchor.constraint(equalTo: launchAtLoginStatusLabel.bottomAnchor, constant: 16),
+            autoCheckUpdatesCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+
+            autoInstallUpdatesCheckbox.topAnchor.constraint(equalTo: autoCheckUpdatesCheckbox.bottomAnchor, constant: 6),
+            autoInstallUpdatesCheckbox.leadingAnchor.constraint(equalTo: autoCheckUpdatesCheckbox.leadingAnchor, constant: 20),
+
+            revealButton.topAnchor.constraint(equalTo: autoInstallUpdatesCheckbox.bottomAnchor, constant: 16),
             revealButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
             note.topAnchor.constraint(equalTo: revealButton.bottomAnchor, constant: 20),
@@ -155,6 +177,26 @@ private final class PreferencesViewController: NSViewController {
             note.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20)
         ])
         return container
+    }
+
+    private func loadUpdateSettingsIntoControls() {
+        let settings = UpdateSettingsStore.shared.load()
+        autoCheckUpdatesCheckbox.state  = settings.automaticallyCheckForUpdates ? .on : .off
+        autoInstallUpdatesCheckbox.state = settings.automaticallyInstallUpdates ? .on : .off
+        autoInstallUpdatesCheckbox.isEnabled = settings.automaticallyCheckForUpdates
+    }
+
+    @objc private func updateSettingsChanged(_ sender: Any) {
+        let checkOn = autoCheckUpdatesCheckbox.state == .on
+        autoInstallUpdatesCheckbox.isEnabled = checkOn
+        if !checkOn { autoInstallUpdatesCheckbox.state = .off }
+        var settings = UpdateSettingsStore.shared.load()
+        settings.automaticallyCheckForUpdates = checkOn
+        settings.automaticallyInstallUpdates  = autoInstallUpdatesCheckbox.state == .on
+        // Toggling settings signals the user is re-engaging — clear any skip.
+        settings.skippedVersion = nil
+        UpdateSettingsStore.shared.save(settings)
+        UpdateManager.shared.updateTimerForSettingsChange()
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSButton) {

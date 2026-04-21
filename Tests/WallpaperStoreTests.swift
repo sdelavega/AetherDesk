@@ -99,13 +99,7 @@ import AppKit
         let bundleID = UUID()
         let syntheticDisplay: CGDirectDisplayID = 55555
         let legacyKey = DisplayIdentity.legacyNumeric(syntheticDisplay)
-        // Write the legacy key directly via a fresh store pointing at the same defaults
         let defaults = UserDefaults(suiteName: "AetherDeskTests.\(UUID().uuidString)")!
-        let legacyPayload: [String: Any] = [
-            "displayAssignments": [legacyKey: bundleID.uuidString]
-        ]
-        let data = try! JSONSerialization.data(withJSONObject: legacyPayload)
-        // Re-encode in the Payload Codable shape the store expects
         struct Payload: Codable { var displayAssignments: [String: String] }
         let encoded = try! JSONEncoder().encode(Payload(displayAssignments: [legacyKey: bundleID.uuidString]))
         defaults.set(encoded, forKey: "AetherDesk.wallpaperStore.v2")

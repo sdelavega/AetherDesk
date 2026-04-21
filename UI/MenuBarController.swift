@@ -50,6 +50,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                                selector: #selector(wallpaperDidChange),
                                                name: Constants.Notifications.wallpaperDidChange,
                                                object: nil)
+
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(handleUpdateAvailable(_:)),
+                                               name: Constants.Notifications.updateAvailable,
+                                               object: nil)
     }
 
     deinit {
@@ -112,6 +117,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(safeModeItem)
 
         menu.addItem(.separator())
+
+        let checkUpdatesItem = NSMenuItem(title: "Check for Updates…",
+                                          action: #selector(checkForUpdates),
+                                          keyEquivalent: "u")
+        checkUpdatesItem.target = self
+        menu.addItem(checkUpdatesItem)
 
         let preferencesItem = NSMenuItem(title: "Preferences…",
                                          action: #selector(showPreferences),
@@ -290,6 +301,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func showPreferences() {
         NSApp.activate(ignoringOtherApps: true)
         PreferencesWindowController.shared.showWindow(nil)
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateManager.shared.checkForUpdatesInteractively()
+    }
+
+    @objc private func handleUpdateAvailable(_ note: Notification) {
+        guard let release = note.object as? UpdateManager.GitHubRelease else { return }
+        UpdateManager.shared.presentUpdateAlert(release)
     }
 
     @objc private func quit() {

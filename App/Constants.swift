@@ -18,6 +18,12 @@ enum Constants {
         static let watchdogTimeout: TimeInterval = 30.0
 
         static let memoryWarningThresholdMB: Int = 200
+
+        /// Seconds after launch before the first automatic update check fires.
+        static let updateCheckInitialDelay: TimeInterval = 30
+
+        /// Seconds between periodic update checks (24 hours).
+        static let updateCheckInterval: TimeInterval = 86_400
     }
 
     enum Directories {
@@ -35,6 +41,10 @@ enum Constants {
         /// failed). `userInfo["displayID"]` carries the affected display so
         /// the manager can demote just that one.
         static let runtimeDidFail = Notification.Name("ÆtherDesk.runtimeDidFail")
+
+        /// Posted by UpdateManager when a newer release is found during a quiet
+        /// (periodic) check. `object` is the `UpdateManager.GitHubRelease` value.
+        static let updateAvailable = Notification.Name("ÆtherDesk.updateAvailable")
     }
 
     enum Keys {
