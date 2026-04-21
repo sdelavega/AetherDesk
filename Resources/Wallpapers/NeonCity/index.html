@@ -266,7 +266,7 @@ function initRain(){
   for(let i=0;i<n;i++) rain.push(mkDrop(true));
 }
 function mkDrop(rand){return{x:rng()*W,y:rand?rng()*H:-rR(5,20),spd:rR(15,32),len:rR(8,20),drift:rR(-0.3,1.0)};}
-function updateRain(){for(const d of rain){d.y+=d.spd;d.x+=d.drift;if(d.y>H+d.len)Object.assign(d,mkDrop(false));}}
+function updateRain(){const s=dt/33.33;for(const d of rain){d.y+=d.spd*s;d.x+=d.drift*s;if(d.y>H+d.len)Object.assign(d,mkDrop(false));}}
 function drawRain(ctx){
   // All drops share one path → one GPU stroke call instead of ~180 individual calls.
   // Per-drop alpha variation removed (was 0.10–0.36); 0.22 is the midpoint.
@@ -290,7 +290,7 @@ function drawSplashes(ctx){
     const s=splashes[i]; ctx.globalAlpha=s.a*(1-s.r/s.max);
     ctx.strokeStyle=s.color; ctx.lineWidth=0.65;
     ctx.beginPath(); ctx.ellipse(s.x,s.y,s.r*2.1,s.r*0.38,0,0,Math.PI*2); ctx.stroke();
-    s.r+=0.55; if(s.r>=s.max) splashes.splice(i,1);
+    s.r+=0.55*(dt/33.33); if(s.r>=s.max) splashes.splice(i,1);
   }
   ctx.restore();
 }
@@ -302,9 +302,9 @@ function mkVehicle(rand){
   const dir=rng()<0.5?1:-1, spd=rR(0.5,2.2)*dir;
   return{x:rand?rng()*W:(dir>0?-80:W+80),y:rR(H*0.04,HZ*0.72),spd,dir,size:rR(1.2,2.8),color:pick(NEONS),trail:rR(20,58)};
 }
-function updateVehicles(){
+function updateVehicles(){const s=dt/33.33;
   for(let i=0;i<vehicles.length;i++){
-    const v=vehicles[i]; v.x+=v.spd;
+    const v=vehicles[i]; v.x+=v.spd*s;
     if(v.dir>0&&v.x>W+v.trail+20) vehicles[i]=mkVehicle(false);
     if(v.dir<0&&v.x<-v.trail-20)  vehicles[i]=mkVehicle(false);
   }
@@ -375,10 +375,15 @@ function redrawSigns(){
   signsDirty=false;
 }
 
-let last=0; const MS=1000/30;
+// dt: milliseconds since last rendered frame, capped to avoid big jumps
+// on first frame or after a tab pause. Initialized to one 30fps frame.
+// The rAF throttle shim (injected by ÆtherDesk) already enforces the fps
+// cap, so we don't gate here — we just measure the actual elapsed time and
+// scale all physics by it so motion stays smooth regardless of timing jitter.
+let last=0, dt=1000/30;
 function frame(t){
   requestAnimationFrame(frame);
-  if(t-last<MS) return; last=t;
+  if(last) dt=Math.min(t-last,100); last=t;
   updateRain(); updateVehicles(); updateFlicker(t); spawnSplash();
 
   // Refresh cached layers on their respective cadences
