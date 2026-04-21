@@ -330,12 +330,14 @@ function drawVehicles(ctx){
   ctx.save(); const nb=CFG.neonBrightness/80;
   for(const v of vehicles){
     // Trail: blit pre-rendered sprite — no per-frame gradient or shadowBlur.
-    const ty=Math.round(v.y)-Math.ceil(v.trailH/2);
+    // Use raw v.x (sub-pixel) so slow cars glide smoothly via bilinear interpolation.
+    // v.y is fixed so rounding it is fine (avoids sub-pixel vertical shimmer).
+    const ry=Math.round(v.y), ty=ry-Math.ceil(v.trailH/2);
     ctx.globalAlpha=0.45*nb;
-    ctx.drawImage(v.trailImg, v.dir>0 ? Math.round(v.x)-v.tlen : Math.round(v.x), ty);
+    ctx.drawImage(v.trailImg, v.dir>0 ? v.x-v.tlen : v.x, ty);
     // Head: blit pre-rendered sprite (white dot + colored glow).
     ctx.globalAlpha=0.88*nb;
-    ctx.drawImage(v.headImg, Math.round(v.x)-v.hpad, Math.round(v.y)-v.hpad);
+    ctx.drawImage(v.headImg, v.x-v.hpad, ry-v.hpad);
   }
   ctx.restore();
 }
