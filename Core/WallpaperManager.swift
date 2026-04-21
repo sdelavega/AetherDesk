@@ -280,15 +280,22 @@ final class WallpaperManager {
         for id in removed {
             runtimes[id]?.stop()
             runtimes.removeValue(forKey: id)
-            currentBundles.removeValue(forKey: id)
+            // Keep currentBundles[id] — the display may return (e.g., lid
+            // open) and we need the bundle reference to restore it.
+            // The persisted wallpaperStore assignment is also preserved.
             hosts[id]?.orderOut(nil)
             hosts[id]?.close()
             hosts.removeValue(forKey: id)
-            // Don't wipe the persisted assignment — the display may come back
-            // later. pruneMissing() at next launch handles the truly-stale case.
         }
 
-        for id in added { ensureHost(for: id) }
+        for id in added {
+            ensureHost(for: id)
+            // Restore the wallpaper that was previously on this display
+            // (e.g., display reconnected after lid open or cable replug).
+            if runtimes[id] == nil, let bundle = currentBundles[id] {
+                setWallpaper(bundle, for: id)
+            }
+        }
 
         // Re-align frames for any kept displays (resolution / position changes).
         for (id, host) in hosts {
@@ -303,8 +310,34 @@ final class WallpaperManager {
 
     @objc private func sessionDidResignActive() { pauseAll() }
     @objc private func sessionDidBecomeActive() { resumeAll() }
-    @objc private func screenDidSleep()         { pauseAll() }
-    @objc private func screenDidWake()          { resumeAll() }
+    @objc private func screenDidSleep() { pauseAll() }
+
+    @objc private func screenDidWake() {
+        guard isRunning else { return }
+
+        // The display list may have changed during sleep (lid open, external
+        // monitor reconnected). Refresh and ensure hosts exist.
+        displayManager.updateDisplayList()
+        for displayID in displayManager.displayIDs {
+            ensureHost(for: displayID)
+        }
+
+        // macOS can reset window levels after wake — reassert desktop level.
+        for (_, host) in hosts {
+            host.reassertDesktopLevel()
+        }
+
+        // Restore wallpapers on any display that lost its runtime during sleep
+        // (e.g., display was "removed" on lid close, tearing down the runtime,
+        // then "re-added" on lid open).
+        for displayID in displayManager.displayIDs {
+            if runtimes[displayID] == nil, let bundle = currentBundles[displayID] {
+                setWallpaper(bundle, for: displayID)
+            }
+        }
+
+        resumeAll()
+    }
 
     @objc private func thermalStateChanged() {
         if ProcessInfo.processInfo.thermalState == .critical { pauseAll() }

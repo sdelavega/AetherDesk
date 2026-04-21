@@ -78,6 +78,13 @@ final class WallpaperHostWindow: NSWindow {
         level = WallpaperHostWindow.desktopLevel
     }
 
+    /// Re-apply the desktop window level and ordering. macOS may reset
+    /// window ordering after display sleep/wake cycles.
+    func reassertDesktopLevel() {
+        level = WallpaperHostWindow.desktopLevel
+        orderBack(nil)
+    }
+
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
