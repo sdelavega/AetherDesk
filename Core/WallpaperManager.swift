@@ -25,6 +25,8 @@ final class WallpaperManager {
 
     private(set) var isRunning = false
     private(set) var isSafeMode = false
+    private var fallbackBundle: WallpaperBundle?
+    private var occludedDisplays: Set<CGDirectDisplayID> = []
 
     // MARK: Lifecycle
 
@@ -58,6 +60,7 @@ final class WallpaperManager {
     func startAndRestore(availableBundles: [WallpaperBundle],
                          fallback: WallpaperBundle?) {
         start()
+        self.fallbackBundle = fallback
 
         let byID = Dictionary(uniqueKeysWithValues: availableBundles.map { ($0.id, $0) })
         wallpaperStore.pruneMissing(knownBundleIDs: Set(byID.keys))
@@ -151,7 +154,10 @@ final class WallpaperManager {
 
     func resumeAll() {
         guard !isSafeMode else { return }
-        for (_, runtime) in runtimes { runtime.resume() }
+        for (id, runtime) in runtimes {
+            if performanceSettings.pauseWhenNotVisible && occludedDisplays.contains(id) { continue }
+            runtime.resume()
+        }
     }
 
     func updateProperty(_ key: String, value: Any, for displayID: CGDirectDisplayID) {
@@ -221,6 +227,11 @@ final class WallpaperManager {
         host.setFrame(screen.frame, display: true)
         host.orderBack(nil)
         hosts[displayID] = host
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowOcclusionStateDidChange(_:)),
+            name: NSWindow.didChangeOcclusionStateNotification,
+            object: host)
     }
 
     private func installSafeModeContent(for displayID: CGDirectDisplayID) {
@@ -299,20 +310,38 @@ final class WallpaperManager {
         for id in removed {
             runtimes[id]?.stop()
             runtimes.removeValue(forKey: id)
+            occludedDisplays.remove(id)
             // Keep currentBundles[id] — the display may return (e.g., lid
             // open) and we need the bundle reference to restore it.
             // The persisted wallpaperStore assignment is also preserved.
-            hosts[id]?.orderOut(nil)
-            hosts[id]?.close()
+            if let host = hosts[id] {
+                NotificationCenter.default.removeObserver(
+                    self,
+                    name: NSWindow.didChangeOcclusionStateNotification,
+                    object: host)
+                host.orderOut(nil)
+                host.close()
+            }
             hosts.removeValue(forKey: id)
         }
 
         for id in added {
             ensureHost(for: id)
-            // Restore the wallpaper that was previously on this display
-            // (e.g., display reconnected after lid open or cable replug).
-            if runtimes[id] == nil, let bundle = currentBundles[id] {
-                setWallpaper(bundle, for: id)
+            if runtimes[id] == nil {
+                if let bundle = currentBundles[id] {
+                    // Display reconnected this session (lid open, cable replug).
+                    setWallpaper(bundle, for: id)
+                } else {
+                    // Genuinely new display — try persistence, then fallback.
+                    let available = WallpaperImporter.shared.listWallpapers()
+                    let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
+                    let saved = wallpaperStore.loadAssignments(for: [id])
+                    if let savedID = saved[id], let bundle = byID[savedID] {
+                        setWallpaper(bundle, for: id)
+                    } else if let fallback = fallbackBundle {
+                        setWallpaper(fallback, for: id)
+                    }
+                }
             }
         }
 
@@ -328,7 +357,7 @@ final class WallpaperManager {
     }
 
     @objc private func sessionDidResignActive() { pauseAll() }
-    @objc private func sessionDidBecomeActive() { resumeAll() }
+    @objc private func sessionDidBecomeActive() { applyPowerPerformancePolicy() }
     @objc private func screenDidSleep() { pauseAll() }
 
     @objc private func screenDidWake() {
@@ -355,7 +384,7 @@ final class WallpaperManager {
             }
         }
 
-        resumeAll()
+        applyPowerPerformancePolicy()
     }
 
     @objc private func thermalStateChanged() {
@@ -370,12 +399,41 @@ final class WallpaperManager {
                                         object: nil)
     }
 
+    @objc private func windowOcclusionStateDidChange(_ note: Notification) {
+        guard let host = note.object as? WallpaperHostWindow else { return }
+        let displayID = host.targetDisplayID
+        let isVisible = host.occlusionState.contains(.visible)
+
+        if isVisible {
+            occludedDisplays.remove(displayID)
+            if performanceSettings.pauseWhenNotVisible {
+                // Let the full policy re-evaluate — resumeAll() will skip
+                // still-occluded displays and honour low-power/battery state.
+                applyPowerPerformancePolicy()
+            }
+        } else {
+            occludedDisplays.insert(displayID)
+            if performanceSettings.pauseWhenNotVisible {
+                runtimes[displayID]?.pause()
+            }
+        }
+    }
+
     @objc private func performanceSettingsDidChange(_ note: Notification) {
         let oldSettings = performanceSettings
         if let settings = note.object as? PerformanceSettings {
             performanceSettings = settings
         } else {
             performanceSettings = AppSettingsStore.shared.loadPerformanceSettings()
+        }
+
+        // If occlusion pausing was just enabled, immediately pause any
+        // displays that are already occluded.
+        if performanceSettings.pauseWhenNotVisible && !oldSettings.pauseWhenNotVisible {
+            for (id, host) in hosts where !host.occlusionState.contains(.visible) {
+                occludedDisplays.insert(id)
+                runtimes[id]?.pause()
+            }
         }
 
         if performanceSettings.clampedFPSCap != oldSettings.clampedFPSCap ||

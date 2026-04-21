@@ -9,7 +9,7 @@ import Foundation
 /// simple and NSTableView is much less fiddly without Interface Builder.
 final class WallpaperPickerViewController: NSViewController {
 
-    private let importer = WallpaperImporter()
+    private let importer = WallpaperImporter.shared
     private let thumbnailer = ThumbnailRenderer.shared
 
     private var wallpapers: [WallpaperBundle] = []

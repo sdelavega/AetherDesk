@@ -113,10 +113,13 @@ final class WallpaperBundle {
             let url = baseURL.appendingPathComponent(preview)
             if FileManager.default.fileExists(atPath: url.path) { return url }
         }
-        // Otherwise look for a file whose name contains "preview".
+        // Otherwise look for an image file whose name contains "preview".
         let contents = (try? FileManager.default.contentsOfDirectory(at: baseURL,
                                                                      includingPropertiesForKeys: nil)) ?? []
-        return contents.first { $0.lastPathComponent.localizedCaseInsensitiveContains("preview") }
+        return contents.first {
+            $0.lastPathComponent.localizedCaseInsensitiveContains("preview") &&
+            Self.imageExtensions.contains($0.pathExtension.lowercased())
+        }
     }
 
     // MARK: Helpers

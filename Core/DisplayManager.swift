@@ -37,16 +37,7 @@ class DisplayManager {
     }
 
     func screen(for displayID: CGDirectDisplayID) -> NSScreen? {
-        if let screen = screens[displayID] {
-            return screen
-        }
-
-        if let primaryScreen = NSScreen.screens.first {
-            screens[displayID] = primaryScreen
-            return primaryScreen
-        }
-
-        return nil
+        screens[displayID]
     }
 
     func isPrimaryDisplay(_ displayID: CGDirectDisplayID) -> Bool {
