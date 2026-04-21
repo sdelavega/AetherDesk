@@ -151,7 +151,7 @@ Zip the folder and import it, or drop it directly into `~/Library/Application Su
 - **WebView lifecycle** — WKWebViews are created on `start()` and fully deallocated on `stop()`. No idle web processes sitting around eating memory when you swap wallpapers.
 - **Debounced property bridge** — Rapid slider drags batch into a single `evaluateJavaScript` call every 50ms instead of flooding the web process with individual updates.
 - **rAF throttle shim** — A `requestAnimationFrame` wrapper is injected at document start to enforce the FPS cap natively, regardless of what the wallpaper's JS does.
-- **No Combine, no SwiftUI** — Pure AppKit + GCD + NotificationCenter. The entire app is ~350 KB.
+- **No Combine, no SwiftUI** — Pure AppKit + GCD + NotificationCenter. The entire app bundle is under 2 MB.
 - **Stable wallpaper IDs** — Imported bundles use their UUID folder name; built-in wallpapers get a deterministic FNV-1a hash of their path, so property overrides survive moves and reinstalls.
 
 ## Building from Source
