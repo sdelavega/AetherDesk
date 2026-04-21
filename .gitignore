@@ -22,7 +22,7 @@ Build/
 
 # Generated Xcode project (we commit project.yml; regenerate with XcodeGen)
 # Uncomment the next line if you want to exclude the generated project:
-# AetherDesk.xcodeproj/
+# ÆtherDesk.xcodeproj/
 
 # Swift Package Manager
 .build/

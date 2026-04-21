@@ -15,12 +15,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.wallpaperManager = manager
         self.menuBarController = MenuBarController(wallpaperManager: manager)
 
-        // Restore per-display wallpaper from persisted state, falling back
-        // to the first bundled sample for any display without a prior
-        // assignment (so first launch is never blank).
-        let available = WallpaperImporter.shared.listWallpapers()
-        let fallback = WallpaperImporter.shared.listBundledWallpapers().first
-        manager.startAndRestore(availableBundles: available, fallback: fallback)
+        // Compile (or load from cache) the content blocker rule list before
+        // starting any wallpaper WebViews. On subsequent launches this is a
+        // cache hit and resolves in milliseconds; first launch compiles from
+        // the embedded JSON, which takes well under a second for our small list.
+        ContentRuleListManager.shared.prepare {
+            // Restore per-display wallpaper from persisted state, falling back
+            // to the first bundled sample for any display without a prior
+            // assignment (so first launch is never blank).
+            let available = WallpaperImporter.shared.listWallpapers()
+            let fallback = WallpaperImporter.shared.listBundledWallpapers().first
+            manager.startAndRestore(availableBundles: available, fallback: fallback)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

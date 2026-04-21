@@ -84,6 +84,13 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         let userContent = WKUserContentController()
         userContent.add(messageHandler, name: "aetherDesk")
 
+        // Apply content blocker to prevent ad/tracker/miner requests.
+        // The rule list is guaranteed compiled before the first WebView is
+        // created (AppDelegate waits for ContentRuleListManager.prepare).
+        if let ruleList = ContentRuleListManager.shared.ruleList {
+            userContent.add(ruleList)
+        }
+
         let config = WKWebViewConfiguration()
         config.userContentController = userContent
 

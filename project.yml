@@ -1,4 +1,4 @@
-name: AetherDesk
+name: ÆtherDesk
 options:
   bundleIdPrefix: com.aetherdesk
   deploymentTarget:
@@ -10,10 +10,10 @@ options:
 
 settings:
   base:
-    PRODUCT_NAME: AetherDesk
+    PRODUCT_NAME: ÆtherDesk
     PRODUCT_BUNDLE_IDENTIFIER: com.aetherdesk.AetherDesk
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0.2"
+    CURRENT_PROJECT_VERSION: "3"
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "12.0"
     CODE_SIGN_STYLE: Automatic

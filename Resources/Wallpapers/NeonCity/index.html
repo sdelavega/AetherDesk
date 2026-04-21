@@ -26,18 +26,31 @@ const rI   = (a,b)=>Math.floor(a+rng()*(b-a+1));
 const pick = a=>a[Math.floor(rng()*a.length)];
 
 const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+// Static city background — rebuilt only on resize or property change
 const cityC=document.createElement('canvas'), cX=cityC.getContext('2d');
+// Neon signs — rebuilt only when a sign flickers on/off
 const signC=document.createElement('canvas'), sCtx=signC.getContext('2d');
+// Reflections — no shadowBlur (they're at 9% alpha); cached offscreen,
+// refreshed every 4 frames so the shimmer animation stays smooth.
+const reflC=document.createElement('canvas'), rCtx=reflC.getContext('2d');
+// Fog — rendered at 1/4 resolution (radial gradients scale fine), refreshed
+// every 6 frames. drawImage upscales for free using bilinear interpolation.
+const fogC=document.createElement('canvas'), fCtx=fogC.getContext('2d');
+// Vignette — static; rebuilt only on resize
 const vigC=document.createElement('canvas'), vCtx=vigC.getContext('2d');
 
 let W,H,HZ; // horizon Y
+let signsDirty=true, fogFrame=0, reflFrame=0;
 
 function resize(){
-  W=canvas.width=cityC.width=signC.width=vigC.width=window.innerWidth;
-  H=canvas.height=cityC.height=signC.height=vigC.height=window.innerHeight;
+  W=canvas.width=cityC.width=signC.width=reflC.width=vigC.width=window.innerWidth;
+  H=canvas.height=cityC.height=signC.height=reflC.height=vigC.height=window.innerHeight;
+  // Fog canvas at 1/4 resolution — gradients are smooth so this is lossless visually
+  fogC.width=Math.max(1,Math.ceil(W/4));
+  fogC.height=Math.max(1,Math.ceil(H/4));
   HZ=Math.floor(H*0.78); // horizon at 78% — city fills top 78%, foreground just 22%
   buildCity(); initRain(); initVehicles();
-  signsDirty=true;
+  signsDirty=true; fogFrame=0; reflFrame=0;
   cacheVignette();
 }
 window.addEventListener('resize',resize);
@@ -45,7 +58,6 @@ window.addEventListener('resize',resize);
 const NEONS=['#ff1a5e','#ff6a00','#ffe600','#00ffe0','#00aaff','#bb00ff','#ff00bb','#44ff00','#ff4466','#00ffaa'];
 
 let signs=[], antennas=[];
-let signsDirty=true;
 
 // ─────────────────────────────────────────────────────────────────────────────
 function buildCity(){
@@ -71,8 +83,6 @@ function buildCity(){
   c.beginPath(); c.arc(mx,my,mr,0,Math.PI*2); c.fillStyle='rgba(255,252,230,0.09)'; c.fill();
 
   // ── Three building layers back→front ─────────────────────────────────
-  // Critical: silhouette-first approach — each layer is near-black, with
-  // just enough face variation to hint at structure. Windows are sparse.
   const LAYERS=[
     {minH:0.52,maxH:0.80,minW:26,maxW:68},   // 0: distant
     {minH:0.28,maxH:0.54,minW:46,maxW:112},  // 1: mid
@@ -96,11 +106,9 @@ function buildCity(){
     c.fillStyle=`hsl(225,${[10,12,15][li]}%,${[4,6,8][li]}%)`; c.fill();
 
     for(const b of bldgs){
-      // Face — barely a shade above silhouette
       const fL=[5,7,10][li]+rI(0,3);
       c.fillStyle=`hsl(${rI(218,238)},${rI(10,18)}%,${fL}%)`; c.fillRect(b.x+1,b.y,b.w-2,b.h);
 
-      // Atmospheric haze
       if(li===0){ c.fillStyle='rgba(2,5,14,0.58)'; c.fillRect(b.x,b.y,b.w,b.h); }
       else if(li===1){ c.fillStyle='rgba(2,5,14,0.20)'; c.fillRect(b.x,b.y,b.w,b.h); }
 
@@ -122,7 +130,7 @@ function buildCity(){
   hg.addColorStop(0,'rgba(0,0,0,0)'); hg.addColorStop(0.4,'rgba(12,30,85,0.28)'); hg.addColorStop(1,'rgba(0,0,0,0)');
   c.fillStyle=hg; c.fillRect(0,HZ-20,W,60);
 
-  // Wet road sheen — thin horizontal bands, no perspective lines
+  // Wet road sheen
   for(let i=0;i<6;i++){
     const ry=HZ+rR(4,(H-HZ)*0.6), rh=rR(0.8,2);
     const rg=c.createLinearGradient(0,0,W,0);
@@ -182,7 +190,6 @@ function pushSign(bx,by,bw,bh,dimScale=1.0){
   if(maxW<14) return;
   const sw=rR(14,Math.min(48,maxW));
   const x=bx+margin+rng()*Math.max(0,maxW-sw);
-  // Keep sign away from rooftop (20% buffer) and well above bottom (30% clearance)
   const minY=by+Math.max(12,bh*0.20), maxY=by+bh*0.68;
   if(maxY-minY<6) return;
   const y=rR(minY,maxY);
@@ -191,11 +198,10 @@ function pushSign(bx,by,bw,bh,dimScale=1.0){
   const gap=rR(3,6), w2sc=rR(0.55,0.88);
   const totalH=color2?h+gap+h:h;
   const safeY=Math.min(y,by+bh-totalH-10);
-  if(safeY<by+8) return; // bail if no room
+  if(safeY<by+8) return;
   signs.push({
     x, y:safeY, w:sw, h, color, color2, gap, w2sc,
     glow:rR(4,10), flicker:rng()<0.18, phase:rng()*Math.PI*2, _off:false, dim:dimScale,
-    // Clip rect — sign must never draw outside its building face
     clip:{x:bx+2, y:by+2, w:bw-4, h:bh-4},
   });
 }
@@ -229,7 +235,6 @@ function drawNeonTube(ctx,x,y,w,h,color,alpha,nb){
 function drawSign(ctx,s,alpha){
   const nb=CFG.neonBrightness/80*(s.dim??1.0);
   ctx.save();
-  // Hard clip to building face — glow cannot bleed outside
   if(s.clip){
     ctx.beginPath();
     ctx.rect(s.clip.x, s.clip.y, s.clip.w, s.clip.h);
@@ -246,24 +251,29 @@ function drawAntennas(ctx,t){
   for(const a of antennas){
     const p=Math.sin(t*0.0018+a.phase); if(p<0.45) continue;
     const dim=a.dim??1.0;
-    ctx.globalAlpha=(0.65+0.28*p)*dim; ctx.fillStyle='#ff2222'; ctx.shadowColor='#ff0000'; ctx.shadowBlur=9*dim;
+    // shadowBlur kept small (2) — antenna dots are 2px, heavy blur adds nothing visible
+    ctx.globalAlpha=(0.65+0.28*p)*dim; ctx.fillStyle='#ff2222'; ctx.shadowColor='#ff0000'; ctx.shadowBlur=2*dim;
     ctx.beginPath(); ctx.arc(a.x,a.y,2.2*(0.5+0.5*dim),0,Math.PI*2); ctx.fill();
   }
   ctx.restore();
 }
 
-// ── Rain ──────────────────────────────────────────────────────────────────────
+// ── Rain — all drops batched into a single stroke call ────────────────────────
 let rain=[];
 function initRain(){
   rain=[];
   const n=Math.floor(CFG.rainIntensity*(W/1920)*(H/1080)*2.4);
   for(let i=0;i<n;i++) rain.push(mkDrop(true));
 }
-function mkDrop(rand){return{x:rng()*W,y:rand?rng()*H:-rR(5,20),spd:rR(15,32),len:rR(8,20),a:rR(0.10,0.36),drift:rR(-0.3,1.0)};}
+function mkDrop(rand){return{x:rng()*W,y:rand?rng()*H:-rR(5,20),spd:rR(15,32),len:rR(8,20),drift:rR(-0.3,1.0)};}
 function updateRain(){for(const d of rain){d.y+=d.spd;d.x+=d.drift;if(d.y>H+d.len)Object.assign(d,mkDrop(false));}}
 function drawRain(ctx){
-  ctx.save(); ctx.strokeStyle='rgba(155,200,238,1)'; ctx.lineWidth=0.52;
-  for(const d of rain){ctx.globalAlpha=d.a;ctx.beginPath();ctx.moveTo(d.x,d.y);ctx.lineTo(d.x+d.drift*0.6,d.y+d.len);ctx.stroke();}
+  // All drops share one path → one GPU stroke call instead of ~180 individual calls.
+  // Per-drop alpha variation removed (was 0.10–0.36); 0.22 is the midpoint.
+  ctx.save(); ctx.strokeStyle='rgba(155,200,238,0.22)'; ctx.lineWidth=0.52;
+  ctx.beginPath();
+  for(const d of rain){ ctx.moveTo(d.x,d.y); ctx.lineTo(d.x+d.drift*0.6,d.y+d.len); }
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -275,21 +285,21 @@ function spawnSplash(){
 }
 function drawSplashes(ctx){
   ctx.save();
+  // shadowBlur removed — tiny ellipses at <0.55 alpha don't need GPU blur
   for(let i=splashes.length-1;i>=0;i--){
     const s=splashes[i]; ctx.globalAlpha=s.a*(1-s.r/s.max);
-    ctx.strokeStyle=s.color; ctx.lineWidth=0.65; ctx.shadowColor=s.color; ctx.shadowBlur=4;
+    ctx.strokeStyle=s.color; ctx.lineWidth=0.65;
     ctx.beginPath(); ctx.ellipse(s.x,s.y,s.r*2.1,s.r*0.38,0,0,Math.PI*2); ctx.stroke();
     s.r+=0.55; if(s.r>=s.max) splashes.splice(i,1);
   }
   ctx.restore();
 }
 
-// ── Vehicles — sky only, well above buildings ─────────────────────────────────
+// ── Vehicles ──────────────────────────────────────────────────────────────────
 let vehicles=[];
 function initVehicles(){vehicles=[];for(let i=0;i<CFG.vehicleCount;i++) vehicles.push(mkVehicle(true));}
 function mkVehicle(rand){
   const dir=rng()<0.5?1:-1, spd=rR(0.5,2.2)*dir;
-  // Constrain to upper sky — between 5% and 55% of horizon height
   return{x:rand?rng()*W:(dir>0?-80:W+80),y:rR(H*0.04,HZ*0.72),spd,dir,size:rR(1.2,2.8),color:pick(NEONS),trail:rR(20,58)};
 }
 function updateVehicles(){
@@ -302,49 +312,54 @@ function updateVehicles(){
 function drawVehicles(ctx){
   ctx.save(); const nb=CFG.neonBrightness/80;
   for(const v of vehicles){
+    // Fading trail — gradient + low shadow blur
     const tg=ctx.createLinearGradient(v.x,0,v.x-v.trail*v.dir,0);
     tg.addColorStop(0,v.color); tg.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.globalAlpha=0.45*nb; ctx.strokeStyle=tg; ctx.lineWidth=v.size*0.5; ctx.shadowColor=v.color; ctx.shadowBlur=v.size*5;
+    ctx.globalAlpha=0.45*nb; ctx.strokeStyle=tg;
+    ctx.lineWidth=v.size*0.5; ctx.shadowColor=v.color; ctx.shadowBlur=v.size*2;
     ctx.beginPath(); ctx.moveTo(v.x,v.y); ctx.lineTo(v.x-v.trail*v.dir,v.y); ctx.stroke();
-    ctx.globalAlpha=0.88*nb; ctx.fillStyle='#fff'; ctx.shadowBlur=v.size*9;
+    // Bright head dot — single draw, reduced blur (was size*9)
+    ctx.globalAlpha=0.88*nb; ctx.fillStyle='#fff';
+    ctx.shadowColor=v.color; ctx.shadowBlur=v.size*3;
     ctx.beginPath(); ctx.arc(v.x,v.y,v.size,0,Math.PI*2); ctx.fill();
-    ctx.globalAlpha=0.42; ctx.fillStyle=v.color; ctx.shadowBlur=v.size*14;
-    ctx.beginPath(); ctx.arc(v.x,v.y,v.size*1.8,0,Math.PI*2); ctx.fill();
+    // Removed third draw (colored aura with shadowBlur=size*14 ≈ 39px) — not worth the GPU cost
   }
   ctx.restore();
 }
 
-// ── Neon reflections ─────────────────────────────────────────────────────────
-function drawReflections(ctx,t){
-  ctx.save(); ctx.globalCompositeOperation='screen';
+// ── Fog — rendered at 1/4 resolution, updated every 6 frames ─────────────────
+function cacheFog(t){
+  const d=CFG.fogDensity/100; if(d<0.01) return;
+  const fw=fogC.width, fh=fogC.height, hz=HZ/4;
+  fCtx.clearRect(0,0,fw,fh);
+  for(let i=0;i<3;i++){
+    const ox=((t*(0.011+i*0.005)+i*fw*0.38)%(fw*1.6))-fw*0.2;
+    const fg=fCtx.createRadialGradient(ox,hz*0.82,0,ox,hz*0.82,fw*0.52);
+    fg.addColorStop(0,`rgba(5,12,32,${d*0.17})`); fg.addColorStop(0.6,`rgba(3,8,20,${d*0.08})`); fg.addColorStop(1,'rgba(0,0,0,0)');
+    fCtx.fillStyle=fg; fCtx.fillRect(0,0,fw,fh);
+  }
+  const gf=fCtx.createLinearGradient(0,hz,0,hz+fh*0.18);
+  gf.addColorStop(0,`rgba(6,14,36,${d*0.42})`); gf.addColorStop(1,'rgba(0,0,0,0)');
+  fCtx.fillStyle=gf; fCtx.fillRect(0,hz,fw,fh*0.18);
+}
+
+// ── Neon reflections — no shadowBlur (9% alpha with screen blend needs none),
+//    cached to reflC and refreshed every 4 frames for the shimmer animation ────
+function cacheReflections(t){
+  rCtx.clearRect(0,0,W,H);
+  rCtx.save();
   const nb=CFG.neonBrightness/80;
   for(const s of signs){
     const baseA=signAlpha(s)*0.09*nb; if(baseA<0.01) continue;
     const baseY=HZ+(HZ-s.y)*0.08; if(baseY>H) continue;
     for(let li=0;li<3;li++){
       const wx=Math.sin(t*0.004+s.x*0.017+li*2.1)*0.8+Math.cos(t*0.007+s.x*0.023+li*1.4)*0.5;
-      ctx.globalAlpha=baseA*(1-li*0.28); ctx.strokeStyle=s.color; ctx.shadowColor=s.color; ctx.shadowBlur=7;
-      ctx.lineWidth=Math.max(0.45,s.h*0.28-li*0.12); ctx.lineCap='butt';
-      ctx.beginPath(); ctx.moveTo(s.x+wx,baseY+li*2.4+s.h*0.15); ctx.lineTo(s.x+s.w+wx,baseY+li*2.4+s.h*0.15); ctx.stroke();
+      rCtx.globalAlpha=baseA*(1-li*0.28); rCtx.strokeStyle=s.color;
+      rCtx.lineWidth=Math.max(0.45,s.h*0.28-li*0.12); rCtx.lineCap='butt';
+      rCtx.beginPath(); rCtx.moveTo(s.x+wx,baseY+li*2.4+s.h*0.15); rCtx.lineTo(s.x+s.w+wx,baseY+li*2.4+s.h*0.15); rCtx.stroke();
     }
   }
-  ctx.restore();
-}
-
-// ── Fog ───────────────────────────────────────────────────────────────────────
-function drawFog(ctx,t){
-  const d=CFG.fogDensity/100; if(d<0.01) return;
-  ctx.save();
-  for(let i=0;i<3;i++){
-    const ox=((t*(0.011+i*0.005)+i*W*0.38)%(W*1.6))-W*0.2;
-    const fg=ctx.createRadialGradient(ox,HZ*0.82,0,ox,HZ*0.82,W*0.52);
-    fg.addColorStop(0,`rgba(5,12,32,${d*0.17})`); fg.addColorStop(0.6,`rgba(3,8,20,${d*0.08})`); fg.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=fg; ctx.fillRect(0,0,W,HZ);
-  }
-  const gf=ctx.createLinearGradient(0,HZ,0,HZ+H*0.18);
-  gf.addColorStop(0,`rgba(6,14,36,${d*0.42})`); gf.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=gf; ctx.fillRect(0,HZ,W,H*0.18);
-  ctx.restore();
+  rCtx.restore();
 }
 
 // ── Cached layers ─────────────────────────────────────────────────────────────
@@ -365,16 +380,23 @@ function frame(t){
   requestAnimationFrame(frame);
   if(t-last<MS) return; last=t;
   updateRain(); updateVehicles(); updateFlicker(t); spawnSplash();
+
+  // Refresh cached layers on their respective cadences
+  if(fogFrame++ % 6 === 0) cacheFog(t);
+  if(reflFrame++ % 4 === 0 || signsDirty) cacheReflections(t);
+
   const c=ctx; c.clearRect(0,0,W,H);
   c.drawImage(cityC,0,0);
   if(signsDirty) redrawSigns();
   c.drawImage(signC,0,0);
   drawAntennas(c,t);
-  drawFog(c,t);
+  // Fog drawn at full size from low-res canvas — bilinear scaling is free and looks good
+  if(CFG.fogDensity>1) c.drawImage(fogC,0,0,W,H);
   drawVehicles(c);
   drawRain(c);
   drawSplashes(c);
-  drawReflections(c,t);
+  // Reflections screen-composited from cache — same visual as drawing directly with screen mode
+  c.save(); c.globalCompositeOperation='screen'; c.drawImage(reflC,0,0); c.restore();
   c.drawImage(vigC,0,0);
 }
 
