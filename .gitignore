@@ -52,6 +52,7 @@ fastlane/test_output
 *.env
 .env.local
 .env.*.local
+ExportOptions.plist
 
 # Runtime / user data (imported wallpapers live in user Application Support)
 /var/

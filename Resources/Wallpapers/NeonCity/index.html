@@ -395,10 +395,14 @@ function redrawSigns(){
 // The rAF throttle shim (injected by ÆtherDesk) already enforces the fps
 // cap, so we don't gate here — we just measure the actual elapsed time and
 // scale all physics by it so motion stays smooth regardless of timing jitter.
+// dt is low-pass filtered (α=0.15) to damp setTimeout timing jitter from the
+// rAF shim. A raw spike to 40ms smooths to ~34ms; converges back in ~4 frames.
+// Rain doesn't visibly stutter because no individual drop is tracked; cars do.
 let last=0, dt=1000/30;
 function frame(t){
   requestAnimationFrame(frame);
-  if(last) dt=Math.min(t-last,100); last=t;
+  if(last) dt = dt*0.85 + Math.min(t-last,100)*0.15;
+  last=t;
   updateRain(); updateVehicles(); updateFlicker(t); spawnSplash();
 
   // Refresh cached layers on their respective cadences
