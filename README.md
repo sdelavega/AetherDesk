@@ -54,7 +54,7 @@ All three support real-time property tweaking from Preferences.
 
 ÆtherDesk reads the same `LivelyInfo.json` and `LivelyProperties.json` format used by [Lively Wallpaper](https://www.rocksdanister.com/lively/) on Windows. To import:
 
-1. Find a wallpaper you like (e.g. from the [Lively community](https://www.rocksdanister.com/lively/gallery/))
+1. Find a wallpaper you like (e.g. from the [Lively GitHub community](https://github.com/rocksdanister/lively))
 2. Download the `.zip` bundle
 3. In ÆtherDesk, click **Import Wallpaper...** and select the zip
 4. The importer validates the bundle, copies it to `~/Library/Application Support/ÆtherDesk/Wallpapers/`, and makes it available immediately
@@ -125,11 +125,11 @@ Zip the folder and import it, or drop it directly into `~/Library/Application Su
 │
 ├── AppDelegate              — Bootstrap, restore last session
 ├── WallpaperManager         — Orchestrates runtimes across all displays
-│   ├── DisplayManager       — Tracks connect/disconnect via CGDisplayReconfigurationCallback
+│   ├── DisplayManager       — Resolves CGDirectDisplayID ↔ NSScreen; change events via NSApplicationDidChangeScreenParametersNotification
 │   ├── WallpaperHostWindow  — Borderless NSWindow at kCGDesktopWindowLevel
 │   └── WallpaperRuntime     — Protocol with three concrete implementations:
 │       ├── WebWallpaperRuntime    — WKWebView with lazy alloc/dealloc lifecycle
-│       ├── VideoWallpaperRuntime  — AVPlayerLayer with seamless looping
+│       ├── VideoWallpaperRuntime  — AVPlayer + AVPlayerView with seamless looping
 │       └── ImageWallpaperRuntime  — NSImageView
 │
 ├── PropertyBridge           — Lively-compatible JS ↔ native bridge (50ms debounced batching)
@@ -140,9 +140,9 @@ Zip the folder and import it, or drop it directly into `~/Library/Application Su
 ├── WatchdogTimer            — Heartbeat monitor; silence → safe-mode demotion
 │
 └── UI
-    ├── MenuBarController              — NSMenu-based status item with cached rebuilds
+    ├── MenuBarController              — NSMenu-based status item; Wallpapers submenu rebuilt on each open
     ├── PreferencesWindowController    — Tabbed prefs (General, Performance, Wallpaper, About)
-    ├── WallpaperPickerViewController  — Grid picker with live thumbnails
+    ├── WallpaperPickerViewController  — List picker with async thumbnails
     └── PropertyEditorViewController   — Dynamic controls from LivelyProperties.json
 ```
 
@@ -151,7 +151,7 @@ Zip the folder and import it, or drop it directly into `~/Library/Application Su
 - **WebView lifecycle** — WKWebViews are created on `start()` and fully deallocated on `stop()`. No idle web processes sitting around eating memory when you swap wallpapers.
 - **Debounced property bridge** — Rapid slider drags batch into a single `evaluateJavaScript` call every 50ms instead of flooding the web process with individual updates.
 - **rAF throttle shim** — A `requestAnimationFrame` wrapper is injected at document start to enforce the FPS cap natively, regardless of what the wallpaper's JS does.
-- **No Combine, no SwiftUI** — Pure AppKit + async/await + NotificationCenter. The entire app is ~350 KB.
+- **No Combine, no SwiftUI** — Pure AppKit + GCD + NotificationCenter. The entire app is ~350 KB.
 - **Stable wallpaper IDs** — Imported bundles use their UUID folder name; built-in wallpapers get a deterministic FNV-1a hash of their path, so property overrides survive moves and reinstalls.
 
 ## Building from Source
