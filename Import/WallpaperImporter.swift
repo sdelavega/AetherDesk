@@ -136,6 +136,12 @@ final class WallpaperImporter {
         try fileManager.removeItem(at: bundle.baseURL)
         runtimePolicyStore.delete(for: bundle.id)
         invalidateCache()
+        // Notify WallpaperManager so it can tear down any live runtime that is
+        // currently showing this bundle, rather than waiting until next launch.
+        NotificationCenter.default.post(
+            name: Constants.Notifications.wallpaperDeleted,
+            object: nil,
+            userInfo: ["bundleID": bundle.id.uuidString])
     }
 
     // MARK: Plumbing

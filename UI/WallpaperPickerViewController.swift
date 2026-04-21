@@ -21,6 +21,11 @@ final class WallpaperPickerViewController: NSViewController {
     /// redispatching a render when we redraw a row.
     private var thumbnailCache: [UUID: NSImage] = [:]
 
+    /// Bundle IDs for which a thumbnail render is already in flight.
+    /// Guards against firing duplicate renders when the same row is redrawn
+    /// before the first request completes.
+    private var inFlightThumbnails: Set<UUID> = []
+
     /// Rendered at the size the rows actually draw at (logical points —
     /// NSImage handles backing scale).
     private static let rowHeight: CGFloat = 56
@@ -66,9 +71,9 @@ final class WallpaperPickerViewController: NSViewController {
 
     private func loadWallpapers() {
         wallpapers = importer.listWallpapers()
-        thumbnailCache = thumbnailCache.filter { id, _ in
-            wallpapers.contains(where: { $0.id == id })
-        }
+        let liveIDs = Set(wallpapers.map(\.id))
+        thumbnailCache = thumbnailCache.filter { liveIDs.contains($0.key) }
+        inFlightThumbnails = inFlightThumbnails.filter { liveIDs.contains($0) }
         tableView.reloadData()
     }
 
@@ -79,9 +84,13 @@ final class WallpaperPickerViewController: NSViewController {
     /// reloads the row when it arrives.
     private func thumbnail(for bundle: WallpaperBundle, rowIndex: Int) -> NSImage? {
         if let cached = thumbnailCache[bundle.id] { return cached }
+        guard !inFlightThumbnails.contains(bundle.id) else { return nil }
 
+        inFlightThumbnails.insert(bundle.id)
         thumbnailer.thumbnail(for: bundle, size: Self.thumbnailSize) { [weak self] image in
-            guard let self = self, let image = image else { return }
+            guard let self = self else { return }
+            self.inFlightThumbnails.remove(bundle.id)
+            guard let image = image else { return }
             self.thumbnailCache[bundle.id] = image
             // The row may have shifted (after a reload); look up by identity.
             if let newRow = self.wallpapers.firstIndex(where: { $0.id == bundle.id }) {

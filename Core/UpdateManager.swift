@@ -244,7 +244,25 @@ final class UpdateManager {
                 return
             }
             guard let tempURL else { return }
-            self.queue.async { self.performInstall(zipURL: tempURL) }
+
+            // URLSession deletes the file at tempURL as soon as this completion
+            // handler returns. Move it to a stable path before we dispatch
+            // performInstall to the background queue.
+            let stableURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("AetherDesk-dl-\(UUID().uuidString).zip")
+            do {
+                try FileManager.default.moveItem(at: tempURL, to: stableURL)
+            } catch {
+                DispatchQueue.main.async {
+                    self.state = .failed(UpdateError.downloadFailed(error))
+                    self.presentAlert(style: .warning,
+                                      title: "Download failed",
+                                      body: error.localizedDescription)
+                    self.state = .idle
+                }
+                return
+            }
+            self.queue.async { self.performInstall(zipURL: stableURL) }
         }.resume()
     }
 
@@ -258,6 +276,17 @@ final class UpdateManager {
             .appendingPathComponent("AetherDesk-Update-\(UUID().uuidString)")
 
         do { try fm.createDirectory(at: tempDir, withIntermediateDirectories: true) } catch {
+            try? fm.removeItem(at: zipURL)
+            return reportInstallError(UpdateError.extractionFailed(-1))
+        }
+
+        // Move the downloaded zip inside tempDir so the cleanup script's
+        // `rm -rf tempDir` removes it along with the extracted contents.
+        let zipInTempDir = tempDir.appendingPathComponent("AetherDesk.zip")
+        do {
+            try fm.moveItem(at: zipURL, to: zipInTempDir)
+        } catch {
+            try? fm.removeItem(at: zipURL)
             return reportInstallError(UpdateError.extractionFailed(-1))
         }
 
@@ -266,7 +295,7 @@ final class UpdateManager {
         // ditto preserves code signatures, extended attributes, and notarization tickets.
         let ditto = Process()
         ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        ditto.arguments = ["-xk", zipURL.path, extractDir.path]
+        ditto.arguments = ["-xk", zipInTempDir.path, extractDir.path]
         do { try ditto.run(); ditto.waitUntilExit() } catch {
             return reportInstallError(UpdateError.extractionFailed(-1))
         }

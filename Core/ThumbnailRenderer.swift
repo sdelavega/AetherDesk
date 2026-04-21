@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import WebKit
+import ImageIO
 import Foundation
 
 /// Generates preview thumbnails for wallpaper bundles.
@@ -40,6 +41,10 @@ final class ThumbnailRenderer {
     /// Pool of reusable offscreen WKWebViews for thumbnail rendering.
     private var webViewPool: [WKWebView] = []
     private static let maxPoolSize = 2
+
+    /// Renders waiting to start because `maxConcurrentWebRenders` is saturated.
+    private var webRenderQueue: [WebRenderRequest] = []
+    private static let maxConcurrentWebRenders = 3
 
     init() {
         let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
@@ -160,6 +165,22 @@ final class ThumbnailRenderer {
     }
 
     private func loadAndResize(url: URL, to size: NSSize) -> NSImage? {
+        // Ask ImageIO to decode at thumbnail resolution rather than loading the
+        // full-size image into memory first. For an imported 4K wallpaper image
+        // decoded to an 88×48-pt thumbnail this is ~100× fewer pixels to decode.
+        // The max-pixel-size is 2× the largest logical dimension to cover Retina.
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let maxPixels = Int(max(size.width, size.height) * 2)
+        let opts: [CFString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) {
+            return NSImage(cgImage: cg, size: size).resized(to: size)
+        }
+        // Fallback: formats ImageIO cannot thumbnail (e.g. animated WebP).
         guard let image = NSImage(contentsOf: url) else { return nil }
         return image.resized(to: size)
     }
@@ -196,25 +217,52 @@ final class ThumbnailRenderer {
                                    completion: @escaping (NSImage?) -> Void) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { completion(nil); return }
-            let token = UUID()
-            let wv = self.checkoutWebView(size: size)
-            let render = WebRender(token: token,
-                                   size: size,
-                                   webView: wv,
-                                   onFinish: { [weak self] image, usedView in
-                guard let self = self else { return }
-                self.pendingLock.lock()
-                self.pendingWebRenders.removeValue(forKey: token)
-                self.pendingLock.unlock()
-                if let usedView = usedView {
-                    self.returnWebView(usedView)
-                }
-                completion(image)
-            })
             self.pendingLock.lock()
-            self.pendingWebRenders[token] = render
+            let active = self.pendingWebRenders.count
             self.pendingLock.unlock()
-            render.load(indexURL: indexURL, baseURL: baseURL)
+            if active >= Self.maxConcurrentWebRenders {
+                // Defer until a slot opens up.
+                self.webRenderQueue.append(
+                    WebRenderRequest(indexURL: indexURL, baseURL: baseURL,
+                                     size: size, completion: completion))
+                return
+            }
+            self.startWebRender(indexURL: indexURL, baseURL: baseURL,
+                                size: size, completion: completion)
+        }
+    }
+
+    private func startWebRender(indexURL: URL, baseURL: URL, size: NSSize,
+                                completion: @escaping (NSImage?) -> Void) {
+        let token = UUID()
+        let wv = checkoutWebView(size: size)
+        let render = WebRender(token: token, size: size, webView: wv,
+                               onFinish: { [weak self] image, usedView in
+            guard let self = self else { return }
+            self.pendingLock.lock()
+            self.pendingWebRenders.removeValue(forKey: token)
+            self.pendingLock.unlock()
+            if let usedView = usedView { self.returnWebView(usedView) }
+            completion(image)
+            self.drainWebRenderQueue()
+        })
+        pendingLock.lock()
+        pendingWebRenders[token] = render
+        pendingLock.unlock()
+        render.load(indexURL: indexURL, baseURL: baseURL)
+    }
+
+    /// Start queued renders whenever a concurrent slot opens up. Always called
+    /// on the main queue (from the onFinish completion path).
+    private func drainWebRenderQueue() {
+        while !webRenderQueue.isEmpty {
+            pendingLock.lock()
+            let active = pendingWebRenders.count
+            pendingLock.unlock()
+            guard active < Self.maxConcurrentWebRenders else { break }
+            let next = webRenderQueue.removeFirst()
+            startWebRender(indexURL: next.indexURL, baseURL: next.baseURL,
+                           size: next.size, completion: next.completion)
         }
     }
 
@@ -231,6 +279,15 @@ final class ThumbnailRenderer {
                            width: max(size.width, 320),
                            height: max(size.height, 180))
         let config = WKWebViewConfiguration()
+        // Block ads, trackers, and miners in thumbnail WebViews consistent
+        // with the live runtime. The external-network block is intentionally
+        // omitted here: applying it would make thumbnails for wallpapers that
+        // load CDN assets render blank, which would be misleading in the picker.
+        let userContent = WKUserContentController()
+        if let ruleList = ContentRuleListManager.shared.ruleList {
+            userContent.add(ruleList)
+        }
+        config.userContentController = userContent
         let wv = WKWebView(frame: frame, configuration: config)
         wv.setValue(false, forKey: "drawsBackground")
         wv.wantsLayer = true
@@ -245,6 +302,15 @@ final class ThumbnailRenderer {
             webViewPool.append(wv)
         }
     }
+}
+
+// MARK: - WebRenderRequest
+
+private struct WebRenderRequest {
+    let indexURL: URL
+    let baseURL: URL
+    let size: NSSize
+    let completion: (NSImage?) -> Void
 }
 
 // MARK: - WebRender (one-shot offscreen WKWebView snapshot)

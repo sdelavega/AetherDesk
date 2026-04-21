@@ -45,6 +45,11 @@ enum Constants {
         /// Posted by UpdateManager when a newer release is found during a quiet
         /// (periodic) check. `object` is the `UpdateManager.GitHubRelease` value.
         static let updateAvailable = Notification.Name("ÆtherDesk.updateAvailable")
+
+        /// Posted by WallpaperImporter after a bundle is deleted from disk.
+        /// `userInfo["bundleID"]` carries the deleted bundle's UUID string so
+        /// WallpaperManager can tear down any runtime currently showing it.
+        static let wallpaperDeleted = Notification.Name("ÆtherDesk.wallpaperDeleted")
     }
 
     enum Keys {

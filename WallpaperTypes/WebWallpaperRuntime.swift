@@ -197,7 +197,6 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         watchdog.stop()
         propertyBridge.flushNow()
         webView?.stopLoading()
-        webView?.loadHTMLString("", baseURL: nil)
         webView?.navigationDelegate = nil
         webView?.removeFromSuperview()
         webView = nil

@@ -296,6 +296,11 @@ final class WallpaperManager {
                        selector: #selector(performanceSettingsDidChange(_:)),
                        name: AppSettingsStore.performanceSettingsDidChange,
                        object: nil)
+
+        nc.addObserver(self,
+                       selector: #selector(wallpaperDeleted(_:)),
+                       name: Constants.Notifications.wallpaperDeleted,
+                       object: nil)
     }
 
     @objc private func displayConfigurationDidChange(_ notification: Notification) {
@@ -441,6 +446,20 @@ final class WallpaperManager {
             reloadAll()
         }
         applyPowerPerformancePolicy()
+    }
+
+    @objc private func wallpaperDeleted(_ note: Notification) {
+        guard let bundleIDString = note.userInfo?["bundleID"] as? String,
+              let bundleID = UUID(uuidString: bundleIDString) else { return }
+
+        for (displayID, bundle) in currentBundles where bundle.id == bundleID {
+            currentBundles.removeValue(forKey: displayID)
+            if let replacement = fallbackBundle {
+                setWallpaper(replacement, for: displayID)
+            } else {
+                installSafeModeContent(for: displayID)
+            }
+        }
     }
 
     @objc private func runtimeDidFail(_ note: Notification) {
