@@ -16,18 +16,25 @@ import Foundation
 ///    window never steals focus — important for a wallpaper host.
 final class WallpaperHostWindow: NSWindow {
 
-    let targetDisplayID: CGDirectDisplayID
+    /// The display this host window targets. Set after init via convenience
+    /// initializer; defaults to 0 (unused by AppKit).
+    private(set) var targetDisplayID: CGDirectDisplayID = 0
 
-    init(screen: NSScreen) {
-        self.targetDisplayID = screen.displayID
-
-        super.init(
+    /// Create a host window covering the given screen at the desktop level.
+    ///
+    /// Declared as a `convenience init` so that NSWindow's designated
+    /// initializers are inherited. NSWindow's ObjC init chain internally
+    /// re-dispatches `initWithContentRect:styleMask:backing:defer:` to
+    /// `self`; if that designated init isn't available, Swift generates a
+    /// trap stub that crashes with EXC_BREAKPOINT.
+    convenience init(screen: NSScreen) {
+        self.init(
             contentRect: screen.frame,
             styleMask: .borderless,
             backing: .buffered,
             defer: false
         )
-
+        self.targetDisplayID = screen.displayID
         configureWindow()
     }
 

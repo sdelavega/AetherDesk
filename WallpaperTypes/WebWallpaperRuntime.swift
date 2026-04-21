@@ -36,6 +36,11 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     /// is added/removed as a subview during start/stop.
     private let containerView: NSView
 
+    /// Tracks rapid web content process crashes so we can retry once before
+    /// giving up and demoting to safe mode.
+    private var lastTerminationUptime: TimeInterval = 0
+    private var rapidTerminationCount: Int = 0
+
     var contentView: NSView { containerView }
 
     init(bundle: WallpaperBundle, displayID: CGDirectDisplayID) {
@@ -223,21 +228,26 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             };
 
             // rAF throttle: enforce fpsCap from the native side.
+            // Uses setTimeout to sleep between frames so the JS thread
+            // idles ~90% of the time at 30 fps instead of waking at
+            // every display vsync (60-120 Hz).
             var _origRAF = window.requestAnimationFrame;
             var _lastFrame = 0;
             window.requestAnimationFrame = function(cb) {
-                return _origRAF.call(window, function(ts) {
-                    if (suspended) return;
-                    var fpsCap = (window.aetherDesk && window.aetherDesk.system.fpsCap) || 30;
-                    var minInterval = 1000.0 / fpsCap;
-                    if (ts - _lastFrame < minInterval) {
-                        // Schedule for next frame instead of dropping entirely
-                        _origRAF.call(window, function(ts2) { cb(ts2); });
-                        return;
-                    }
-                    _lastFrame = ts;
-                    cb(ts);
-                });
+                var fpsCap = (window.aetherDesk && window.aetherDesk.system.fpsCap) || 30;
+                var interval = 1000.0 / fpsCap;
+                var elapsed = performance.now() - _lastFrame;
+                var delay = interval - elapsed;
+                function fire() {
+                    _origRAF.call(window, function(ts) {
+                        if (suspended) return;
+                        _lastFrame = ts;
+                        cb(ts);
+                    });
+                }
+                if (delay <= 4) { fire(); return 0; }
+                setTimeout(fire, delay - 4);
+                return 0;
             };
 
             // Watchdog heartbeat: pure setInterval, no dependency on rAF so a
@@ -282,13 +292,44 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         NSLog("ÆtherDesk: web content process terminated on display %u", displayID)
         watchdog.stop()
+        self.webView?.removeFromSuperview()
         self.webView = nil
         propertyBridge.setWebView(nil)
-        NotificationCenter.default.post(
-            name: Constants.Notifications.runtimeDidFail,
-            object: nil,
-            userInfo: ["displayID": displayID,
-                       "reason": "web content process terminated"])
+
+        // Track rapid successive crashes. If the process crashes twice
+        // within 10 seconds, demote to safe mode; otherwise, retry once.
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastTerminationUptime < 10.0 {
+            rapidTerminationCount += 1
+        } else {
+            rapidTerminationCount = 1
+        }
+        lastTerminationUptime = now
+
+        if rapidTerminationCount >= 2 {
+            NSLog("ÆtherDesk: web content crashed repeatedly on display %u — demoting to safe mode", displayID)
+            NotificationCenter.default.post(
+                name: Constants.Notifications.runtimeDidFail,
+                object: nil,
+                userInfo: ["displayID": displayID,
+                           "reason": "web content process terminated repeatedly"])
+        } else {
+            NSLog("ÆtherDesk: attempting to recover web content on display %u", displayID)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self = self else { return }
+                do {
+                    try self.start()
+                } catch {
+                    NSLog("ÆtherDesk: recovery failed on display %u: %@",
+                          self.displayID, String(describing: error))
+                    NotificationCenter.default.post(
+                        name: Constants.Notifications.runtimeDidFail,
+                        object: nil,
+                        userInfo: ["displayID": self.displayID,
+                                   "reason": "recovery failed"])
+                }
+            }
+        }
     }
 }
 

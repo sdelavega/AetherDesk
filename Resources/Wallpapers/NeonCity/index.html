@@ -27,20 +27,25 @@ const pick = a=>a[Math.floor(rng()*a.length)];
 
 const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
 const cityC=document.createElement('canvas'), cX=cityC.getContext('2d');
+const signC=document.createElement('canvas'), sCtx=signC.getContext('2d');
+const vigC=document.createElement('canvas'), vCtx=vigC.getContext('2d');
 
 let W,H,HZ; // horizon Y
 
 function resize(){
-  W=canvas.width=cityC.width=window.innerWidth;
-  H=canvas.height=cityC.height=window.innerHeight;
+  W=canvas.width=cityC.width=signC.width=vigC.width=window.innerWidth;
+  H=canvas.height=cityC.height=signC.height=vigC.height=window.innerHeight;
   HZ=Math.floor(H*0.78); // horizon at 78% — city fills top 78%, foreground just 22%
   buildCity(); initRain(); initVehicles();
+  signsDirty=true;
+  cacheVignette();
 }
 window.addEventListener('resize',resize);
 
 const NEONS=['#ff1a5e','#ff6a00','#ffe600','#00ffe0','#00aaff','#bb00ff','#ff00bb','#44ff00','#ff4466','#00ffaa'];
 
 let signs=[], antennas=[];
+let signsDirty=true;
 
 // ─────────────────────────────────────────────────────────────────────────────
 function buildCity(){
@@ -201,7 +206,7 @@ function updateFlicker(t){
   for(let i=0;i<signs.length;i++){
     const s=signs[i]; if(!s.flicker) continue;
     if(!flickerT[i]) flickerT[i]=t+rR(800,5000);
-    if(t>flickerT[i]){ s._off=!s._off; flickerT[i]=t+(s._off?rR(40,200):rR(400,6000)); }
+    if(t>flickerT[i]){ s._off=!s._off; flickerT[i]=t+(s._off?rR(40,200):rR(400,6000)); signsDirty=true; }
   }
 }
 const signAlpha=s=>(s.flicker&&s._off)?0.08:1.0;
@@ -342,10 +347,17 @@ function drawFog(ctx,t){
   ctx.restore();
 }
 
-function drawVignette(ctx){
-  const vg=ctx.createRadialGradient(W*.5,H*.5,H*.2,W*.5,H*.5,H*.88);
+// ── Cached layers ─────────────────────────────────────────────────────────────
+function cacheVignette(){
+  const c=vCtx; c.clearRect(0,0,W,H);
+  const vg=c.createRadialGradient(W*.5,H*.5,H*.2,W*.5,H*.5,H*.88);
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.4)');
-  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+  c.fillStyle=vg; c.fillRect(0,0,W,H);
+}
+function redrawSigns(){
+  const c=sCtx; c.clearRect(0,0,W,H);
+  for(const s of signs) drawSign(c,s,signAlpha(s));
+  signsDirty=false;
 }
 
 let last=0; const MS=1000/30;
@@ -355,14 +367,15 @@ function frame(t){
   updateRain(); updateVehicles(); updateFlicker(t); spawnSplash();
   const c=ctx; c.clearRect(0,0,W,H);
   c.drawImage(cityC,0,0);
-  for(const s of signs) drawSign(c,s,signAlpha(s));
+  if(signsDirty) redrawSigns();
+  c.drawImage(signC,0,0);
   drawAntennas(c,t);
   drawFog(c,t);
   drawVehicles(c);
   drawRain(c);
   drawSplashes(c);
   drawReflections(c,t);
-  drawVignette(c);
+  c.drawImage(vigC,0,0);
 }
 
 resize();
