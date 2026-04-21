@@ -33,6 +33,13 @@ struct WallpaperRuntimePolicy: Codable, Equatable {
             self = .unrestricted
         }
     }
+
+    func effectiveFPSCap(with settings: PerformanceSettings) -> Int {
+        if networkBudgetPerMinute != nil || !warnings.isEmpty {
+            return min(fpsCap, settings.clampedFPSCap)
+        }
+        return settings.clampedFPSCap
+    }
 }
 
 final class RuntimePolicyStore {

@@ -28,6 +28,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     private let bundle: WallpaperBundle
     private let policy: WallpaperRuntimePolicy
+    private let fpsCap: Int
     private var webView: WKWebView?
     private let propertyBridge: PropertyBridge
     private let messageHandler: ScriptMessageHandler
@@ -51,8 +52,11 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         self.bundle = bundle
         self.displayID = displayID
         self.policy = RuntimePolicyStore.shared.load(for: bundle.id)
+        self.fpsCap = policy.effectiveFPSCap(
+            with: AppSettingsStore.shared.loadPerformanceSettings()
+        )
 
-        let bridge = PropertyBridge(displayID: displayID, fpsCap: policy.fpsCap)
+        let bridge = PropertyBridge(displayID: displayID, fpsCap: fpsCap)
         self.propertyBridge = bridge
 
         let handler = ScriptMessageHandler(bridge: bridge)
@@ -111,7 +115,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             source: Self.bridgeBootstrapScript(
                 displayID: displayID,
                 heartbeatInterval: Constants.Defaults.watchdogHeartbeatInterval,
-                fpsCap: policy.fpsCap,
+                fpsCap: fpsCap,
                 networkBudgetPerMinute: policy.networkBudgetPerMinute),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false

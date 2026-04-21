@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IOKit.ps
 
 /// Central orchestrator for wallpaper hosts and runtimes across all displays.
 ///
@@ -16,6 +17,7 @@ final class WallpaperManager {
     private let displayManager = DisplayManager()
     private let wallpaperStore = WallpaperStore()
     private let propertyStore  = PropertyStore()
+    private var performanceSettings = AppSettingsStore.shared.loadPerformanceSettings()
 
     private var hosts: [CGDirectDisplayID: WallpaperHostWindow] = [:]
     private var runtimes: [CGDirectDisplayID: WallpaperRuntime] = [:]
@@ -69,6 +71,7 @@ final class WallpaperManager {
                 setWallpaper(fallback, for: displayID)
             }
         }
+        applyPowerPerformancePolicy()
     }
 
     func stopAll() {
@@ -114,6 +117,7 @@ final class WallpaperManager {
                                             object: nil,
                                             userInfo: ["displayID": displayID,
                                                        "bundleID": bundle.id.uuidString])
+            applyPowerPerformancePolicy()
         } catch {
             NSLog("ÆtherDesk: runtime start failed for display %u: %@",
                   displayID, String(describing: error))
@@ -276,6 +280,11 @@ final class WallpaperManager {
                        selector: #selector(runtimeDidFail(_:)),
                        name: Constants.Notifications.runtimeDidFail,
                        object: nil)
+
+        nc.addObserver(self,
+                       selector: #selector(performanceSettingsDidChange(_:)),
+                       name: AppSettingsStore.performanceSettingsDidChange,
+                       object: nil)
     }
 
     @objc private func displayConfigurationDidChange(_ notification: Notification) {
@@ -350,17 +359,29 @@ final class WallpaperManager {
     }
 
     @objc private func thermalStateChanged() {
+        guard performanceSettings.respectLowPowerMode else { return }
         if ProcessInfo.processInfo.thermalState == .critical { pauseAll() }
-        else { resumeAll() }
+        else { applyPowerPerformancePolicy() }
     }
 
     @objc private func powerStateChanged() {
-        if #available(macOS 12.0, *) {
-            if ProcessInfo.processInfo.isLowPowerModeEnabled { pauseAll() }
-            else { resumeAll() }
-        }
+        applyPowerPerformancePolicy()
         NotificationCenter.default.post(name: Constants.Notifications.lowPowerModeDidChange,
                                         object: nil)
+    }
+
+    @objc private func performanceSettingsDidChange(_ note: Notification) {
+        let oldSettings = performanceSettings
+        if let settings = note.object as? PerformanceSettings {
+            performanceSettings = settings
+        } else {
+            performanceSettings = AppSettingsStore.shared.loadPerformanceSettings()
+        }
+
+        if performanceSettings.clampedFPSCap != oldSettings.clampedFPSCap {
+            reloadAll()
+        }
+        applyPowerPerformancePolicy()
     }
 
     @objc private func runtimeDidFail(_ note: Notification) {
@@ -371,5 +392,34 @@ final class WallpaperManager {
         DispatchQueue.main.async { [weak self] in
             self?.installSafeModeContent(for: displayID)
         }
+    }
+
+    private func applyPowerPerformancePolicy() {
+        guard isRunning else { return }
+
+        if performanceSettings.respectLowPowerMode,
+           isLowPowerModeEnabled {
+            pauseAll()
+            return
+        }
+
+        if performanceSettings.pauseOnBatteryPower,
+           isOnBatteryPower {
+            pauseAll()
+            return
+        }
+
+        resumeAll()
+    }
+
+    private var isLowPowerModeEnabled: Bool {
+        if #available(macOS 12.0, *) {
+            return ProcessInfo.processInfo.isLowPowerModeEnabled
+        }
+        return false
+    }
+
+    private var isOnBatteryPower: Bool {
+        IOPSCopyExternalPowerAdapterDetails()?.takeRetainedValue() == nil
     }
 }

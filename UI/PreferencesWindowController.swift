@@ -94,6 +94,18 @@ private final class PreferencesViewController: NSViewController {
     private let launchAtLoginCheckbox = NSButton(
         checkboxWithTitle: "Launch at login", target: nil, action: nil)
     private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
+    private let fpsPopup = NSPopUpButton()
+    private let lowPowerCheckbox = NSButton(checkboxWithTitle: "Respect Low Power Mode",
+                                           target: nil,
+                                           action: nil)
+    private let pauseOnOcclusionCheckbox = NSButton(
+        checkboxWithTitle: "Pause when wallpaper is not visible",
+        target: nil,
+        action: nil)
+    private let pauseOnBatteryCheckbox = NSButton(
+        checkboxWithTitle: "Pause when on battery power",
+        target: nil,
+        action: nil)
 
     private func buildGeneralTab() -> NSView {
         let container = NSView()
@@ -167,31 +179,28 @@ private final class PreferencesViewController: NSViewController {
         fpsLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(fpsLabel)
 
-        let fpsPopup = NSPopUpButton()
         fpsPopup.translatesAutoresizingMaskIntoConstraints = false
         fpsPopup.addItems(withTitles: ["15", "30", "60"])
-        fpsPopup.selectItem(withTitle: "\(Constants.Defaults.fpsCap)")
+        fpsPopup.target = self
+        fpsPopup.action = #selector(performanceSettingsChanged(_:))
         container.addSubview(fpsPopup)
 
-        let lowPower = NSButton(checkboxWithTitle: "Respect Low Power Mode",
-                                target: nil, action: nil)
-        lowPower.state = .on
-        lowPower.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(lowPower)
+        lowPowerCheckbox.target = self
+        lowPowerCheckbox.action = #selector(performanceSettingsChanged(_:))
+        lowPowerCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(lowPowerCheckbox)
 
-        let pauseOnOcclusion = NSButton(
-            checkboxWithTitle: "Pause when wallpaper is not visible",
-            target: nil, action: nil)
-        pauseOnOcclusion.state = .on
-        pauseOnOcclusion.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(pauseOnOcclusion)
+        pauseOnOcclusionCheckbox.target = self
+        pauseOnOcclusionCheckbox.action = #selector(performanceSettingsChanged(_:))
+        pauseOnOcclusionCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(pauseOnOcclusionCheckbox)
 
-        let pauseOnBattery = NSButton(
-            checkboxWithTitle: "Pause when on battery power",
-            target: nil, action: nil)
-        pauseOnBattery.state = .off
-        pauseOnBattery.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(pauseOnBattery)
+        pauseOnBatteryCheckbox.target = self
+        pauseOnBatteryCheckbox.action = #selector(performanceSettingsChanged(_:))
+        pauseOnBatteryCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(pauseOnBatteryCheckbox)
+
+        loadPerformanceSettingsIntoControls()
 
         NSLayoutConstraint.activate([
             fpsLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
@@ -200,16 +209,35 @@ private final class PreferencesViewController: NSViewController {
             fpsPopup.centerYAnchor.constraint(equalTo: fpsLabel.centerYAnchor),
             fpsPopup.leadingAnchor.constraint(equalTo: fpsLabel.trailingAnchor, constant: 10),
 
-            lowPower.topAnchor.constraint(equalTo: fpsLabel.bottomAnchor, constant: 20),
-            lowPower.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            lowPowerCheckbox.topAnchor.constraint(equalTo: fpsLabel.bottomAnchor, constant: 20),
+            lowPowerCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
-            pauseOnOcclusion.topAnchor.constraint(equalTo: lowPower.bottomAnchor, constant: 10),
-            pauseOnOcclusion.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            pauseOnOcclusionCheckbox.topAnchor.constraint(equalTo: lowPowerCheckbox.bottomAnchor, constant: 10),
+            pauseOnOcclusionCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
-            pauseOnBattery.topAnchor.constraint(equalTo: pauseOnOcclusion.bottomAnchor, constant: 10),
-            pauseOnBattery.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20)
+            pauseOnBatteryCheckbox.topAnchor.constraint(equalTo: pauseOnOcclusionCheckbox.bottomAnchor, constant: 10),
+            pauseOnBatteryCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20)
         ])
         return container
+    }
+
+    private func loadPerformanceSettingsIntoControls() {
+        let settings = AppSettingsStore.shared.loadPerformanceSettings()
+        fpsPopup.selectItem(withTitle: "\(settings.clampedFPSCap)")
+        lowPowerCheckbox.state = settings.respectLowPowerMode ? .on : .off
+        pauseOnOcclusionCheckbox.state = settings.pauseWhenNotVisible ? .on : .off
+        pauseOnBatteryCheckbox.state = settings.pauseOnBatteryPower ? .on : .off
+    }
+
+    @objc private func performanceSettingsChanged(_ sender: Any) {
+        let selectedFPS = Int(fpsPopup.titleOfSelectedItem ?? "") ?? Constants.Defaults.fpsCap
+        let settings = PerformanceSettings(
+            fpsCap: selectedFPS,
+            respectLowPowerMode: lowPowerCheckbox.state == .on,
+            pauseWhenNotVisible: pauseOnOcclusionCheckbox.state == .on,
+            pauseOnBatteryPower: pauseOnBatteryCheckbox.state == .on
+        )
+        AppSettingsStore.shared.savePerformanceSettings(settings)
     }
 
     private func buildWallpaperTab() -> NSView {
