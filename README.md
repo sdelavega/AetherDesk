@@ -21,7 +21,7 @@ It ships with full [Lively Wallpaper](https://www.rocksdanister.com/lively/) com
   - Pause/resume from the menu bar or automatically when the display sleeps
   - Safe Mode fallback if a wallpaper misbehaves
   - Watchdog timer catches hung web content and recovers gracefully
-- **Sandboxed WebViews** — each wallpaper runs in its own WKWebView process; no network access, no local file snooping
+- **Sandboxed WebViews** — each wallpaper runs in its own WKWebView process; ad networks, analytics trackers, and crypto miners are blocked via a compiled content rule list; `file://` access is scoped to the wallpaper's own bundle
 - **Import validation** — bundles are screened on import for excessive size, suspicious scripts, and resource abuse before they ever run
 
 ## Getting Started
@@ -159,12 +159,12 @@ Zip the folder and import it, or drop it directly into `~/Library/Application Su
 ```bash
 git clone https://github.com/sdelavega/AetherDesk.git
 cd AetherDesk
-open AetherDesk.xcodeproj
+open ÆtherDesk.xcodeproj
 ```
 
 Build and run (`Cmd+R`). No SPM dependencies, no CocoaPods, no external frameworks — just AppKit, WebKit, and AVFoundation.
 
-**Requirements:** macOS 12.3+ · Swift 5.9+ · Xcode 15+
+**Requirements:** macOS 12.0+ · Swift 5.9+ · Xcode 15+
 
 ## License
 
