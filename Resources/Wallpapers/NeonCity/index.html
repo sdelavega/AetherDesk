@@ -251,8 +251,8 @@ function drawAntennas(ctx,t){
   for(const a of antennas){
     const p=Math.sin(t*0.0018+a.phase); if(p<0.45) continue;
     const dim=a.dim??1.0;
-    // shadowBlur kept small (2) — antenna dots are 2px, heavy blur adds nothing visible
-    ctx.globalAlpha=(0.65+0.28*p)*dim; ctx.fillStyle='#ff2222'; ctx.shadowColor='#ff0000'; ctx.shadowBlur=2*dim;
+    // No shadowBlur — 2px dot at viewing distance needs none; saves ~20 blur passes/frame.
+    ctx.globalAlpha=(0.65+0.28*p)*dim; ctx.fillStyle='#ff2222';
     ctx.beginPath(); ctx.arc(a.x,a.y,2.2*(0.5+0.5*dim),0,Math.PI*2); ctx.fill();
   }
   ctx.restore();
@@ -300,29 +300,42 @@ let vehicles=[];
 function initVehicles(){vehicles=[];for(let i=0;i<CFG.vehicleCount;i++) vehicles.push(mkVehicle(true));}
 function mkVehicle(rand){
   const dir=rng()<0.5?1:-1, spd=rR(0.5,2.2)*dir;
-  return{x:rand?rng()*W:(dir>0?-80:W+80),y:rR(H*0.04,HZ*0.72),spd,dir,size:rR(1.2,2.8),color:pick(NEONS),trail:rR(20,58)};
+  const size=rR(1.2,2.8), color=pick(NEONS), tlen=Math.ceil(rR(20,58));
+  // Pre-render trail (color->transparent in direction of travel) — eliminates
+  // createLinearGradient allocation each frame.
+  const lw=Math.max(1,size*0.5);
+  const ts=document.createElement('canvas');
+  ts.width=tlen; ts.height=Math.ceil(lw)+2;
+  const tx=ts.getContext('2d');
+  const tg=tx.createLinearGradient(dir>0?0:tlen,0,dir>0?tlen:0,0);
+  tg.addColorStop(0,'rgba(0,0,0,0)'); tg.addColorStop(1,color);
+  tx.fillStyle=tg; tx.fillRect(0,0,tlen,ts.height);
+  // Pre-render head (white dot + colored glow) — eliminates per-frame shadowBlur.
+  const pad=Math.ceil(size*12), hw=pad*2;
+  const hs=document.createElement('canvas'); hs.width=hs.height=hw;
+  const hx=hs.getContext('2d');
+  hx.shadowColor=color; hx.shadowBlur=size*3; hx.fillStyle='#fff';
+  hx.beginPath(); hx.arc(pad,pad,size,0,Math.PI*2); hx.fill();
+  return{x:rand?rng()*W:(dir>0?-80:W+80),y:rR(H*0.04,HZ*0.72),
+         spd,dir,size,color,tlen,trailH:ts.height,trailImg:ts,headImg:hs,hpad:pad};
 }
 function updateVehicles(){const s=dt/33.33;
   for(let i=0;i<vehicles.length;i++){
     const v=vehicles[i]; v.x+=v.spd*s;
-    if(v.dir>0&&v.x>W+v.trail+20) vehicles[i]=mkVehicle(false);
-    if(v.dir<0&&v.x<-v.trail-20)  vehicles[i]=mkVehicle(false);
+    if(v.dir>0&&v.x>W+v.tlen+20) vehicles[i]=mkVehicle(false);
+    if(v.dir<0&&v.x<-v.tlen-20)  vehicles[i]=mkVehicle(false);
   }
 }
 function drawVehicles(ctx){
   ctx.save(); const nb=CFG.neonBrightness/80;
   for(const v of vehicles){
-    // Fading trail — gradient + low shadow blur
-    const tg=ctx.createLinearGradient(v.x,0,v.x-v.trail*v.dir,0);
-    tg.addColorStop(0,v.color); tg.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.globalAlpha=0.45*nb; ctx.strokeStyle=tg;
-    ctx.lineWidth=v.size*0.5; ctx.shadowColor=v.color; ctx.shadowBlur=v.size*2;
-    ctx.beginPath(); ctx.moveTo(v.x,v.y); ctx.lineTo(v.x-v.trail*v.dir,v.y); ctx.stroke();
-    // Bright head dot — single draw, reduced blur (was size*9)
-    ctx.globalAlpha=0.88*nb; ctx.fillStyle='#fff';
-    ctx.shadowColor=v.color; ctx.shadowBlur=v.size*3;
-    ctx.beginPath(); ctx.arc(v.x,v.y,v.size,0,Math.PI*2); ctx.fill();
-    // Removed third draw (colored aura with shadowBlur=size*14 ≈ 39px) — not worth the GPU cost
+    // Trail: blit pre-rendered sprite — no per-frame gradient or shadowBlur.
+    const ty=Math.round(v.y)-Math.ceil(v.trailH/2);
+    ctx.globalAlpha=0.45*nb;
+    ctx.drawImage(v.trailImg, v.dir>0 ? Math.round(v.x)-v.tlen : Math.round(v.x), ty);
+    // Head: blit pre-rendered sprite (white dot + colored glow).
+    ctx.globalAlpha=0.88*nb;
+    ctx.drawImage(v.headImg, Math.round(v.x)-v.hpad, Math.round(v.y)-v.hpad);
   }
   ctx.restore();
 }
@@ -388,7 +401,7 @@ function frame(t){
 
   // Refresh cached layers on their respective cadences
   if(fogFrame++ % 6 === 0) cacheFog(t);
-  if(reflFrame++ % 4 === 0 || signsDirty) cacheReflections(t);
+  if(reflFrame++ % 8 === 0 || signsDirty) cacheReflections(t);
 
   const c=ctx; c.clearRect(0,0,W,H);
   c.drawImage(cityC,0,0);
