@@ -5,14 +5,13 @@ import AppKit
 ///
 /// Shape on disk (UserDefaults, JSON-encoded):
 ///   {
-///     "displayAssignments": { "<displayID>": "<bundleUUID>" }
+///     "displayAssignments": { "<displayIdentity>": "<bundleUUID>" }
 ///   }
 ///
-/// Why keyed by stringified display ID: CGDirectDisplayID is not stable across
-/// every kind of hardware change (a monitor unplugged & replugged can get a
-/// new ID), but for the common case of the same configuration between runs
-/// the ID is stable and cheap. When a saved ID no longer exists we simply
-/// fall back to the provided default bundle for that display.
+/// Display identities prefer vendor/model/serial metadata when CoreGraphics
+/// exposes it, falling back to CGDirectDisplayID for displays that do not
+/// report stable hardware identifiers. Legacy numeric display-ID keys are read
+/// during restore so older installs migrate naturally as assignments are saved.
 final class WallpaperStore {
 
     private let userDefaults: UserDefaults
@@ -28,10 +27,15 @@ final class WallpaperStore {
 
     // MARK: Display assignments
 
-    /// Persist the (displayID -> bundleID) mapping for a single display.
+    /// Persist the (display identity -> bundleID) mapping for a single display.
     func setAssignment(bundleID: UUID, for displayID: CGDirectDisplayID) {
         var payload = loadPayload()
-        payload.displayAssignments[String(displayID)] = bundleID.uuidString
+        let identity = DisplayIdentity.forDisplay(displayID)
+        payload.displayAssignments[identity.key] = bundleID.uuidString
+        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacyNumeric(displayID))
+        if identity != .legacy(displayID) {
+            payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacy(displayID).key)
+        }
         save(payload)
     }
 
@@ -39,20 +43,32 @@ final class WallpaperStore {
     /// is no longer connected or the wallpaper is uninstalled).
     func removeAssignment(for displayID: CGDirectDisplayID) {
         var payload = loadPayload()
-        payload.displayAssignments.removeValue(forKey: String(displayID))
+        payload.displayAssignments.removeValue(forKey: DisplayIdentity.forDisplay(displayID).key)
+        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacy(displayID).key)
+        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacyNumeric(displayID))
         save(payload)
     }
 
-    /// Load every known (displayID -> bundleID) assignment. Values that fail
-    /// to parse as UUIDs are silently dropped.
-    func loadAssignments() -> [CGDirectDisplayID: UUID] {
+    /// Resolve saved assignments for currently connected displays. Values that
+    /// fail to parse as UUIDs are silently dropped. Lookup order is stable
+    /// identity, new CGDisplay fallback key, then legacy raw numeric key.
+    func loadAssignments(for displayIDs: [CGDirectDisplayID]) -> [CGDirectDisplayID: UUID] {
         let payload = loadPayload()
         var out: [CGDirectDisplayID: UUID] = [:]
-        for (k, v) in payload.displayAssignments {
-            guard let displayID = UInt32(k),
-                  let bundleID = UUID(uuidString: v)
-            else { continue }
-            out[CGDirectDisplayID(displayID)] = bundleID
+        for displayID in displayIDs {
+            let candidateKeys = [
+                DisplayIdentity.forDisplay(displayID).key,
+                DisplayIdentity.legacy(displayID).key,
+                DisplayIdentity.legacyNumeric(displayID)
+            ]
+            for key in candidateKeys {
+                guard let value = payload.displayAssignments[key],
+                      let bundleID = UUID(uuidString: value) else {
+                    continue
+                }
+                out[displayID] = bundleID
+                break
+            }
         }
         return out
     }

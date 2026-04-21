@@ -62,7 +62,7 @@ final class WallpaperManager {
         let byID = Dictionary(uniqueKeysWithValues: availableBundles.map { ($0.id, $0) })
         wallpaperStore.pruneMissing(knownBundleIDs: Set(byID.keys))
 
-        let saved = wallpaperStore.loadAssignments()
+        let saved = wallpaperStore.loadAssignments(for: displayManager.displayIDs)
 
         for displayID in displayManager.displayIDs {
             if let savedID = saved[displayID], let bundle = byID[savedID] {

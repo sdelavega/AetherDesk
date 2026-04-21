@@ -37,6 +37,7 @@
 		E78A8D1BC0C6ADAE32B1A5F7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CF514B148862C8CA4AF361B9 /* Assets.xcassets */; };
 		FC3FEB5D2F97B9CB00FAF698 /* RuntimePolicyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3FEB5C2F97B9CB00FAF698 /* RuntimePolicyStore.swift */; };
 		FC3FEB5F2F97BEBB00FAF698 /* AppSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3FEB5E2F97BEBB00FAF698 /* AppSettingsStore.swift */; };
+		FC3FEB612F97BFA000FAF698 /* DisplayIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3FEB602F97BFA000FAF698 /* DisplayIdentity.swift */; };
 		FEBB4AD7E501CBF200A3BAAA /* ThumbnailRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CF40BF707D1AFF897EB73F2 /* ThumbnailRenderer.swift */; };
 /* End PBXBuildFile section */
 
@@ -74,6 +75,7 @@
 		FC3FEB5B2F97B83000FAF698 /* TODO.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TODO.md; sourceTree = "<group>"; };
 		FC3FEB5C2F97B9CB00FAF698 /* RuntimePolicyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimePolicyStore.swift; sourceTree = "<group>"; };
 		FC3FEB5E2F97BEBB00FAF698 /* AppSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsStore.swift; sourceTree = "<group>"; };
+		FC3FEB602F97BFA000FAF698 /* DisplayIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayIdentity.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -105,6 +107,7 @@
 				11029153DBF7B06D601A0121 /* WallpaperManager.swift */,
 				3C0AF04AFEC748C988704065 /* WallpaperRuntime.swift */,
 				180A4857E93F7D9870B5C672 /* WatchdogTimer.swift */,
+				FC3FEB602F97BFA000FAF698 /* DisplayIdentity.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -275,6 +278,7 @@
 				2CA61A8A949B9EE1A4F7E0B3 /* PropertyEditorViewController.swift in Sources */,
 				3FDDB978B4020370AC5F3008 /* PropertyStore.swift in Sources */,
 				FC3FEB5F2F97BEBB00FAF698 /* AppSettingsStore.swift in Sources */,
+				FC3FEB612F97BFA000FAF698 /* DisplayIdentity.swift in Sources */,
 				FEBB4AD7E501CBF200A3BAAA /* ThumbnailRenderer.swift in Sources */,
 				103B3C3F4917594CD9F6E84F /* VideoWallpaperRuntime.swift in Sources */,
 				65F0FF0A09AF57988B13920C /* WallpaperBundle.swift in Sources */,
