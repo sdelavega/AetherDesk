@@ -61,3 +61,41 @@ targets:
     entitlements:
       path: Resources/AetherDesk.entitlements
     dependencies: []
+
+  AetherDeskTests:
+    type: bundle.unit-test
+    platform: macOS
+    # Compile app sources directly into the test target so there is no Swift
+    # module name conflict with the app target. main.swift is excluded because
+    # it starts NSApplication; all other source files are safe to compile in
+    # a unit-test context.
+    sources:
+      - path: Tests
+      - path: App
+        excludes:
+          - "main.swift"
+      - path: Core
+      - path: WallpaperTypes
+      - path: LivelyCompatibility
+      - path: Import
+      - path: UI
+      - path: Persistence
+    dependencies: []
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "12.0"
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_MODULE_NAME: AetherDeskTests
+
+schemes:
+  AetherDesk:
+    build:
+      targets:
+        AetherDesk: all
+        AetherDeskTests: [testing]
+    test:
+      targets:
+        - AetherDeskTests

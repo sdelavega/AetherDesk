@@ -2,9 +2,13 @@ import Foundation
 
 class PropertyStore {
 
-    private let userDefaults = UserDefaults.standard
+    private let userDefaults: UserDefaults
     private let key = "AetherDesk.propertyStore"
     private var cache: [String: [String: Any]]?
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+    }
 
     func save(_ properties: [String: Any], for bundleID: UUID) {
         var allProperties = loadAll()
