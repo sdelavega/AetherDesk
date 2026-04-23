@@ -5,9 +5,17 @@
 #   ./release [patch|minor|major|X.Y.Z] [--no-notarize] [--dry-run]
 #
 # For notarization (skip with --no-notarize for local/dev builds):
-#   export NOTARIZE_APPLE_ID="you@example.com"
-#   export NOTARIZE_TEAM_ID="N5PUFD82GV"
-#   export NOTARIZE_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # app-specific password
+#
+#   Preferred — store credentials once in the keychain:
+#     xcrun notarytool store-credentials "AetherDesk" \
+#       --apple-id "you@example.com" --team-id "N5PUFD82GV" \
+#       --password "xxxx-xxxx-xxxx-xxxx"
+#   Then set: export NOTARIZE_KEYCHAIN_PROFILE="AetherDesk"
+#
+#   Or via env vars each time:
+#     export NOTARIZE_APPLE_ID="you@example.com"
+#     export NOTARIZE_TEAM_ID="N5PUFD82GV"
+#     export NOTARIZE_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # app-specific password
 #
 # The script:
 #   1. Bumps MARKETING_VERSION and CURRENT_PROJECT_VERSION in project.yml
@@ -30,6 +38,7 @@ GITHUB_REPO="sdelavega/AetherDesk"
 ASSET_NAME="AetherDesk.zip"
 XCODEGEN="${XCODEGEN:-/opt/homebrew/bin/xcodegen}"
 GH="${GH:-/opt/homebrew/bin/gh}"
+NOTARIZE_KEYCHAIN_PROFILE="${NOTARIZE_KEYCHAIN_PROFILE:-notarytool}"
 
 # ── Colours ────────────────────────────────────────────────────────────────
 R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' B='\033[0;34m' N='\033[0m'
@@ -174,23 +183,28 @@ fi
 if $NOTARIZE; then
     step "Notarize"
 
-    [[ -n "${NOTARIZE_APPLE_ID:-}" ]] \
-        || die "Set NOTARIZE_APPLE_ID (your Apple ID email)"
-    [[ -n "${NOTARIZE_TEAM_ID:-}" ]] \
-        || die "Set NOTARIZE_TEAM_ID (10-char team ID from developer.apple.com)"
-    [[ -n "${NOTARIZE_PASSWORD:-}" ]] \
-        || die "Set NOTARIZE_PASSWORD (app-specific password from appleid.apple.com)"
-
     NOTARIZE_ZIP="$BUILD_DIR/AetherDesk-notarize.zip"
     info "Zipping for notarization..."
     run ditto -c -k --keepParent "$APP_PATH" "$NOTARIZE_ZIP"
 
     info "Submitting to Apple notarization service (this takes a minute)..."
-    run xcrun notarytool submit "$NOTARIZE_ZIP" \
-        --apple-id  "$NOTARIZE_APPLE_ID" \
-        --team-id   "$NOTARIZE_TEAM_ID"  \
-        --password  "$NOTARIZE_PASSWORD" \
-        --wait
+    if [[ -n "${NOTARIZE_KEYCHAIN_PROFILE:-}" ]]; then
+        run xcrun notarytool submit "$NOTARIZE_ZIP" \
+            --keychain-profile "$NOTARIZE_KEYCHAIN_PROFILE" \
+            --wait
+    else
+        [[ -n "${NOTARIZE_APPLE_ID:-}" ]] \
+            || die "Set NOTARIZE_KEYCHAIN_PROFILE or NOTARIZE_APPLE_ID"
+        [[ -n "${NOTARIZE_TEAM_ID:-}" ]] \
+            || die "Set NOTARIZE_TEAM_ID (10-char team ID from developer.apple.com)"
+        [[ -n "${NOTARIZE_PASSWORD:-}" ]] \
+            || die "Set NOTARIZE_PASSWORD (app-specific password from appleid.apple.com)"
+        run xcrun notarytool submit "$NOTARIZE_ZIP" \
+            --apple-id  "$NOTARIZE_APPLE_ID" \
+            --team-id   "$NOTARIZE_TEAM_ID"  \
+            --password  "$NOTARIZE_PASSWORD" \
+            --wait
+    fi
 
     info "Stapling ticket..."
     run xcrun stapler staple "$APP_PATH"
