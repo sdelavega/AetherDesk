@@ -471,8 +471,7 @@ private final class PreferencesViewController: NSViewController {
     // MARK: Actions
 
     @objc private func revealWallpaperFolder() {
-        let importer = WallpaperImporter()
-        NSWorkspace.shared.open(importer.wallpapersDirectory)
+        NSWorkspace.shared.open(WallpaperImporter.shared.wallpapersDirectory)
     }
 
     @objc private func geoPermissionChanged(_ sender: NSButton) {
