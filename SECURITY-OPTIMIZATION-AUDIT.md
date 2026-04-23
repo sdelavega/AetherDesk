@@ -113,17 +113,23 @@ Generated 2026-04-23. Nothing is modified unless explicitly noted.
 
 ### Low
 
-- [ ] **O-11: Property double-injection flicker** — Persisted property overrides are injected both in `didFinish` (via `injectProperties`) and again ~50ms later via the debounced `PropertyBridge.flush`. This can cause visual flicker.
+- [x] **O-11: Property double-injection flicker** — Persisted property overrides are injected both in `didFinish` (via `injectProperties`) and again ~50ms later via the debounced `PropertyBridge.flush`. This can cause visual flicker.
+  **Fixed in 69dcb83:** `setInitialProperties` now accepts overrides dict; `updateProperty` skips unchanged values; web runtime receives overrides before start.
 
-- [ ] **O-12: MenuBarController rebuilds entire submenu on every open** — Acceptable at <10 wallpapers but worth noting.
+- [x] **O-12: MenuBarController rebuilds entire submenu on every open** — Acceptable at <10 wallpapers but worth noting.
+  **Fixed in 5633a81:** Wallpaper list cached and compared by ID set. On re-open with same set, only checkmarks updated. Full rebuild only on add/remove.
 
-- [ ] **O-13: WallpaperBundle.previewImageURL does directory listing on every access** — Should be cached.
+- [x] **O-13: WallpaperBundle.previewImageURL does directory listing on every access** — Should be cached.
+  **Fixed in 5a8e26e:** All resource URL properties (indexURL, videoURL, imageURL, previewImageURL) now lazy-cache on first access via separate did-resolve flags.
 
-- [ ] **O-14: WallpaperValidator creates a redundant WallpaperBundle** — Re-parses LivelyInfo/Properties JSON just to get `indexURL`.
+- [x] **O-14: WallpaperValidator creates a redundant WallpaperBundle** — Re-parses LivelyInfo/Properties JSON just to get `indexURL`.
+  **Fixed in 6d9076a:** `report(at:bundle:)` accepts optional pre-existing bundle to reuse indexURL and livelyInfo. Import path still passes nil; test passes its bundle.
 
-- [ ] **O-15: pendingLock in ThumbnailRenderer is unnecessary** — All access to `pendingWebRenders` is already on the main queue. The lock adds overhead with no concurrency benefit.
+- [x] **O-15: pendingLock in ThumbnailRenderer is unnecessary** — All access to `pendingWebRenders` is already on the main queue. The lock adds overhead with no concurrency benefit.
+  **Fixed in 393684e:** Removed NSLock and all lock/unlock calls. Direct dictionary access on main queue is safe.
 
-- [ ] **O-16: WallpaperImporter singleton inconsistency** — `PreferencesWindowController.revealWallpaperFolder()` creates a new instance instead of using `.shared`.
+- [x] **O-16: WallpaperImporter singleton inconsistency** — `PreferencesWindowController.revealWallpaperFolder()` creates a new instance instead of using `.shared`.
+  **Fixed in 29d429b:** Uses `WallpaperImporter.shared.wallpapersDirectory` directly.
 
 ---
 
