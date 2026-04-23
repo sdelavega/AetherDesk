@@ -27,6 +27,9 @@ final class WallpaperManager {
     private(set) var isSafeMode = false
     private var fallbackBundle: WallpaperBundle?
     private var occludedDisplays: Set<CGDirectDisplayID> = []
+    /// Snapshot of the last known display set. Used to detect redundant
+    /// displayConfigurationDidChange notifications (e.g. wake + notification).
+    private var lastKnownDisplayIDs: Set<CGDirectDisplayID> = []
 
     // MARK: Lifecycle
 
@@ -312,48 +315,52 @@ final class WallpaperManager {
 
         let current = Set(displayManager.displayIDs)
         let existing = Set(hosts.keys)
+        let displaySetChanged = current != lastKnownDisplayIDs
+        lastKnownDisplayIDs = current
 
-        let added   = current.subtracting(existing)
-        let removed = existing.subtracting(current)
+        if displaySetChanged {
+            let added   = current.subtracting(existing)
+            let removed = existing.subtracting(current)
 
-        for id in removed {
-            runtimes[id]?.stop()
-            runtimes.removeValue(forKey: id)
-            occludedDisplays.remove(id)
-            // Keep currentBundles[id] — the display may return (e.g., lid
-            // open) and we need the bundle reference to restore it.
-            // The persisted wallpaperStore assignment is also preserved.
-            if let host = hosts[id] {
-                NotificationCenter.default.removeObserver(
-                    self,
-                    name: NSWindow.didChangeOcclusionStateNotification,
-                    object: host)
-                host.orderOut(nil)
-                host.close()
+            for id in removed {
+                runtimes[id]?.stop()
+                runtimes.removeValue(forKey: id)
+                occludedDisplays.remove(id)
+                // Keep currentBundles[id] — the display may return (e.g., lid
+                // open) and we need the bundle reference to restore it.
+                // The persisted wallpaperStore assignment is also preserved.
+                if let host = hosts[id] {
+                    NotificationCenter.default.removeObserver(
+                        self,
+                        name: NSWindow.didChangeOcclusionStateNotification,
+                        object: host)
+                    host.orderOut(nil)
+                    host.close()
+                }
+                hosts.removeValue(forKey: id)
             }
-            hosts.removeValue(forKey: id)
-        }
 
-        for id in added {
-            ensureHost(for: id)
-            if runtimes[id] == nil {
-                if let bundle = currentBundles[id] {
-                    // Display reconnected this session (lid open, cable replug).
-                    setWallpaper(bundle, for: id)
-                } else {
-                    // Genuinely new display — try persistence, then fallback.
-                    // Directory scans can hitch the main thread; do the lookup
-                    // on a background queue and apply on main.
-                    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                        guard let self = self else { return }
-                        let available = WallpaperImporter.shared.listWallpapers()
-                        let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
-                        let saved = self.wallpaperStore.loadAssignments(for: [id])
-                        DispatchQueue.main.async {
-                            if let savedID = saved[id], let bundle = byID[savedID] {
-                                self.setWallpaper(bundle, for: id)
-                            } else if let fallback = self.fallbackBundle {
-                                self.setWallpaper(fallback, for: id)
+            for id in added {
+                ensureHost(for: id)
+                if runtimes[id] == nil {
+                    if let bundle = currentBundles[id] {
+                        // Display reconnected this session (lid open, cable replug).
+                        setWallpaper(bundle, for: id)
+                    } else {
+                        // Genuinely new display — try persistence, then fallback.
+                        // Directory scans can hitch the main thread; do the lookup
+                        // on a background queue and apply on main.
+                        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                            guard let self = self else { return }
+                            let available = WallpaperImporter.shared.listWallpapers()
+                            let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
+                            let saved = self.wallpaperStore.loadAssignments(for: [id])
+                            DispatchQueue.main.async {
+                                if let savedID = saved[id], let bundle = byID[savedID] {
+                                    self.setWallpaper(bundle, for: id)
+                                } else if let fallback = self.fallbackBundle {
+                                    self.setWallpaper(fallback, for: id)
+                                }
                             }
                         }
                     }
