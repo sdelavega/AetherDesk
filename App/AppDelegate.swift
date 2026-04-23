@@ -20,13 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // cache hit and resolves in milliseconds; first launch compiles from
         // the embedded JSON, which takes well under a second for our small list.
         ContentRuleListManager.shared.prepare {
-            // Restore per-display wallpaper from persisted state, falling back
-            // to the first bundled sample for any display without a prior
-            // assignment (so first launch is never blank).
-            let available = WallpaperImporter.shared.listWallpapers()
-            let fallback = WallpaperImporter.shared.listBundledWallpapers().first
-            manager.startAndRestore(availableBundles: available, fallback: fallback)
-            UpdateManager.shared.startPeriodicChecks()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let available = WallpaperImporter.shared.listWallpapers()
+                let fallback = WallpaperImporter.shared.listBundledWallpapers().first
+                DispatchQueue.main.async {
+                    manager.startAndRestore(availableBundles: available, fallback: fallback)
+                    UpdateManager.shared.startPeriodicChecks()
+                }
+            }
         }
     }
 
