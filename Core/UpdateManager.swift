@@ -66,7 +66,24 @@ final class UpdateManager {
 
     // MARK: - Properties
 
-    private(set) var state: UpdateState = .idle
+    private(set) var state: UpdateState = .idle {
+        didSet { /* mutations funnel through setState(_:) */ }
+    }
+    private let stateLock = NSLock()
+
+    /// Thread-safe state write. Call this instead of assigning `state` directly.
+    private func setState(_ newState: UpdateState) {
+        stateLock.lock()
+        state = newState
+        stateLock.unlock()
+    }
+
+    /// Thread-safe state read.
+    private var currentState: UpdateState {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return state
+    }
 
     private let session: URLSession
     private let queue = DispatchQueue(label: "com.aetherdesk.UpdateManager", qos: .utility)
@@ -121,26 +138,26 @@ final class UpdateManager {
     // MARK: - Check (quiet)
 
     private func checkQuietly() {
-        guard case .idle = state else { return }
+        guard case .idle = currentState else { return }
         fetchLatestRelease { [weak self] result in
             guard let self else { return }
             switch result {
             case .failure(let error):
                 NSLog("ÆtherDesk UpdateManager: check failed — %@", error.localizedDescription)
-                self.state = .idle
+                self.setState(.idle)
             case .success(let release):
                 guard self.isNewer(release) else {
-                    self.state = .idle
+                    self.setState(.idle)
                     return
                 }
                 let settings = UpdateSettingsStore.shared.load()
                 if let skipped = settings.skippedVersion,
                    skipped == self.version(from: release) {
                     NSLog("ÆtherDesk UpdateManager: %@ is available but was skipped by user", release.tag_name)
-                    self.state = .idle
+                    self.setState(.idle)
                     return
                 }
-                self.state = .available(release)
+                self.setState(.available(release))
                 if settings.automaticallyInstallUpdates {
                     self.queue.async { self.downloadAndInstall(release) }
                 } else {
@@ -158,24 +175,24 @@ final class UpdateManager {
 
     /// Called from the "Check for Updates…" menu item. Always shows UI feedback.
     func checkForUpdatesInteractively() {
-        state = .checking
+        setState(.checking)
         fetchLatestRelease { [weak self] result in
             guard let self else { return }
             DispatchQueue.main.async {
                 switch result {
                 case .failure(let error):
-                    self.state = .failed(error)
+                    self.setState(.failed(error))
                     self.presentAlert(
                         style: .warning,
                         title: "Update check failed",
                         body: error.localizedDescription)
-                    self.state = .idle
+                    self.setState(.idle)
                 case .success(let release):
                     if self.isNewer(release) {
-                        self.state = .available(release)
+                        self.setState(.available(release))
                         self.presentUpdateAlert(release)
                     } else {
-                        self.state = .idle
+                        self.setState(.idle)
                         self.presentAlert(
                             style: .informational,
                             title: "You're up to date",
@@ -227,16 +244,16 @@ final class UpdateManager {
         guard let asset = release.assets.first(where: { $0.name == Self.assetName }),
               let downloadURL = URL(string: asset.browser_download_url) else {
             DispatchQueue.main.async {
-                self.state = .failed(UpdateError.noZipAsset)
+                self.setState(.failed(UpdateError.noZipAsset))
                 self.presentAlert(style: .warning,
                                   title: "Update failed",
                                   body: UpdateError.noZipAsset.localizedDescription)
-                self.state = .idle
+                self.setState(.idle)
             }
             return
         }
 
-        DispatchQueue.main.async { self.state = .downloading }
+        DispatchQueue.main.async { self.setState(.downloading) }
 
         // Download both the zip and the .sha256 sidecar (if present).
         let group = DispatchGroup()
@@ -267,11 +284,11 @@ final class UpdateManager {
             guard let self else { return }
             if let error = downloadError {
                 DispatchQueue.main.async {
-                    self.state = .failed(UpdateError.downloadFailed(error))
+                    self.setState(.failed(UpdateError.downloadFailed(error)))
                     self.presentAlert(style: .warning,
                                       title: "Download failed",
                                       body: error.localizedDescription)
-                    self.state = .idle
+                    self.setState(.idle)
                 }
                 return
             }
@@ -292,11 +309,11 @@ final class UpdateManager {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.state = .failed(UpdateError.downloadFailed(error))
+                    self.setState(.failed(UpdateError.downloadFailed(error)))
                     self.presentAlert(style: .warning,
                                       title: "Download failed",
                                       body: error.localizedDescription)
-                    self.state = .idle
+                    self.setState(.idle)
                 }
                 return
             }
@@ -390,7 +407,7 @@ final class UpdateManager {
     // MARK: - Pure-Swift self-replacement
 
     private func performInstall(zipURL: URL, hashURL: URL?) {
-        DispatchQueue.main.async { self.state = .installing }
+        DispatchQueue.main.async { self.setState(.installing) }
 
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory
@@ -498,11 +515,11 @@ final class UpdateManager {
 
     private func reportInstallError(_ error: UpdateError) {
         DispatchQueue.main.async {
-            self.state = .failed(error)
+            self.setState(.failed(error))
             self.presentAlert(style: .warning,
                               title: "Update failed",
                               body: error.localizedDescription)
-            self.state = .idle
+            self.setState(.idle)
         }
     }
 
@@ -526,9 +543,9 @@ final class UpdateManager {
             var settings = UpdateSettingsStore.shared.load()
             settings.skippedVersion = ver
             UpdateSettingsStore.shared.save(settings)
-            state = .idle
+            setState(.idle)
         default:
-            state = .idle
+            setState(.idle)
         }
     }
 
