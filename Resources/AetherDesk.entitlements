@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<!--
+    ÆtherDesk v1 ships unsandboxed so imported wallpaper bundles can be
+    read directly from ~/Library/Application Support. App Sandbox will
+    be enabled in v1.1 with a migration path (see SandboxSupport.swift).
+    When sandboxing is flipped on, uncomment the key below and add the
+    required entitlements (files-user-selected-read-write, network.client).
+-->
+<dict>
+    <!--
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    -->
+</dict>
 </plist>
