@@ -348,7 +348,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             window._aetherDeskProperties = window._aetherDeskProperties || {};
             window.aetherDesk = {
                 display: { id: \(displayID), width: 0, height: 0, scaleFactor: 1, isPrimary: false },
-                system:  { isLowPowerMode: false, isOnline: navigator.onLine, fpsCap: \(clampedFPS), qualityMode: 'balanced' },
+                system:  { isLowPowerMode: false, isOnline: navigator.onLine, qualityMode: 'balanced' },
                 properties: {
                     get: function() { return window._aetherDeskProperties || {}; },
                     onUpdate: function(cb) { callbacks.property = cb; }
@@ -398,6 +398,13 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                     }
                 }
             };
+            try {
+                Object.defineProperty(window.aetherDesk.system, 'fpsCap', {
+                    value: \(clampedFPS),
+                    writable: false,
+                    configurable: false
+                });
+            } catch (e) {}
 
             function networkBlockedError() {
                 try {
