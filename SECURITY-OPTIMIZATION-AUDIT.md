@@ -83,26 +83,33 @@ Generated 2026-04-23. Nothing is modified unless explicitly noted.
   `WatchdogTimer.swift:72-77` — Can cause spurious `runtimeDidFail` notifications after the runtime was logically stopped. Fix: synchronously set `isArmed = false` before dispatching the source cancellation.
   **Fixed in a1a83f7:** `stop()` now uses `queue.sync` so the cancel is guaranteed complete before returning. `deinit` calls `cancelSourceLocked()` directly.
 
-- [ ] **O-04: BundleSchemeHandler reads entire files into memory**
+- [x] **O-04: BundleSchemeHandler reads entire files into memory**
   `WebWallpaperRuntime.swift:728-731` — `Data(contentsOf: fileURL)` loads the full file. For wallpapers bundling large video/image assets, this causes memory spikes. Should stream data in chunks for large files.
+  **Fixed in 928c143:** Files under 1 MB use the fast single-read path. Larger files stream in 512 KB chunks via FileHandle.
 
-- [ ] **O-05: ImageWallpaperRuntime holds full-resolution NSImage indefinitely**
+- [x] **O-05: ImageWallpaperRuntime holds full-resolution NSImage indefinitely**
   `ImageWallpaperRuntime.swift:36` — A 4K wallpaper consumes ~33 MB of bitmap data for the entire runtime lifetime. Use `CGImageSourceCreateThumbnailAtIndex` with the display's pixel dimensions instead.
+  **Fixed in dabd1cb:** Uses CGImageSourceCreateThumbnailAtIndex with ThumbnailMaxPixelSize set to the display's pixel dimensions (including backing scale). Falls back to NSImage(contentsOf:) if CGImageSource can't handle the format.
 
-- [ ] **O-06: ThumbnailRenderer.writeCache does PNG encoding + disk I/O on main thread**
+- [x] **O-06: ThumbnailRenderer.writeCache does PNG encoding + disk I/O on main thread**
   `ThumbnailRenderer.swift:75-83` — The web wallpaper render path calls `writeCache` directly in the main-queue completion closure. PNG encoding and file write should move to the background queue.
+  **Fixed in 6386a53:** Cache writes are now dispatched to the thumbnail background queue. The completion callback fires on main thread immediately without waiting for the write.
 
-- [ ] **O-07: NSImage.resized(to:) uses lockFocus on background threads**
+- [x] **O-07: NSImage.resized(to:) uses lockFocus on background threads**
   `ThumbnailRenderer.swift:404-428` — `lockFocus()` is documented as main-thread-only. Called from background queues in `loadAndResize` and `renderVideoFrame`. Replace with `NSBitmapImageRep`/`CGContext`-based rendering.
+  **Fixed in 84d30a9:** Replaced lockFocus/unlockFocus with NSBitmapImageRep + NSGraphicsContext(bitmapImageRep:), which is explicitly thread-safe.
 
-- [ ] **O-08: Startup calls listWallpapers() synchronously on main thread**
+- [x] **O-08: Startup calls listWallpapers() synchronously on main thread**
   `WallpaperImporter.swift:92-97` — Called from `applicationDidFinishLaunching`, does directory listing + JSON parsing for every bundle before any wallpaper appears. Should be dispatched to a background queue or cached on disk.
+  **Fixed in bf6a865:** Wallpaper listing now runs on a global userInitiated queue. startAndRestore and update checks are dispatched back to main after the list is ready.
 
-- [ ] **O-09: ImageWallpaperRuntime.start() loads image synchronously**
+- [x] **O-09: ImageWallpaperRuntime.start() loads image synchronously**
   `ImageWallpaperRuntime.swift:33` — `NSImage(contentsOf:)` is synchronous I/O + image decode. For large files this causes a UI hitch. Load on a background queue and swap in on main.
+  **Fixed in 99701ea:** Image decode now runs on a global userInitiated queue and the result is swapped into the image view on main. If the runtime was paused/stopped before the load completes, the image is discarded.
 
-- [ ] **O-10: Web runtime crash-recovery retry can resurrect a stopped runtime**
+- [x] **O-10: Web runtime crash-recovery retry can resurrect a stopped runtime**
   `WebWallpaperRuntime.swift:582-596` — `webViewWebContentProcessDidTerminate` schedules a 1-second retry via `DispatchQueue.main.asyncAfter`. If `stop()` is called during that window, the retry fires and re-creates the WKWebView. Add a guard check in the retry block.
+  **Fixed in 3b619a7:** Added `isStopped` flag set in `stop()` and cleared in `start()`. The retry block checks `isStopped` and bails out if the runtime has been stopped.
 
 ### Low
 
