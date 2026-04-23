@@ -777,15 +777,24 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
             task.didFailWithError(URLError(.noPermissionsToReadFile))
             return
         }
+        let ext = fileURL.pathExtension
+        guard let mime = Self.mimeType(for: ext) else {
+            NSLog("ÆtherDesk: blocked wallpaper request for disallowed file type: .%@", ext)
+            task.didFailWithError(URLError(.noPermissionsToReadFile))
+            return
+        }
         guard let data = try? Data(contentsOf: fileURL) else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
-        let mime = Self.mimeType(for: fileURL.pathExtension)
-        let response = URLResponse(url: url,
-                                   mimeType: mime,
-                                   expectedContentLength: data.count,
-                                   textEncodingName: "utf-8")
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": mime,
+                "X-Content-Type-Options": "nosniff",
+            ])!
         task.didReceive(response)
         task.didReceive(data)
         task.didFinish()
@@ -795,7 +804,7 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
         // File reads are synchronous; nothing to cancel.
     }
 
-    private static func mimeType(for ext: String) -> String {
+    private static func mimeType(for ext: String) -> String? {
         switch ext.lowercased() {
         case "html", "htm": return "text/html"
         case "js", "mjs":   return "text/javascript"
@@ -806,11 +815,24 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
         case "gif":         return "image/gif"
         case "svg":         return "image/svg+xml"
         case "webp":        return "image/webp"
-        case "mp4":         return "video/mp4"
+        case "ico":         return "image/x-icon"
+        case "bmp":         return "image/bmp"
+        case "mp4", "m4v":  return "video/mp4"
         case "webm":        return "video/webm"
+        case "mov":         return "video/quicktime"
+        case "mp3":         return "audio/mpeg"
+        case "ogg", "oga":  return "audio/ogg"
+        case "wav":         return "audio/wav"
+        case "m4a":         return "audio/mp4"
         case "woff2":       return "font/woff2"
         case "woff":        return "font/woff"
-        default:            return "application/octet-stream"
+        case "ttf":         return "font/ttf"
+        case "otf":         return "font/otf"
+        case "eot":         return "application/vnd.ms-fontobject"
+        case "webmanifest": return "application/manifest+json"
+        case "xml":         return "application/xml"
+        case "txt":         return "text/plain"
+        default:            return nil
         }
     }
 }
