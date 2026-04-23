@@ -108,6 +108,9 @@ struct LivelyInfo: Decodable {
 
 class LivelyInfoParser {
 
+    private static var cache: [URL: (mtime: Date, info: LivelyInfo)] = [:]
+    private static let lock = NSLock()
+
     func parse(from url: URL) -> LivelyInfo? {
         let livelyInfoURL = url.appendingPathComponent(Constants.Keys.livelyInfo)
 
@@ -115,10 +118,25 @@ class LivelyInfoParser {
             return nil
         }
 
+        // Check cache keyed by file URL + modification time.
+        let attrs = try? FileManager.default.attributesOfItem(atPath: livelyInfoURL.path)
+        let mtime = attrs?[.modificationDate] as? Date
+
+        Self.lock.lock()
+        if let cached = Self.cache[livelyInfoURL], mtime == nil || cached.mtime == mtime {
+            Self.lock.unlock()
+            return cached.info
+        }
+        Self.lock.unlock()
+
         do {
             let data = try Data(contentsOf: livelyInfoURL)
             let decoder = JSONDecoder()
-            return try decoder.decode(LivelyInfo.self, from: data)
+            let info = try decoder.decode(LivelyInfo.self, from: data)
+            Self.lock.lock()
+            Self.cache[livelyInfoURL] = (mtime: mtime ?? Date(), info: info)
+            Self.lock.unlock()
+            return info
         } catch {
             print("ÆtherDesk: Failed to parse LivelyInfo.json: \(error)")
             return nil

@@ -52,6 +52,9 @@ enum PropertyType: String {
 
 class LivelyPropertiesParser {
 
+    private static var cache: [URL: (mtime: Date, properties: [LivelyProperty])] = [:]
+    private static let lock = NSLock()
+
     func parse(from url: URL) -> [LivelyProperty]? {
         let propertiesURL = url.appendingPathComponent(Constants.Keys.livelyProperties)
 
@@ -59,9 +62,24 @@ class LivelyPropertiesParser {
             return nil
         }
 
+        // Check cache keyed by file URL + modification time.
+        let attrs = try? FileManager.default.attributesOfItem(atPath: propertiesURL.path)
+        let mtime = attrs?[.modificationDate] as? Date
+
+        Self.lock.lock()
+        if let cached = Self.cache[propertiesURL], mtime == nil || cached.mtime == mtime {
+            Self.lock.unlock()
+            return cached.properties
+        }
+        Self.lock.unlock()
+
         do {
             let data = try Data(contentsOf: propertiesURL)
-            return parse(from: data)
+            guard let properties = parse(from: data) else { return nil }
+            Self.lock.lock()
+            Self.cache[propertiesURL] = (mtime: mtime ?? Date(), properties: properties)
+            Self.lock.unlock()
+            return properties
         } catch {
             print("ÆtherDesk: Failed to parse LivelyProperties.json: \(error)")
             return nil
