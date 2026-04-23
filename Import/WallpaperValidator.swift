@@ -123,17 +123,20 @@ final class WallpaperValidator {
         }
 
         // Tracker / ad domains → hard reject
-        let trackers = ["googletagmanager", "google-analytics",
-                        "doubleclick", "facebook.net"]
+        let trackers = ["googletagmanager", "google-analytics", "analytics.google",
+                        "googletagservices", "adservice.google", "googlesyndication",
+                        "doubleclick", "facebook.net", "connect.facebook",
+                        "hotjar", "mixpanel", "segment.io", "api.segment",
+                        "amplitude", "sentry.io", "bugsnag",
+                        "adnxs.com", "adsrvr.org"]
         for pattern in trackers {
             if js.contains(pattern) {
                 issues.append("References \(pattern) (tracker/ad script)")
             }
         }
 
-        // Suspicious but non-fatal JS patterns → warn + limit
         let suspicious = ["document.write(", "eval(", "Function(",
-                          "WebAssembly"]
+                          "WebAssembly", "atob(", "String.fromCharCode"]
         for pattern in suspicious {
             if js.contains(pattern) {
                 warnings.append("Uses \(pattern)")
