@@ -36,11 +36,15 @@ final class WatchdogTimer {
         cancelSourceLocked()
     }
 
-    /// Arms (or re-arms) the timer. If already running, this is a heartbeat.
+    /// Arms the timer. If already armed, resets the countdown (heartbeat)
+    /// instead of allocating a new DispatchSourceTimer.
     func start() {
         queue.async { [weak self] in
             guard let self = self else { return }
-            self.cancelSourceLocked()
+            if self.isArmed {
+                self.source?.schedule(deadline: .now() + self.timeout)
+                return
+            }
 
             let src = DispatchSource.makeTimerSource(queue: self.queue)
             src.schedule(deadline: .now() + self.timeout)
