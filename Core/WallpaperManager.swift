@@ -103,15 +103,19 @@ final class WallpaperManager {
         let runtime = makeRuntime(for: bundle, displayID: displayID)
 
         do {
+            let overrides = propertyStore.load(for: bundle.id)
+            if let webRuntime = runtime as? WebWallpaperRuntime {
+                webRuntime.setInitialOverrides(overrides)
+            }
             try runtime.start()
             runtimes[displayID] = runtime
             currentBundles[displayID] = bundle
             host.setContentView(runtime.contentView)
             if !host.isVisible { host.orderBack(nil) }
 
-            // Replay persisted property overrides if any.
-            let overrides = propertyStore.load(for: bundle.id)
-            for (k, v) in overrides { runtime.updateProperty(k, value: v) }
+            for (k, v) in overrides {
+                runtime.updateProperty(k, value: v)
+            }
 
             // Persist (displayID -> bundleID) so next launch restores this.
             wallpaperStore.setAssignment(bundleID: bundle.id, for: displayID)

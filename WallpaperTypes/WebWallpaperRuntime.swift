@@ -57,6 +57,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private let locationProxy: LocationProxy
     private let networkPolicy: NetworkPolicy
     private var isStopped = false
+    private var initialOverrides: [String: Any] = [:]
 
     var contentView: NSView { containerView }
 
@@ -170,6 +171,10 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     // MARK: WallpaperRuntime
+
+    func setInitialOverrides(_ overrides: [String: Any]) {
+        initialOverrides = overrides
+    }
 
     func start() throws {
         isStopped = false
@@ -588,7 +593,8 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
 
         // Push bundle property values.
         if let props = bundle.properties {
-            propertyBridge.setInitialProperties(props)
+            propertyBridge.setInitialProperties(props, overrides: initialOverrides)
+            initialOverrides = [:]
         }
         propertyBridge.injectProperties()
     }

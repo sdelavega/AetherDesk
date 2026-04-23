@@ -39,10 +39,12 @@ final class PropertyBridge: NSObject {
         self.webView = webView
     }
 
-    func setInitialProperties(_ livelyProperties: [LivelyProperty]) {
+    func setInitialProperties(_ livelyProperties: [LivelyProperty],
+                              overrides: [String: Any] = [:]) {
         for prop in livelyProperties {
             properties[prop.name] = prop.value.value
         }
+        properties.merge(overrides) { _, override in override }
     }
 
     // MARK: Outbound (native -> JS)
@@ -69,7 +71,13 @@ final class PropertyBridge: NSObject {
     }
 
     /// Push a single property delta into the page (debounced).
+    /// Skips dispatch if the value hasn't changed.
     func updateProperty(_ key: String, value: Any) {
+        let existing = properties[key]
+        if let existing = existing as? Double, let value = value as? Double, existing == value { return }
+        if let existing = existing as? Int, let value = value as? Int, existing == value { return }
+        if let existing = existing as? String, let value = value as? String, existing == value { return }
+        if let existing = existing as? Bool, let value = value as? Bool, existing == value { return }
         properties[key] = value
         pendingUpdates[key] = value
         scheduleFlush()
