@@ -263,17 +263,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func performImport(from url: URL) {
-        do {
-            let (_, classification) = try importer.importWallpaper(from: url)
-            menuNeedsFullRebuild = true
-            let (title, body) = Self.importReport(for: classification)
-            if case .allowedWithLimits = classification {
-                showAlert(style: .informational, title: title, body: body)
-            } else {
-                postNotification(title: title, body: body)
+        importer.importWallpaper(from: url) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success((_, let classification)):
+                self.menuNeedsFullRebuild = true
+                let (title, body) = Self.importReport(for: classification)
+                if case .allowedWithLimits = classification {
+                    self.showAlert(style: .informational, title: title, body: body)
+                } else {
+                    self.postNotification(title: title, body: body)
+                }
+            case .failure(let error):
+                self.showAlert(style: .critical, title: "Import Failed", body: error.localizedDescription)
             }
-        } catch {
-            showAlert(style: .critical, title: "Import Failed", body: error.localizedDescription)
         }
     }
 

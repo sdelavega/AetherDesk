@@ -85,6 +85,22 @@ final class WallpaperImporter {
         return (bundle, classification)
     }
 
+    /// Async variant that performs all I/O on a background queue and
+    /// calls back on the main queue. Use this from UI code to avoid
+    /// freezing the app during large archive extraction or file copies.
+    func importWallpaper(from sourceURL: URL,
+                         completion: @escaping (Result<(WallpaperBundle, WallpaperClassification), Error>) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try self.importWallpaper(from: sourceURL)
+                DispatchQueue.main.async { completion(.success(result)) }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+    }
+
     // MARK: Listing
 
     /// All available wallpapers: bundled samples + user-imported.
