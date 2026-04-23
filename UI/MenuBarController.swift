@@ -34,6 +34,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let safeModeItem = NSMenuItem(title: "Safe Mode", action: nil, keyEquivalent: "")
 
     private var isPaused = false
+    private var isImporting = false
 
     init(wallpaperManager: WallpaperManager) {
         self.wallpaperManager = wallpaperManager
@@ -289,8 +290,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func performImport(from url: URL) {
+        guard !isImporting else { return }
+        isImporting = true
         importer.importWallpaper(from: url) { [weak self] result in
             guard let self else { return }
+            self.isImporting = false
             switch result {
             case .success((_, let classification)):
                 self.menuNeedsFullRebuild = true
