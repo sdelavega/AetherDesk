@@ -41,10 +41,10 @@ final class WallpaperValidator {
         }
     }
 
-    // Tuning knobs.
-    private let maxBundleBytes: Int64 = 50 * 1024 * 1024   // 50 MB
+    // Tuning knobs (source of truth is Constants.Defaults).
+    private let maxBundleBytes = Constants.Defaults.maxBundleBytes
     private let defaultFPSLimit = Constants.Defaults.fpsCap
-    private let defaultNetworkBudget = 5                    // requests / minute
+    private let defaultNetworkBudget = Constants.Defaults.defaultNetworkBudgetPerMinute
 
     func validate(at url: URL) -> WallpaperClassification {
         report(at: url).classification

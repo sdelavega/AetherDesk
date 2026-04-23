@@ -10,6 +10,11 @@ enum Constants {
         static let maxFPS: Int = 60
         static let minFPS: Int = 15
 
+        /// Maximum bundle size for imported wallpapers (bytes).
+        static let maxBundleBytes: Int64 = 50 * 1024 * 1024 // 50 MB
+        /// Default network request budget for wallpapers with warnings (req/min).
+        static let defaultNetworkBudgetPerMinute = 5
+
         /// How often web wallpapers should ping the native side with a
         /// heartbeat. Set from JS via setInterval.
         static let watchdogHeartbeatInterval: TimeInterval = 5.0
