@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 
 /// Minimal image wallpaper runtime. Shows a single static image at the
 /// display size, stretched proportionally. No animation, no network, no JS.
@@ -29,9 +30,37 @@ final class ImageWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     func start() throws {
-        guard let imageURL = bundle.imageURL,
-              let image = NSImage(contentsOf: imageURL) else {
+        guard let imageURL = bundle.imageURL else {
             throw WallpaperRuntimeError.contentNotFound
+        }
+
+        let screen = NSScreen.screens.first(where: { $0.displayID == displayID })
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+        let maxPixel = max(
+            Int((screen?.frame.width ?? 1920) * (screen?.backingScaleFactor ?? 2.0)),
+            Int((screen?.frame.height ?? 1080) * (screen?.backingScaleFactor ?? 2.0))
+        )
+
+        let image: NSImage
+        if let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil) {
+            let options: [CFString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+                kCGImageSourceCreateThumbnailFromImageAlways: true
+            ]
+            if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+                image = NSImage(cgImage: cgImage, size: screen?.frame.size ?? NSSize(width: 1920, height: 1080))
+            } else {
+                guard let fallback = NSImage(contentsOf: imageURL) else {
+                    throw WallpaperRuntimeError.contentNotFound
+                }
+                image = fallback
+            }
+        } else {
+            guard let fallback = NSImage(contentsOf: imageURL) else {
+                throw WallpaperRuntimeError.contentNotFound
+            }
+            image = fallback
         }
         imageView.image = image
     }
