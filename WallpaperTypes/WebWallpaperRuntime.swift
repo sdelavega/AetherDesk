@@ -927,6 +927,7 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
             httpVersion: "HTTP/1.1",
             headerFields: [
                 "Content-Type": mime,
+                "Content-Length": String(fileSize),
                 "X-Content-Type-Options": "nosniff",
             ])!
         task.didReceive(response)
