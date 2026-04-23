@@ -55,6 +55,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private var networkWindowStart = Date()
     private var networkRequestsInWindow = 0
     private let locationProxy = LocationProxy()
+    private let networkPolicy: NetworkPolicy
 
     var contentView: NSView { containerView }
 
@@ -83,6 +84,9 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             })
 
         self.containerView = NSView()
+        self.networkPolicy = NetworkPolicy(
+            bundleID: bundle.id,
+            allowLANAccess: AppSettingsStore.shared.loadPerformanceSettings().allowLANAccess)
 
         super.init()
 
@@ -124,6 +128,9 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         }
         if settings.blockExternalNetwork,
            let ruleList = ContentRuleListManager.shared.externalNetworkBlockRuleList {
+            userContent.add(ruleList)
+        }
+        if let ruleList = ContentRuleListManager.shared.rawIPWebSocketRuleList {
             userContent.add(ruleList)
         }
 
@@ -255,18 +262,31 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             deliverFetchResult(id: id, status: 0, body: nil)
             return
         }
-        var request = URLRequest(url: url, timeoutInterval: 30)
-        request.httpMethod = method
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            let status: Int
-            if error != nil {
-                status = 0
-            } else {
-                status = (response as? HTTPURLResponse)?.statusCode ?? 200
+
+        switch networkPolicy.validate(url: url) {
+        case .success(let validatedURL):
+            switch networkPolicy.validateResolvedAddresses(for: validatedURL) {
+            case .success(let safeURL):
+                var request = URLRequest(url: safeURL, timeoutInterval: 30)
+                request.httpMethod = method
+                URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                    let status: Int
+                    if error != nil {
+                        status = 0
+                    } else {
+                        status = (response as? HTTPURLResponse)?.statusCode ?? 200
+                    }
+                    let body = data.flatMap { String(data: $0, encoding: .utf8) }
+                    self?.deliverFetchResult(id: id, status: status, body: body)
+                }.resume()
+            case .failure(let reason):
+                NSLog("ÆtherDesk: blocked wallpaper fetch — %@", reason.description)
+                deliverFetchResult(id: id, status: 0, body: nil)
             }
-            let body = data.flatMap { String(data: $0, encoding: .utf8) }
-            self?.deliverFetchResult(id: id, status: status, body: body)
-        }.resume()
+        case .failure(let reason):
+            NSLog("ÆtherDesk: blocked wallpaper fetch — %@", reason.description)
+            deliverFetchResult(id: id, status: 0, body: nil)
+        }
     }
 
     private func deliverGeolocationResult(id: Int, lat: Double?, lon: Double?) {
@@ -497,6 +517,30 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                     configurable: true
                 });
             } catch(e) {}
+
+            // WebSocket restriction: block connections to raw IP addresses.
+            // Only FQDN WebSocket connections are allowed; raw IPs are rejected
+            // for the same reason as HTTP fetch — they bypass DNS-based filtering.
+            if (typeof window.WebSocket === 'function') {
+                var _OrigWebSocket = window.WebSocket;
+                var _rawIPPattern = /^(wss?:\\/\\/)?\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}/i;
+                var _ipv6Pattern = /^(wss?:\\/\\/)?\\[/i;
+                window.WebSocket = function(url, protocols) {
+                    if (_rawIPPattern.test(url) || _ipv6Pattern.test(url)) {
+                        var err = new Error('ÆtherDesk: WebSocket to raw IP addresses is not allowed');
+                        throw err;
+                    }
+                    if (protocols !== undefined) {
+                        return new _OrigWebSocket(url, protocols);
+                    }
+                    return new _OrigWebSocket(url);
+                };
+                window.WebSocket.prototype = _OrigWebSocket.prototype;
+                window.WebSocket.CONNECTING = _OrigWebSocket.CONNECTING;
+                window.WebSocket.OPEN = _OrigWebSocket.OPEN;
+                window.WebSocket.CLOSING = _OrigWebSocket.CLOSING;
+                window.WebSocket.CLOSED = _OrigWebSocket.CLOSED;
+            }
 
             // Watchdog heartbeat: pure setInterval, no dependency on rAF so a
             // wallpaper that stops drawing (tab throttling, bug) still pings.

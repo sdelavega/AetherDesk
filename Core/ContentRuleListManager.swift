@@ -20,9 +20,11 @@ final class ContentRuleListManager {
     /// failed — non-fatal; WebViews load without this content filtering.
     private(set) var ruleList: WKContentRuleList?
     private(set) var externalNetworkBlockRuleList: WKContentRuleList?
+    private(set) var rawIPWebSocketRuleList: WKContentRuleList?
 
     private static let blocklistStoreIdentifier = "com.aetherdesk.WallpaperBlocklist.v1"
     private static let externalNetworkStoreIdentifier = "com.aetherdesk.ExternalNetworkBlock.v1"
+    private static let rawIPWebSocketStoreIdentifier = "com.aetherdesk.RawIPWebSocketBlock.v1"
 
     // MARK: - Blocklist
 
@@ -68,6 +70,21 @@ final class ContentRuleListManager {
     ]
     """#
 
+    /// Blocks WebSocket (ws:// and wss://) connections to raw IPv4 and IPv6
+    /// addresses. FQDN WebSocket connections are allowed through.
+    private static let rawIPWebSocketBlockJSON = #"""
+    [
+      {
+        "trigger": { "url-filter": "^wss?://\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}" },
+        "action": { "type": "block" }
+      },
+      {
+        "trigger": { "url-filter": "^wss?://\\[" },
+        "action": { "type": "block" }
+      }
+    ]
+    """#
+
     // MARK: - Lifecycle
 
     private init() {}
@@ -91,7 +108,13 @@ final class ContentRuleListManager {
                                         encodedRuleList: Self.externalNetworkBlockJSON,
                                         label: "external network blocklist") { [weak self] list in
                 self?.externalNetworkBlockRuleList = list
-                DispatchQueue.main.async { completion() }
+                self?.compileOrLoadRuleList(store: store,
+                                            identifier: Self.rawIPWebSocketStoreIdentifier,
+                                            encodedRuleList: Self.rawIPWebSocketBlockJSON,
+                                            label: "raw-IP WebSocket blocklist") { [weak self] list in
+                    self?.rawIPWebSocketRuleList = list
+                    DispatchQueue.main.async { completion() }
+                }
             }
         }
     }

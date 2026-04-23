@@ -56,6 +56,7 @@ private final class PreferencesViewController: NSViewController {
     private let tabView = NSTabView()
     private var currentEditor: PropertyEditorViewController?
     private let wallpaperEditorContainer = NSView()
+    private var contactedDomainsLabel: NSTextField?
 
     override func loadView() {
         view = NSView()
@@ -119,6 +120,10 @@ private final class PreferencesViewController: NSViewController {
         action: nil)
     private let blockExternalNetworkCheckbox = NSButton(
         checkboxWithTitle: "Block external network requests",
+        target: nil,
+        action: nil)
+    private let allowLANAccessCheckbox = NSButton(
+        checkboxWithTitle: "Allow wallpapers to access local network (LAN)",
         target: nil,
         action: nil)
 
@@ -258,6 +263,12 @@ private final class PreferencesViewController: NSViewController {
         blockExternalNetworkCheckbox.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(blockExternalNetworkCheckbox)
 
+        allowLANAccessCheckbox.target = self
+        allowLANAccessCheckbox.action = #selector(performanceSettingsChanged(_:))
+        allowLANAccessCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        allowLANAccessCheckbox.toolTip = "When disabled, wallpapers cannot connect to private IP addresses (192.168.x.x, 10.x.x.x, etc.) or localhost."
+        container.addSubview(allowLANAccessCheckbox)
+
         loadPerformanceSettingsIntoControls()
 
         NSLayoutConstraint.activate([
@@ -277,7 +288,10 @@ private final class PreferencesViewController: NSViewController {
             pauseOnBatteryCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
             blockExternalNetworkCheckbox.topAnchor.constraint(equalTo: pauseOnBatteryCheckbox.bottomAnchor, constant: 10),
-            blockExternalNetworkCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20)
+            blockExternalNetworkCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+
+            allowLANAccessCheckbox.topAnchor.constraint(equalTo: blockExternalNetworkCheckbox.bottomAnchor, constant: 10),
+            allowLANAccessCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20)
         ])
         return container
     }
@@ -289,6 +303,7 @@ private final class PreferencesViewController: NSViewController {
         pauseOnOcclusionCheckbox.state = settings.pauseWhenNotVisible ? .on : .off
         pauseOnBatteryCheckbox.state = settings.pauseOnBatteryPower ? .on : .off
         blockExternalNetworkCheckbox.state = settings.blockExternalNetwork ? .on : .off
+        allowLANAccessCheckbox.state = settings.allowLANAccess ? .on : .off
     }
 
     @objc private func performanceSettingsChanged(_ sender: Any) {
@@ -298,7 +313,8 @@ private final class PreferencesViewController: NSViewController {
             respectLowPowerMode: lowPowerCheckbox.state == .on,
             pauseWhenNotVisible: pauseOnOcclusionCheckbox.state == .on,
             pauseOnBatteryPower: pauseOnBatteryCheckbox.state == .on,
-            blockExternalNetwork: blockExternalNetworkCheckbox.state == .on
+            blockExternalNetwork: blockExternalNetworkCheckbox.state == .on,
+            allowLANAccess: allowLANAccessCheckbox.state == .on
         )
         AppSettingsStore.shared.savePerformanceSettings(settings)
     }
@@ -383,11 +399,32 @@ private final class PreferencesViewController: NSViewController {
         addChild(editor)
         editor.view.translatesAutoresizingMaskIntoConstraints = false
         wallpaperEditorContainer.addSubview(editor.view)
+
+        let domains = NetworkPolicy.contactedDomains(for: bundle.id)
+        let domainsLabel: NSTextField
+        if domains.isEmpty {
+            domainsLabel = NSTextField(labelWithString: "No external domains contacted yet.")
+        } else {
+            let sorted = domains.sorted()
+            domainsLabel = NSTextField(wrappingLabelWithString:
+                "Domains contacted: " + sorted.joined(separator: ", "))
+        }
+        domainsLabel.font = NSFont.systemFont(ofSize: 11)
+        domainsLabel.textColor = .tertiaryLabelColor
+        domainsLabel.translatesAutoresizingMaskIntoConstraints = false
+        domainsLabel.lineBreakMode = .byWordWrapping
+        wallpaperEditorContainer.addSubview(domainsLabel)
+        self.contactedDomainsLabel = domainsLabel
+
         NSLayoutConstraint.activate([
             editor.view.topAnchor.constraint(equalTo: wallpaperEditorContainer.topAnchor),
             editor.view.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor),
             editor.view.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor),
-            editor.view.bottomAnchor.constraint(equalTo: wallpaperEditorContainer.bottomAnchor)
+
+            domainsLabel.topAnchor.constraint(equalTo: editor.view.bottomAnchor, constant: 12),
+            domainsLabel.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
+            domainsLabel.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor, constant: -10),
+            domainsLabel.bottomAnchor.constraint(lessThanOrEqualTo: wallpaperEditorContainer.bottomAnchor, constant: -10)
         ])
     }
 
