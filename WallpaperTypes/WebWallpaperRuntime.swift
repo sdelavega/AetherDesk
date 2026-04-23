@@ -725,7 +725,14 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
         if relative.hasPrefix("/") { relative = String(relative.dropFirst()) }
         if relative.isEmpty       { relative = "index.html" }
 
-        let fileURL = bundleBaseURL.appendingPathComponent(relative)
+        let fileURL = bundleBaseURL.appendingPathComponent(relative).standardizedFileURL
+        let basePath = bundleBaseURL.path
+        let filePath = fileURL.path
+        guard filePath == basePath || filePath.hasPrefix(basePath + "/") else {
+            NSLog("ÆtherDesk: blocked path-traversal request from wallpaper: %@", url.path)
+            task.didFailWithError(URLError(.noPermissionsToReadFile))
+            return
+        }
         guard let data = try? Data(contentsOf: fileURL) else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
