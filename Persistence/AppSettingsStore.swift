@@ -12,7 +12,7 @@ struct PerformanceSettings: Codable, Equatable {
         respectLowPowerMode: true,
         pauseWhenNotVisible: true,
         pauseOnBatteryPower: false,
-        blockExternalNetwork: true
+        blockExternalNetwork: false
     )
 
     var clampedFPSCap: Int {

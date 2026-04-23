@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 import Foundation
+import CoreLocation
 
 /// WKWebView-backed HTML/JS wallpaper runtime.
 ///
@@ -22,6 +23,13 @@ import Foundation
 ///   `watchdogTimeout` seconds), or if `webContentProcessDidTerminate` fires,
 ///   we post `runtimeDidFail` so the manager can demote the display.
 final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
+
+    /// Custom URL scheme used as the base URL when loading wallpaper HTML.
+    /// Loading via loadHTMLString with this as baseURL gives the page a
+    /// non-null origin so cross-origin HTTPS fetch (weather APIs, IP
+    /// geolocation, etc.) passes WebKit's CORS check. Sub-resources requested
+    /// via relative paths are served by BundleSchemeHandler.
+    private static let bundleScheme = "aetherwall"
 
     let displayID: CGDirectDisplayID
     private(set) var isPaused: Bool = false
@@ -46,6 +54,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     private var networkWindowStart = Date()
     private var networkRequestsInWindow = 0
+    private let locationProxy = LocationProxy()
 
     var contentView: NSView { containerView }
 
@@ -82,6 +91,15 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         containerView.autoresizingMask = [.width, .height]
 
         handler.onHeartbeat = { [weak self] in self?.watchdog.heartbeat() }
+        handler.onNativeFetch = { [weak self] id, urlStr, method in
+            self?.performNativeFetch(id: id, urlStr: urlStr, method: method)
+        }
+        handler.onGeolocationRequest = { [weak self] id in
+            self?.locationProxy.request(id: id)
+        }
+        locationProxy.onResult = { [weak self] id, lat, lon in
+            self?.deliverGeolocationResult(id: id, lat: lat, lon: lon)
+        }
         handler.onNetworkBudgetExceeded = { [displayID] in
             NSLog("ÆtherDesk: web wallpaper on display %u exceeded its JS network budget",
                   displayID)
@@ -111,6 +129,10 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
         let config = WKWebViewConfiguration()
         config.userContentController = userContent
+        config.setURLSchemeHandler(
+            BundleSchemeHandler(bundleBaseURL: bundle.baseURL),
+            forURLScheme: Self.bundleScheme
+        )
 
         if #available(macOS 12.3, *) {
             config.preferences.isElementFullscreenEnabled = false
@@ -129,7 +151,6 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.navigationDelegate = self
-        wv.setValue(false, forKey: "drawsBackground")
         wv.wantsLayer = true
         wv.layer?.backgroundColor = NSColor.clear.cgColor
         wv.allowsMagnification = false
@@ -159,7 +180,19 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             ])
             self.webView = wv
         }
-        webView?.loadFileURL(indexURL, allowingReadAccessTo: bundle.baseURL)
+        // Load the HTML as a string with aetherwall:// as the base URL.
+        // loadHTMLString renders exactly like loadFileURL (no scheme-handler
+        // round-trip for the main frame, so no display regression), but the
+        // page's origin becomes aetherwall://wallpaper instead of null/file://,
+        // which lets cross-origin HTTPS fetch() calls pass WebKit's CORS check.
+        // Sub-resources with relative paths are served by BundleSchemeHandler.
+        // Fall back to loadFileURL if the HTML can't be read as a string.
+        if let html = try? String(contentsOf: indexURL, encoding: .utf8) {
+            let baseURL = URL(string: "\(Self.bundleScheme)://wallpaper/")!
+            webView?.loadHTMLString(html, baseURL: baseURL)
+        } else {
+            webView?.loadFileURL(indexURL, allowingReadAccessTo: bundle.baseURL)
+        }
         watchdog.start()
     }
 
@@ -212,6 +245,54 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         propertyBridge.updateProperty(key, value: value)
     }
 
+    // MARK: Native fetch proxy
+
+    /// Executes an HTTP request via URLSession on behalf of the wallpaper page,
+    /// completely bypassing WebKit's cross-origin restrictions so wallpapers
+    /// can reach external APIs (weather data, geolocation, etc.).
+    private func performNativeFetch(id: Int, urlStr: String, method: String) {
+        guard let url = URL(string: urlStr) else {
+            deliverFetchResult(id: id, status: 0, body: nil)
+            return
+        }
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpMethod = method
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            let status: Int
+            if error != nil {
+                status = 0
+            } else {
+                status = (response as? HTTPURLResponse)?.statusCode ?? 200
+            }
+            let body = data.flatMap { String(data: $0, encoding: .utf8) }
+            self?.deliverFetchResult(id: id, status: status, body: body)
+        }.resume()
+    }
+
+    private func deliverGeolocationResult(id: Int, lat: Double?, lon: Double?) {
+        let js: String
+        if let lat = lat, let lon = lon {
+            js = "window.aetherDesk && window.aetherDesk._geolocationSuccess(\(id), \(lat), \(lon))"
+        } else {
+            js = "window.aetherDesk && window.aetherDesk._geolocationError(\(id))"
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+    }
+
+    private func deliverFetchResult(id: Int, status: Int, body: String?) {
+        let payload: [String: Any] = ["id": id, "status": status, "body": body ?? ""]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+              let jsonStr = String(data: jsonData, encoding: .utf8) else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript(
+                "window.aetherDesk && window.aetherDesk._nativeFetchResponse(\(jsonStr))",
+                completionHandler: nil
+            )
+        }
+    }
+
     // MARK: Bridge bootstrap
 
     private static func bridgeBootstrapScript(displayID: CGDirectDisplayID,
@@ -233,6 +314,8 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             var networkBudgetPerMinute = \(networkBudget);
             var networkWindowStart = Date.now();
             var networkRequestsInWindow = 0;
+            var _pendingFetches = {};
+            var _fetchIdCounter = 0;
             window._aetherDeskProperties = window._aetherDeskProperties || {};
             window.aetherDesk = {
                 display: { id: \(displayID), width: 0, height: 0, scaleFactor: 1, isPrimary: false },
@@ -269,6 +352,21 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                     if (networkRequestsInWindow >= networkBudgetPerMinute) return false;
                     networkRequestsInWindow += 1;
                     return true;
+                },
+                // Called by native code with the URLSession response for a proxied fetch.
+                _nativeFetchResponse: function(resp) {
+                    var pending = _pendingFetches[resp.id];
+                    if (!pending) return;
+                    delete _pendingFetches[resp.id];
+                    if (resp.status === 0) {
+                        pending.reject(new TypeError('Network request failed'));
+                        return;
+                    }
+                    try {
+                        pending.resolve(new Response(resp.body, { status: resp.status }));
+                    } catch(e) {
+                        pending.reject(e);
+                    }
                 }
             };
 
@@ -284,9 +382,30 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
             if (typeof window.fetch === 'function') {
                 var _origFetch = window.fetch.bind(window);
-                window.fetch = function() {
+                window.fetch = function(resource, options) {
                     if (!window.aetherDesk._consumeNetworkBudget()) {
                         return Promise.reject(networkBlockedError());
+                    }
+                    // Route external HTTP(S) requests through native URLSession so they
+                    // aren't subject to WebKit's cross-origin restrictions on local pages.
+                    var urlStr = (typeof resource === 'string') ? resource
+                                 : (resource && (resource.url || String(resource)));
+                    if (urlStr && (urlStr.indexOf('http://') === 0 || urlStr.indexOf('https://') === 0)) {
+                        return new Promise(function(resolve, reject) {
+                            var id = ++_fetchIdCounter;
+                            _pendingFetches[id] = { resolve: resolve, reject: reject };
+                            try {
+                                window.webkit.messageHandlers.aetherDesk.postMessage({
+                                    action: 'nativeFetch',
+                                    id: id,
+                                    url: urlStr,
+                                    method: (options && options.method) || 'GET'
+                                });
+                            } catch (e) {
+                                delete _pendingFetches[id];
+                                reject(new TypeError('Native fetch bridge unavailable'));
+                            }
+                        });
                     }
                     return _origFetch.apply(window, arguments);
                 };
@@ -329,6 +448,55 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                 setTimeout(fire, delay - 4);
                 return 0;
             };
+
+            // Geolocation bridge: replace navigator.geolocation with a native-backed
+            // implementation that routes getCurrentPosition through CoreLocation via
+            // the aetherDesk message handler, so wallpapers can auto-detect location
+            // without depending on external IP-geolocation APIs.
+            var _geoPending = {};
+            var _geoIdCounter = 0;
+            window.aetherDesk._geolocationSuccess = function(id, lat, lon) {
+                var cb = _geoPending[id]; if (!cb) return; delete _geoPending[id];
+                cb.success({ coords: { latitude: lat, longitude: lon, accuracy: 1000 }, timestamp: Date.now() });
+            };
+            window.aetherDesk._geolocationError = function(id) {
+                var cb = _geoPending[id]; if (!cb) return; delete _geoPending[id];
+                if (cb.error) cb.error({ code: 2, message: 'Position unavailable' });
+                else if (cb.fallback) cb.fallback();
+            };
+            try {
+                Object.defineProperty(navigator, 'geolocation', {
+                    get: function() {
+                        return {
+                            getCurrentPosition: function(success, error) {
+                                var id = ++_geoIdCounter;
+                                _geoPending[id] = { success: success, error: error };
+                                try {
+                                    window.webkit.messageHandlers.aetherDesk.postMessage(
+                                        { action: 'geolocationRequest', id: id });
+                                } catch(e) {
+                                    delete _geoPending[id];
+                                    if (error) error({ code: 2, message: 'Bridge unavailable' });
+                                }
+                            },
+                            watchPosition: function(success, error) {
+                                var id = ++_geoIdCounter;
+                                _geoPending[id] = { success: success, error: error };
+                                try {
+                                    window.webkit.messageHandlers.aetherDesk.postMessage(
+                                        { action: 'geolocationRequest', id: id });
+                                } catch(e) {
+                                    delete _geoPending[id];
+                                    if (error) error({ code: 2, message: 'Bridge unavailable' });
+                                }
+                                return id;
+                            },
+                            clearWatch: function(id) { delete _geoPending[id]; }
+                        };
+                    },
+                    configurable: true
+                });
+            } catch(e) {}
 
             // Watchdog heartbeat: pure setInterval, no dependency on rAF so a
             // wallpaper that stops drawing (tab throttling, bug) still pings.
@@ -431,7 +599,7 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
     private func shouldAllowNavigation(to url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return true }
         switch scheme {
-        case "file", "data", "about", "blob":
+        case Self.bundleScheme, "file", "data", "about", "blob":
             return true
         case "http", "https":
             return consumeNetworkBudget()
@@ -461,6 +629,141 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
     }
 }
 
+// MARK: - CoreLocation proxy
+
+/// Fulfils `navigator.geolocation.getCurrentPosition` requests from wallpaper JS
+/// by delegating to CoreLocation. One shared instance per runtime; requests are
+/// queued while a location fix is in progress so we don't spam CLLocationManager.
+private final class LocationProxy: NSObject, CLLocationManagerDelegate {
+
+    private let manager: CLLocationManager
+    /// Pending request IDs waiting for a location fix.
+    private var pendingIDs: [Int] = []
+    /// Called with (id, lat, lon) on success or (id, nil, nil) on failure.
+    var onResult: ((_ id: Int, _ lat: Double?, _ lon: Double?) -> Void)?
+
+    override init() {
+        manager = CLLocationManager()
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    func request(id: Int) {
+        DispatchQueue.main.async { [self] in
+            pendingIDs.append(id)
+            if pendingIDs.count == 1 {
+                startUpdates()
+            }
+        }
+    }
+
+    private func startUpdates() {
+        let status: CLAuthorizationStatus
+        if #available(macOS 11.0, *) {
+            status = manager.authorizationStatus
+        } else {
+            status = CLLocationManager.authorizationStatus()
+        }
+        switch status {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorized, .authorizedAlways, .authorizedWhenInUse:
+            manager.startUpdatingLocation()
+        default:
+            flushPending(lat: nil, lon: nil)
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard !pendingIDs.isEmpty else { return }
+        startUpdates()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
+        manager.stopUpdatingLocation()
+        flushPending(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        manager.stopUpdatingLocation()
+        flushPending(lat: nil, lon: nil)
+    }
+
+    private func flushPending(lat: Double?, lon: Double?) {
+        let ids = pendingIDs
+        pendingIDs.removeAll()
+        for id in ids {
+            onResult?(id, lat, lon)
+        }
+    }
+}
+
+// MARK: - Bundle URL scheme handler
+
+/// Serves wallpaper bundle files over the `aetherwall://` custom scheme.
+///
+/// Loading via a named scheme (rather than `file://`) gives the embedded page
+/// a proper origin so cross-origin HTTPS `fetch()` calls — weather APIs,
+/// IP-geolocation, geocoding — pass WebKit's CORS check without any private
+/// WKPreferences keys.
+private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
+
+    private let bundleBaseURL: URL
+
+    init(bundleBaseURL: URL) {
+        self.bundleBaseURL = bundleBaseURL.standardizedFileURL
+    }
+
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        guard let url = task.request.url else {
+            task.didFailWithError(URLError(.badURL))
+            return
+        }
+        var relative = url.path
+        if relative.hasPrefix("/") { relative = String(relative.dropFirst()) }
+        if relative.isEmpty       { relative = "index.html" }
+
+        let fileURL = bundleBaseURL.appendingPathComponent(relative)
+        guard let data = try? Data(contentsOf: fileURL) else {
+            task.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        let mime = Self.mimeType(for: fileURL.pathExtension)
+        let response = URLResponse(url: url,
+                                   mimeType: mime,
+                                   expectedContentLength: data.count,
+                                   textEncodingName: "utf-8")
+        task.didReceive(response)
+        task.didReceive(data)
+        task.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
+        // File reads are synchronous; nothing to cancel.
+    }
+
+    private static func mimeType(for ext: String) -> String {
+        switch ext.lowercased() {
+        case "html", "htm": return "text/html"
+        case "js", "mjs":   return "text/javascript"
+        case "css":         return "text/css"
+        case "json":        return "application/json"
+        case "png":         return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif":         return "image/gif"
+        case "svg":         return "image/svg+xml"
+        case "webp":        return "image/webp"
+        case "mp4":         return "video/mp4"
+        case "webm":        return "video/webm"
+        case "woff2":       return "font/woff2"
+        case "woff":        return "font/woff"
+        default:            return "application/octet-stream"
+        }
+    }
+}
+
 // MARK: - JS -> native message handler
 
 private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
@@ -469,6 +772,8 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
     /// Fired on every `{action:"heartbeat"}` message from the page.
     var onHeartbeat: (() -> Void)?
     var onNetworkBudgetExceeded: (() -> Void)?
+    var onNativeFetch: ((_ id: Int, _ url: String, _ method: String) -> Void)?
+    var onGeolocationRequest: ((_ id: Int) -> Void)?
 
     init(bridge: PropertyBridge?) {
         self.bridge = bridge
@@ -487,6 +792,18 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
         }
         if action == "networkBudgetExceeded" {
             onNetworkBudgetExceeded?()
+            return
+        }
+        if action == "nativeFetch",
+           let id = body["id"] as? Int,
+           let urlStr = body["url"] as? String {
+            let method = body["method"] as? String ?? "GET"
+            onNativeFetch?(id, urlStr, method)
+            return
+        }
+        if action == "geolocationRequest",
+           let id = body["id"] as? Int {
+            onGeolocationRequest?(id)
             return
         }
         bridge?.handleJSMessages(action: action, data: body)

@@ -44,6 +44,7 @@ enum PropertyType: String {
         let normalized = string.lowercased()
         switch normalized {
         case "slider": self = .range
+        case "textbox": self = .text
         default: self = PropertyType(rawValue: normalized) ?? .unknown
         }
     }
@@ -68,12 +69,17 @@ class LivelyPropertiesParser {
     }
 
     func parse(from data: Data) -> [LivelyProperty]? {
-        // Try array format first: { "properties": [...] }
+        // Format 1: { "properties": [...] }  — wrapped array
         if let properties = try? JSONDecoder().decode(LivelyProperties.self, from: data) {
             return properties.properties
         }
 
-        // Try per-key format: { "propName": { "type": "slider", ... } }
+        // Format 2: [ { "Name": ..., "Type": ... }, ... ]  — bare array (e.g. imported bundles)
+        if let properties = try? JSONDecoder().decode([LivelyProperty].self, from: data) {
+            return properties.isEmpty ? nil : properties
+        }
+
+        // Format 3: { "propName": { "type": "slider", ... } }  — per-key object
         return parsePerKeyFormat(from: data)
     }
 
@@ -85,13 +91,16 @@ class LivelyPropertiesParser {
         var propertiesArray: [[String: Any]] = []
         for (key, value) in json {
             guard let dict = value as? [String: Any] else { continue }
-            var mapped: [String: Any] = ["Name": key]
-            if let type = dict["type"] as? String { mapped["Type"] = type }
-            if let val = dict["value"] { mapped["Value"] = val }
-            if let min = dict["min"] { mapped["Min"] = min }
-            if let max = dict["max"] { mapped["Max"] = max }
-            if let step = dict["step"] { mapped["Increment"] = step }
-            if let text = dict["text"] as? String { mapped["Description"] = text }
+            // Build a lowercase-keyed copy for case-insensitive lookups.
+            let lc = Dictionary(uniqueKeysWithValues: dict.map { ($0.key.lowercased(), $0.value) })
+            var mapped: [String: Any] = ["Name": (lc["name"] as? String) ?? key]
+            if let type = lc["type"] as? String { mapped["Type"] = type }
+            if let val = lc["value"] { mapped["Value"] = val }
+            if let min = lc["min"] { mapped["Min"] = min }
+            if let max = lc["max"] { mapped["Max"] = max }
+            if let step = lc["step"] ?? lc["increment"] { mapped["Increment"] = step }
+            if let text = lc["description"] as? String ?? lc["text"] as? String { mapped["Description"] = text }
+            if let items = lc["items"] { mapped["Items"] = items }
             propertiesArray.append(mapped)
         }
 

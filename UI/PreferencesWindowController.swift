@@ -68,11 +68,6 @@ private final class PreferencesViewController: NSViewController {
 
         tabView.translatesAutoresizingMaskIntoConstraints = false
 
-        tabView.addTabViewItem(tabViewItem(id: "general",     label: "General",     view: buildGeneralTab()))
-        tabView.addTabViewItem(tabViewItem(id: "performance", label: "Performance", view: buildPerformanceTab()))
-        tabView.addTabViewItem(tabViewItem(id: "wallpaper",   label: "Wallpaper",   view: buildWallpaperTab()))
-        tabView.addTabViewItem(tabViewItem(id: "about",       label: "About",       view: buildAboutTab()))
-
         contentView.addSubview(tabView)
         NSLayoutConstraint.activate([
             tabView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
@@ -80,6 +75,18 @@ private final class PreferencesViewController: NSViewController {
             tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
             tabView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16)
         ])
+
+        // Force a layout pass so the tab view has its correct frame before
+        // we add tab items. In macOS 26, NSTabView eagerly places the first
+        // tab's content view the moment addTabViewItem is called; without this
+        // flush, contentRect can be as narrow as 20 pt, which freezes via the
+        // autoresizing mask and conflicts with the tab's leading/trailing constraints.
+        contentView.layoutSubtreeIfNeeded()
+
+        tabView.addTabViewItem(tabViewItem(id: "general",     label: "General",     view: buildGeneralTab()))
+        tabView.addTabViewItem(tabViewItem(id: "performance", label: "Performance", view: buildPerformanceTab()))
+        tabView.addTabViewItem(tabViewItem(id: "wallpaper",   label: "Wallpaper",   view: buildWallpaperTab()))
+        tabView.addTabViewItem(tabViewItem(id: "about",       label: "About",       view: buildAboutTab()))
     }
 
     private func tabViewItem(id: String, label: String, view: NSView) -> NSTabViewItem {
