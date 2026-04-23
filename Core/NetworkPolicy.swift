@@ -28,8 +28,9 @@ final class NetworkPolicy {
     private let allowLANAccess: Bool
     private let bundleID: UUID
 
-    private static var domainLogs: [UUID: Set<String>] = [:]
+    private static var domainLogs: [UUID: [String]] = [:]
     private static let domainLogLock = NSLock()
+    private static let maxDomainsPerBundle = 100
 
     init(bundleID: UUID, allowLANAccess: Bool) {
         self.bundleID = bundleID
@@ -76,7 +77,7 @@ final class NetworkPolicy {
 
     // MARK: - Domain logging
 
-    static func contactedDomains(for bundleID: UUID) -> Set<String> {
+    static func contactedDomains(for bundleID: UUID) -> [String] {
         domainLogLock.lock()
         defer { domainLogLock.unlock() }
         return domainLogs[bundleID] ?? []
@@ -94,9 +95,13 @@ final class NetworkPolicy {
         if Self.domainLogs[bundleID] == nil {
             Self.domainLogs[bundleID] = []
         }
-        let isNew = !Self.domainLogs[bundleID]!.contains(domain)
-        if isNew {
-            Self.domainLogs[bundleID]!.insert(domain)
+        var list = Self.domainLogs[bundleID]!
+        if !list.contains(domain) {
+            if list.count >= Self.maxDomainsPerBundle {
+                list.removeFirst()
+            }
+            list.append(domain)
+            Self.domainLogs[bundleID] = list
         }
         Self.domainLogLock.unlock()
     }
