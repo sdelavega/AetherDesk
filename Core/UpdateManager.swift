@@ -1,4 +1,5 @@
 import AppKit
+import os.log
 import Foundation
 import CryptoKit
 
@@ -143,7 +144,7 @@ final class UpdateManager {
             guard let self else { return }
             switch result {
             case .failure(let error):
-                NSLog("ÆtherDesk UpdateManager: check failed — %@", error.localizedDescription)
+                Logger.app.error("ÆtherDesk UpdateManager: check failed — \(error.localizedDescription)")
                 self.setState(.idle)
             case .success(let release):
                 guard self.isNewer(release) else {
@@ -153,7 +154,7 @@ final class UpdateManager {
                 let settings = UpdateSettingsStore.shared.load()
                 if let skipped = settings.skippedVersion,
                    skipped == self.version(from: release) {
-                    NSLog("ÆtherDesk UpdateManager: %@ is available but was skipped by user", release.tag_name)
+                    Logger.app.info("ÆtherDesk UpdateManager: \(release.tag_name) is available but was skipped by user")
                     self.setState(.idle)
                     return
                 }

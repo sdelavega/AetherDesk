@@ -1,4 +1,5 @@
 import AppKit
+import os.log
 import Foundation
 import IOKit.ps
 
@@ -129,8 +130,7 @@ final class WallpaperManager {
                                                        "bundleID": bundle.id.uuidString])
             applyPowerPerformancePolicy()
         } catch {
-            NSLog("ÆtherDesk: runtime start failed for display %u: %@",
-                  displayID, String(describing: error))
+            Logger.app.error("ÆtherDesk: runtime start failed for display \(displayID): \(String(describing: error))")
             installSafeModeContent(for: displayID)
         }
     }
@@ -145,8 +145,7 @@ final class WallpaperManager {
         guard let runtime = runtimes[displayID] else { return }
         do { try runtime.reload() }
         catch {
-            NSLog("ÆtherDesk: reload failed for display %u: %@",
-                  displayID, String(describing: error))
+            Logger.app.error("ÆtherDesk: reload failed for display \(displayID): \(String(describing: error))")
             installSafeModeContent(for: displayID)
         }
     }
@@ -483,8 +482,7 @@ final class WallpaperManager {
     @objc private func runtimeDidFail(_ note: Notification) {
         guard let displayID = note.userInfo?["displayID"] as? CGDirectDisplayID else { return }
         let reason = (note.userInfo?["reason"] as? String) ?? "unknown"
-        NSLog("ÆtherDesk: runtime on display %u reported failure (%@); demoting to safe content",
-              displayID, reason)
+        Logger.app.error("ÆtherDesk: runtime on display \(displayID) reported failure (\(reason)); demoting to safe content")
         DispatchQueue.main.async { [weak self] in
             self?.installSafeModeContent(for: displayID)
         }

@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 class PropertyStore {
 
@@ -55,8 +56,7 @@ class PropertyStore {
             if isSafePropertyValue(value) {
                 result[key] = value
             } else {
-                NSLog("ÆtherDesk: rejected unsafe property value for key '%@' (type: %@)",
-                      key, String(describing: type(of: value)))
+                Logger.app.warning("ÆtherDesk: rejected unsafe property value for key '\(key)' (type: \(String(describing: type(of: value))))")
             }
         }
         return result

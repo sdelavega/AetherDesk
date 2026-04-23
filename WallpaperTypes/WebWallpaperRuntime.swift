@@ -1,4 +1,5 @@
 import AppKit
+import os.log
 import WebKit
 import Foundation
 import CoreLocation
@@ -110,8 +111,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             self?.deliverGeolocationResult(id: id, lat: lat, lon: lon)
         }
         handler.onNetworkBudgetExceeded = { [displayID] in
-            NSLog("ÆtherDesk: web wallpaper on display %u exceeded its JS network budget",
-                  displayID)
+            Logger.app.info("ÆtherDesk: web wallpaper on display \(self.displayID) its JS network budget")
         }
     }
 
@@ -275,7 +275,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         }
 
         guard consumeNativeFetchBudget() else {
-            NSLog("ÆtherDesk: blocked wallpaper fetch — native fetch budget exceeded on display %u", displayID)
+            Logger.app.warning("ÆtherDesk: blocked wallpaper fetch — native fetch budget exceeded on display \(self.displayID)")
             deliverFetchResult(id: id, status: 0, body: nil)
             return
         }
@@ -304,8 +304,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                                   let fileSize = attrs[.size] as? Int64,
                                   fileSize <= Constants.Defaults.maxNativeFetchResponseBytes else {
                                 let actualSize = (try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int64 ?? -1
-                                NSLog("ÆtherDesk: rejected oversized fetch response (%lld bytes)",
-                                      actualSize)
+                                Logger.app.warning("ÆtherDesk: rejected oversized fetch response (\(actualSize)ytes)")
                                 return nil
                             }
                             guard let data = try? Data(contentsOf: tempURL) else { return nil }
@@ -314,12 +313,12 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                         self?.deliverFetchResult(id: id, status: status, body: body)
                     }.resume()
                 case .failure(let reason):
-                    NSLog("ÆtherDesk: blocked wallpaper fetch — %@", reason.description)
+                    Logger.app.warning("ÆtherDesk: blocked wallpaper fetch — \(reason.description)")
                     self.deliverFetchResult(id: id, status: 0, body: nil)
                 }
             }
         case .failure(let reason):
-            NSLog("ÆtherDesk: blocked wallpaper fetch — %@", reason.description)
+            Logger.app.warning("ÆtherDesk: blocked wallpaper fetch — \(reason.description)")
             deliverFetchResult(id: id, status: 0, body: nil)
         }
     }
@@ -615,7 +614,7 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
         if shouldAllowNavigation(to: url) {
             decisionHandler(.allow)
         } else {
-            NSLog("ÆtherDesk: blocked web wallpaper navigation to %@", url.absoluteString)
+            Logger.app.warning("ÆtherDesk: blocked web wallpaper navigation to \(url.absoluteString)")
             decisionHandler(.cancel)
         }
     }
@@ -633,15 +632,15 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        NSLog("ÆtherDesk: WebView navigation failed: %@", error.localizedDescription)
+        Logger.app.error("ÆtherDesk: WebView navigation failed: \(error.localizedDescription)")
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        NSLog("ÆtherDesk: WebView provisional navigation failed: %@", error.localizedDescription)
+        Logger.app.error("ÆtherDesk: WebView provisional navigation failed: \(error.localizedDescription)")
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        NSLog("ÆtherDesk: web content process terminated on display %u", displayID)
+        Logger.app.info("ÆtherDesk: web content process terminated on display \(self.displayID)")
         watchdog.stop()
         self.webView?.removeFromSuperview()
         self.webView = nil
@@ -658,21 +657,20 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
         lastTerminationUptime = now
 
         if rapidTerminationCount >= 2 {
-            NSLog("ÆtherDesk: web content crashed repeatedly on display %u — demoting to safe mode", displayID)
+            Logger.app.error("ÆtherDesk: web content crashed repeatedly on display \(self.displayID) — demoting to safe mode")
             NotificationCenter.default.post(
                 name: Constants.Notifications.runtimeDidFail,
                 object: nil,
                 userInfo: ["displayID": displayID,
                            "reason": "web content process terminated repeatedly"])
         } else {
-            NSLog("ÆtherDesk: attempting to recover web content on display %u", displayID)
+            Logger.app.info("ÆtherDesk: attempting to recover web content on display \(self.displayID)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 guard let self = self, !self.isStopped else { return }
                 do {
                     try self.start()
                 } catch {
-                    NSLog("ÆtherDesk: recovery failed on display %u: %@",
-                          self.displayID, String(describing: error))
+                    Logger.app.error("ÆtherDesk: recovery failed on display \(self.displayID): \(String(describing: error))")
                     NotificationCenter.default.post(
                         name: Constants.Notifications.runtimeDidFail,
                         object: nil,
@@ -900,13 +898,13 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
         let basePath = bundleBaseURL.path
         let filePath = fileURL.path
         guard filePath == basePath || filePath.hasPrefix(basePath + "/") else {
-            NSLog("ÆtherDesk: blocked path-traversal request from wallpaper: %@", url.path)
+            Logger.app.warning("ÆtherDesk: blocked path-traversal request from wallpaper: \(url.path)")
             task.didFailWithError(URLError(.noPermissionsToReadFile))
             return
         }
         let ext = fileURL.pathExtension
         guard let mime = Self.mimeType(for: ext) else {
-            NSLog("ÆtherDesk: blocked wallpaper request for disallowed file type: .%@", ext)
+            Logger.app.warning("ÆtherDesk: blocked wallpaper request for disallowed file type: .\(ext)")
             task.didFailWithError(URLError(.noPermissionsToReadFile))
             return
         }
@@ -916,8 +914,7 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
         guard fileSize <= Self.maxSchemeHandlerFileSize else {
-            NSLog("ÆtherDesk: rejected wallpaper request for oversized file (%lld bytes): %@",
-                  fileSize, url.path)
+            Logger.app.warning("ÆtherDesk: rejected wallpaper request for oversized file (\(fileSize)ytes): \(url.path)")
             task.didFailWithError(URLError(.resourceUnavailable))
             return
         }

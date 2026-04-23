@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 enum Constants {
     static let appName = "ÆtherDesk"
@@ -60,4 +61,8 @@ enum Constants {
         static let livelyProperties = "LivelyProperties.json"
         static let indexFile = "index.html"
     }
+}
+
+extension Logger {
+    static let app = Logger(subsystem: Constants.bundleIdentifier, category: "app")
 }

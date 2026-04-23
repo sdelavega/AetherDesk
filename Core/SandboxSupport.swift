@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 /// Scaffolding for App Sandbox support. All methods are no-ops when the app
 /// is running unsandboxed. When sandbox is enabled (entitlements flip), call
@@ -43,7 +44,7 @@ enum SandboxSupport {
             .appendingPathComponent(Constants.appName, isDirectory: true)
 
         guard let newBase = newBase else {
-            NSLog("ÆtherDesk SandboxSupport: could not locate sandbox container — skipping migration")
+            Logger.app.info("ÆtherDesk SandboxSupport: could not locate sandbox container — skipping migration")
             return
         }
 
@@ -51,7 +52,7 @@ enum SandboxSupport {
             do {
                 try fm.createDirectory(at: newBase, withIntermediateDirectories: true)
             } catch {
-                NSLog("ÆtherDesk SandboxSupport: failed to create container directory: %@", error.localizedDescription)
+                Logger.app.error("ÆtherDesk SandboxSupport: failed to create container directory: \(error.localizedDescription)")
                 return
             }
         }
@@ -62,9 +63,9 @@ enum SandboxSupport {
         if fm.fileExists(atPath: oldWallpapers.path) && !fm.fileExists(atPath: newWallpapers.path) {
             do {
                 try fm.moveItem(at: oldWallpapers, to: newWallpapers)
-                NSLog("ÆtherDesk SandboxSupport: migrated wallpapers to sandbox container")
+                Logger.app.info("ÆtherDesk SandboxSupport: migrated wallpapers to sandbox container")
             } catch {
-                NSLog("ÆtherDesk SandboxSupport: migration failed: %@", error.localizedDescription)
+                Logger.app.error("ÆtherDesk SandboxSupport: migration failed: \(error.localizedDescription)")
                 return
             }
         }
@@ -93,7 +94,7 @@ enum SandboxSupport {
                                         includingResourceValuesForKeys: nil,
                                         relativeTo: nil)
         } catch {
-            NSLog("ÆtherDesk SandboxSupport: bookmark creation failed: %@", error.localizedDescription)
+            Logger.app.error("ÆtherDesk SandboxSupport: bookmark creation failed: \(error.localizedDescription)")
             return nil
         }
     }
@@ -115,7 +116,7 @@ enum SandboxSupport {
             }
             return nil
         } catch {
-            NSLog("ÆtherDesk SandboxSupport: bookmark resolution failed: %@", error.localizedDescription)
+            Logger.app.error("ÆtherDesk SandboxSupport: bookmark resolution failed: \(error.localizedDescription)")
             return nil
         }
     }

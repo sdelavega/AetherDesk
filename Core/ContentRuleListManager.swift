@@ -1,5 +1,6 @@
 import WebKit
 import Foundation
+import os.log
 
 /// Compiles and caches a WKContentRuleList that blocks known ad networks,
 /// analytics trackers, and crypto miners from loading in wallpaper WebViews.
@@ -94,7 +95,7 @@ final class ContentRuleListManager {
     /// Always calls `completion` on the main queue, even on failure.
     func prepare(completion: @escaping () -> Void) {
         guard let store = WKContentRuleListStore.default() else {
-            NSLog("ÆtherDesk: WKContentRuleListStore unavailable — skipping content filtering")
+            Logger.app.info("ÆtherDesk: WKContentRuleListStore unavailable — skipping content filtering")
             completion()
             return
         }
@@ -140,22 +141,21 @@ final class ContentRuleListManager {
         store.lookUpContentRuleList(forIdentifier: identifier) { list, _ in
             if let list {
                 // Cache hit — ready immediately.
-                NSLog("ÆtherDesk: %@ loaded from cache", label)
+                Logger.app.info("ÆtherDesk: \(label)rom cache")
                 completion(list)
                 return
             }
             // Not cached — compile. WKContentRuleListStore persists the
             // compiled result to disk automatically.
-            NSLog("ÆtherDesk: compiling %@…", label)
+            Logger.app.info("ÆtherDesk: compiling \(label)…")
             store.compileContentRuleList(
                 forIdentifier: identifier,
                 encodedContentRuleList: encodedRuleList
             ) { compiled, error in
                 if let error {
-                    NSLog("ÆtherDesk: %@ compilation failed: %@",
-                          label, error.localizedDescription)
+                    Logger.app.error("ÆtherDesk: \(label)mpilation failed: \(error.localizedDescription)")
                 } else {
-                    NSLog("ÆtherDesk: %@ compiled and cached", label)
+                    Logger.app.info("ÆtherDesk: \(label)mpiled and cached")
                 }
                 completion(compiled)
             }

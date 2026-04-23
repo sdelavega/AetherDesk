@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 import AppKit
 
 /// Structured result of screening a candidate wallpaper bundle.
@@ -232,7 +233,7 @@ final class WallpaperImporter {
             let resolved = itemURL.resolvingSymlinksInPath().standardizedFileURL
             let resolvedPath = resolved.path
             if resolvedPath != rootPath && !resolvedPath.hasPrefix(rootPath + "/") {
-                NSLog("ÆtherDesk: zip-slip detected — removing entry that resolves to %@", resolvedPath)
+                Logger.app.info("ÆtherDesk: zip-slip detected — removing entry that resolves to \(resolvedPath)")
                 violations.append(itemURL)
                 continue
             }
@@ -244,7 +245,7 @@ final class WallpaperImporter {
                     let destResolved = URL(fileURLWithPath: destPath, relativeTo: itemURL)
                         .resolvingSymlinksInPath().standardizedFileURL.path
                     if destResolved != rootPath && !destResolved.hasPrefix(rootPath + "/") {
-                        NSLog("ÆtherDesk: symlink escape detected — removing symlink at %@", itemURL.path)
+                        Logger.app.info("ÆtherDesk: symlink escape detected — removing symlink at \(itemURL.path)")
                         violations.append(itemURL)
                     }
                 }
@@ -256,8 +257,7 @@ final class WallpaperImporter {
         }
 
         if !violations.isEmpty {
-            NSLog("ÆtherDesk: removed %d zip-slip/symlink-escape entries from extracted archive",
-                  violations.count)
+            Logger.app.info("ÆtherDesk: removed \(violations.count) zip-slip/symlink-escape entries from extracted archive")
         }
     }
 

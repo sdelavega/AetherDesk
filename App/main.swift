@@ -1,4 +1,5 @@
 import AppKit
+import os.log
 import Foundation
 
 // MARK: - Updater mode
@@ -34,7 +35,7 @@ if CommandLine.arguments.count == 6,
         }
     } catch {
         // Non-fatal: the swap succeeded.
-        NSLog("AetherDesk updater: cleanup warning: %@", error.localizedDescription)
+        Logger.app.error("AetherDesk updater: cleanup warning: \(error.localizedDescription)")
     }
 
     let process = Process()
@@ -54,7 +55,7 @@ if CommandLine.arguments.count == 6,
 // Single-instance guard: exit immediately if another copy is already running.
 let dominated = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier!)
 if dominated.count > 1 {
-    NSLog("ÆtherDesk: another instance is already running — exiting.")
+    Logger.app.info("ÆtherDesk: another instance is already running — exiting.")
     exit(0)
 }
 
