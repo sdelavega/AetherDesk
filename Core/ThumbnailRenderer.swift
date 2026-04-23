@@ -398,30 +398,53 @@ private final class WebRender: NSObject, WKNavigationDelegate {
 
 extension NSImage {
     /// Scale this image to the given size preserving aspect ratio, center
-    /// cropped / letterboxed on a transparent background.
+    /// cropped / letterboxed on a transparent background. Uses CGContext
+    /// instead of lockFocus so it's safe to call from background threads.
     fileprivate func resized(to target: NSSize) -> NSImage {
         if target.width <= 0 || target.height <= 0 { return self }
-        let out = NSImage(size: target)
-        out.lockFocus()
-        NSColor.clear.setFill()
-        NSRect(origin: .zero, size: target).fill()
-
         let source = self.size
         guard source.width > 0, source.height > 0 else {
-            out.unlockFocus()
-            return out
+            return NSImage(size: target)
         }
+
+        let pixelW = Int(target.width * 2)
+        let pixelH = Int(target.height * 2)
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelW,
+            pixelsHigh: pixelH,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0) else {
+            return self
+        }
+        rep.size = target
+
+        guard let ctx = NSGraphicsContext(bitmapImageRep: rep) else { return self }
+        let cgCtx = ctx.cgContext
+        cgCtx.clear(CGRect(origin: .zero, size: CGSize(width: pixelW, height: pixelH)))
+
         let scale = min(target.width / source.width, target.height / source.height)
         let w = source.width * scale
         let h = source.height * scale
         let drawRect = NSRect(x: (target.width - w) / 2,
                               y: (target.height - h) / 2,
                               width: w, height: h)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = ctx
         self.draw(in: drawRect,
                   from: NSRect(origin: .zero, size: source),
                   operation: .copy,
                   fraction: 1.0)
-        out.unlockFocus()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let out = NSImage(size: target)
+        out.addRepresentation(rep)
         return out
     }
 }
