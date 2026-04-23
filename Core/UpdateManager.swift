@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import CryptoKit
 
 /// Checks GitHub Releases for a newer version of ÆtherDesk and, depending on
 /// user preferences, either notifies or silently downloads and installs it.
@@ -41,6 +42,7 @@ final class UpdateManager {
         case appBundleNotFound
         case signatureVerificationFailed(String)
         case scriptLaunchFailed(Error)
+        case hashVerificationFailed(String)
 
         var errorDescription: String? {
             switch self {
@@ -56,6 +58,8 @@ final class UpdateManager {
                 return "Update rejected — signature verification failed: \(reason)"
             case .scriptLaunchFailed(let e):
                 return "Could not launch the update installer: \(e.localizedDescription)"
+            case .hashVerificationFailed(let reason):
+                return "Update rejected — archive integrity check failed: \(reason)"
             }
         }
     }
@@ -234,9 +238,34 @@ final class UpdateManager {
 
         DispatchQueue.main.async { self.state = .downloading }
 
-        session.downloadTask(with: downloadURL) { [weak self] tempURL, _, error in
+        // Download both the zip and the .sha256 sidecar (if present).
+        let group = DispatchGroup()
+        var zipTempURL: URL?
+        var hashTempURL: URL?
+        var downloadError: Error?
+
+        group.enter()
+        session.downloadTask(with: downloadURL) { url, _, error in
+            zipTempURL = url
+            downloadError = downloadError ?? error
+            group.leave()
+        }.resume()
+
+        let hashURL = downloadURL.appendingPathExtension("sha256")
+        group.enter()
+        session.downloadTask(with: hashURL) { url, response, error in
+            hashTempURL = url
+            // 404 for the sidecar is fine — we'll skip hash verification.
+            if let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode == 404 {
+                hashTempURL = nil
+            }
+            group.leave()
+        }.resume()
+
+        group.notify(queue: self.queue) { [weak self] in
             guard let self else { return }
-            if let error {
+            if let error = downloadError {
                 DispatchQueue.main.async {
                     self.state = .failed(UpdateError.downloadFailed(error))
                     self.presentAlert(style: .warning,
@@ -246,15 +275,21 @@ final class UpdateManager {
                 }
                 return
             }
-            guard let tempURL else { return }
+            guard let zipTemp = zipTempURL else { return }
 
-            // URLSession deletes the file at tempURL as soon as this completion
-            // handler returns. Move it to a stable path before we dispatch
-            // performInstall to the background queue.
-            let stableURL = FileManager.default.temporaryDirectory
+            let fm = FileManager.default
+            let stableZip = fm.temporaryDirectory
                 .appendingPathComponent("AetherDesk-dl-\(UUID().uuidString).zip")
+            let stableHash = hashTempURL.flatMap { _ in
+                fm.temporaryDirectory
+                    .appendingPathComponent("AetherDesk-dl-\(UUID().uuidString).sha256")
+            }
+
             do {
-                try FileManager.default.moveItem(at: tempURL, to: stableURL)
+                try fm.moveItem(at: zipTemp, to: stableZip)
+                if let hashTemp = hashTempURL, let stableHash = stableHash {
+                    try fm.moveItem(at: hashTemp, to: stableHash)
+                }
             } catch {
                 DispatchQueue.main.async {
                     self.state = .failed(UpdateError.downloadFailed(error))
@@ -265,8 +300,9 @@ final class UpdateManager {
                 }
                 return
             }
-            self.queue.async { self.performInstall(zipURL: stableURL) }
-        }.resume()
+
+            self.performInstall(zipURL: stableZip, hashURL: stableHash)
+        }
     }
 
     // MARK: - Code signature verification
@@ -351,27 +387,44 @@ final class UpdateManager {
         }
     }
 
-    // MARK: - Shell-script self-replacement
+    // MARK: - Pure-Swift self-replacement
 
-    private func performInstall(zipURL: URL) {
+    private func performInstall(zipURL: URL, hashURL: URL?) {
         DispatchQueue.main.async { self.state = .installing }
 
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory
             .appendingPathComponent("AetherDesk-Update-\(UUID().uuidString)")
 
-        do { try fm.createDirectory(at: tempDir, withIntermediateDirectories: true) } catch {
+        // Hardened cleanup: tempDir and the downloaded zip are always removed.
+        defer {
+            try? fm.removeItem(at: tempDir)
             try? fm.removeItem(at: zipURL)
+            if let hashURL = hashURL {
+                try? fm.removeItem(at: hashURL)
+            }
+        }
+
+        do {
+            try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        } catch {
             return reportInstallError(UpdateError.extractionFailed(-1))
         }
 
-        // Move the downloaded zip inside tempDir so the cleanup script's
-        // `rm -rf tempDir` removes it along with the extracted contents.
+        // Verify zip hash before extraction, if a sidecar was published.
+        if let hashURL = hashURL {
+            do {
+                try verifySHA256(ofFileAt: zipURL, againstHashFile: hashURL)
+            } catch {
+                return reportInstallError(error as? UpdateError
+                    ?? .hashVerificationFailed(error.localizedDescription))
+            }
+        }
+
         let zipInTempDir = tempDir.appendingPathComponent("AetherDesk.zip")
         do {
             try fm.moveItem(at: zipURL, to: zipInTempDir)
         } catch {
-            try? fm.removeItem(at: zipURL)
             return reportInstallError(UpdateError.extractionFailed(-1))
         }
 
@@ -401,44 +454,46 @@ final class UpdateManager {
         do {
             try verifyCodeSignature(ofAppAtPath: newAppPath)
         } catch {
-            try? fm.removeItem(at: tempDir)
             return reportInstallError(error as? UpdateError
                 ?? .signatureVerificationFailed(error.localizedDescription))
         }
 
-        // Script waits for this process to die, swaps the .app, relaunches.
-        let script = """
-        #!/bin/bash
-        while kill -0 \(pid) 2>/dev/null; do
-            sleep 0.5
-        done
-        sleep 1
-        rm -rf "\(currentAppPath)"
-        mv "\(newAppPath)" "\(currentAppPath)"
-        rm -rf "\(tempDir.path)"
-        open "\(currentAppPath)"
-        """
-
-        let scriptURL = tempDir.appendingPathComponent("update.sh")
+        // Relaunch ourselves in updater mode so the swap happens from a
+        // separate process after this one exits. No shell scripts involved.
+        let currentExecutable = Bundle.main.executableURL?.path ?? currentAppPath
+        let updater = Process()
+        updater.executableURL = URL(fileURLWithPath: currentExecutable)
+        updater.arguments = ["--aetherdesk-updater", String(pid), currentAppPath, newAppPath, tempDir.path]
+        updater.standardOutput = FileHandle.nullDevice
+        updater.standardError  = FileHandle.nullDevice
         do {
-            try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+            try updater.run()
         } catch {
-            return reportInstallError(UpdateError.scriptLaunchFailed(error))
-        }
-
-        let launcher = Process()
-        launcher.executableURL = URL(fileURLWithPath: "/bin/bash")
-        launcher.arguments = [scriptURL.path]
-        launcher.standardOutput = FileHandle.nullDevice
-        launcher.standardError  = FileHandle.nullDevice
-        do {
-            try launcher.run()
-        } catch {
-            return reportInstallError(UpdateError.scriptLaunchFailed(error))
+            return reportInstallError(.scriptLaunchFailed(error))
         }
 
         DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+    }
+
+    // MARK: - Hash verification
+
+    private func verifySHA256(ofFileAt fileURL: URL, againstHashFile hashURL: URL) throws {
+        guard let expectedHash = try? String(contentsOf: hashURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespaces)
+            .first,
+              !expectedHash.isEmpty else {
+            throw UpdateError.hashVerificationFailed("Could not read expected hash from sidecar file")
+        }
+
+        guard let data = try? Data(contentsOf: fileURL) else {
+            throw UpdateError.hashVerificationFailed("Could not read downloaded archive")
+        }
+
+        let computed = data.sha256HexString()
+        guard computed.compare(expectedHash, options: .caseInsensitive) == .orderedSame else {
+            throw UpdateError.hashVerificationFailed("Hash mismatch: expected \(expectedHash), got \(computed)")
+        }
     }
 
     private func reportInstallError(_ error: UpdateError) {
@@ -485,5 +540,14 @@ final class UpdateManager {
         alert.addButton(withTitle: "OK")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+}
+
+// MARK: - SHA-256 helper
+
+extension Data {
+    func sha256HexString() -> String {
+        let digest = SHA256.hash(data: self)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
