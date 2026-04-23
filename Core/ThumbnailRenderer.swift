@@ -52,6 +52,22 @@ final class ThumbnailRenderer {
             .appendingPathComponent(Constants.bundleIdentifier, isDirectory: true)
             .appendingPathComponent("thumbnails", isDirectory: true)
         try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        pruneOrphanedCache()
+    }
+
+    /// Remove cached thumbnails whose bundle no longer exists. Called once
+    /// at init so orphaned entries don't accumulate indefinitely.
+    func pruneOrphanedCache() {
+        let validIDs = Set(WallpaperImporter.shared.listWallpapers().map { $0.id.uuidString })
+        guard let entries = try? fileManager.contentsOfDirectory(atPath: cacheDir.path) else { return }
+        for entry in entries {
+            // Filename format: <bundleUUID>_<w>x<h>.png
+            let prefix = entry.components(separatedBy: "_").first ?? entry
+            if !validIDs.contains(prefix) {
+                let url = cacheDir.appendingPathComponent(entry)
+                try? fileManager.removeItem(at: url)
+            }
+        }
     }
 
     /// Asynchronously produces an NSImage of the requested pixel size for
