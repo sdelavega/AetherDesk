@@ -41,28 +41,29 @@ final class ImageWallpaperRuntime: NSObject, WallpaperRuntime {
             Int((screen?.frame.width ?? 1920) * (screen?.backingScaleFactor ?? 2.0)),
             Int((screen?.frame.height ?? 1080) * (screen?.backingScaleFactor ?? 2.0))
         )
+        let screenSize = screen?.frame.size ?? NSSize(width: 1920, height: 1080)
 
-        let image: NSImage
-        if let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let image = Self.loadImage(at: imageURL, maxPixel: maxPixel, screenSize: screenSize)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isPaused else { return }
+                self.imageView.image = image
+            }
+        }
+    }
+
+    private static func loadImage(at url: URL, maxPixel: Int, screenSize: NSSize) -> NSImage? {
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
             let options: [CFString: Any] = [
                 kCGImageSourceThumbnailMaxPixelSize: maxPixel,
                 kCGImageSourceCreateThumbnailFromImageAlways: true
             ]
             if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                image = NSImage(cgImage: cgImage, size: screen?.frame.size ?? NSSize(width: 1920, height: 1080))
-            } else {
-                guard let fallback = NSImage(contentsOf: imageURL) else {
-                    throw WallpaperRuntimeError.contentNotFound
-                }
-                image = fallback
+                return NSImage(cgImage: cgImage, size: screenSize)
             }
-        } else {
-            guard let fallback = NSImage(contentsOf: imageURL) else {
-                throw WallpaperRuntimeError.contentNotFound
-            }
-            image = fallback
         }
-        imageView.image = image
+        return NSImage(contentsOf: url)
     }
 
     func pause()  { isPaused = true }
