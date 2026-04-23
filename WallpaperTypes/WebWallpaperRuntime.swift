@@ -54,7 +54,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     private var networkWindowStart = Date()
     private var networkRequestsInWindow = 0
-    private let locationProxy = LocationProxy()
+    private let locationProxy: LocationProxy
     private let networkPolicy: NetworkPolicy
 
     var contentView: NSView { containerView }
@@ -87,6 +87,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         self.networkPolicy = NetworkPolicy(
             bundleID: bundle.id,
             allowLANAccess: AppSettingsStore.shared.loadPerformanceSettings().allowLANAccess)
+        self.locationProxy = LocationProxy(bundleID: bundle.id, bundleName: bundle.name)
 
         super.init()
 
@@ -678,15 +679,20 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
 /// Fulfils `navigator.geolocation.getCurrentPosition` requests from wallpaper JS
 /// by delegating to CoreLocation. One shared instance per runtime; requests are
 /// queued while a location fix is in progress so we don't spam CLLocationManager.
+/// Per-wallpaper consent is checked before any location data is delivered.
 private final class LocationProxy: NSObject, CLLocationManagerDelegate {
 
     private let manager: CLLocationManager
+    private let bundleID: UUID
+    private let bundleName: String
     /// Pending request IDs waiting for a location fix.
     private var pendingIDs: [Int] = []
     /// Called with (id, lat, lon) on success or (id, nil, nil) on failure.
     var onResult: ((_ id: Int, _ lat: Double?, _ lon: Double?) -> Void)?
 
-    override init() {
+    init(bundleID: UUID, bundleName: String) {
+        self.bundleID = bundleID
+        self.bundleName = bundleName
         manager = CLLocationManager()
         super.init()
         manager.delegate = self
@@ -695,10 +701,39 @@ private final class LocationProxy: NSObject, CLLocationManagerDelegate {
 
     func request(id: Int) {
         DispatchQueue.main.async { [self] in
-            pendingIDs.append(id)
-            if pendingIDs.count == 1 {
-                startUpdates()
+            let permission = GeolocationPermissionStore.shared.load(for: bundleID)
+            switch permission {
+            case .denied:
+                onResult?(id, nil, nil)
+                return
+            case .allowed:
+                pendingIDs.append(id)
+                if pendingIDs.count == 1 { startUpdates() }
+            case .notDetermined:
+                pendingIDs.append(id)
+                promptForConsent()
             }
+        }
+    }
+
+    private func promptForConsent() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Allow Geolocation?"
+        alert.informativeText = """
+            The wallpaper "\(bundleName)" is requesting access to your location. \
+            Allow this wallpaper to use geolocation?
+            """
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Deny")
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        let permission: GeolocationPermission = (response == .alertFirstButtonReturn) ? .allowed : .denied
+        GeolocationPermissionStore.shared.save(permission, for: bundleID)
+        if permission == .denied {
+            flushPending(lat: nil, lon: nil)
+        } else if pendingIDs.count == 1 {
+            startUpdates()
         }
     }
 

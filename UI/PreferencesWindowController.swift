@@ -400,6 +400,21 @@ private final class PreferencesViewController: NSViewController {
         editor.view.translatesAutoresizingMaskIntoConstraints = false
         wallpaperEditorContainer.addSubview(editor.view)
 
+        let geoPermission = GeolocationPermissionStore.shared.load(for: bundle.id)
+        let geoCheckbox = NSButton(
+            checkboxWithTitle: "Allow geolocation",
+            target: nil, action: nil)
+        geoCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        geoCheckbox.state = (geoPermission == .allowed) ? .on : .off
+        geoCheckbox.target = self
+        geoCheckbox.action = #selector(geoPermissionChanged(_:))
+        geoCheckbox.toolTip = "When enabled, this wallpaper can access your location via CoreLocation."
+        objc_setAssociatedObject(geoCheckbox,
+                                 &AssociatedKeys.bundleID,
+                                 bundle.id,
+                                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        wallpaperEditorContainer.addSubview(geoCheckbox)
+
         let domains = NetworkPolicy.contactedDomains(for: bundle.id)
         let domainsLabel: NSTextField
         if domains.isEmpty {
@@ -421,7 +436,10 @@ private final class PreferencesViewController: NSViewController {
             editor.view.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor),
             editor.view.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor),
 
-            domainsLabel.topAnchor.constraint(equalTo: editor.view.bottomAnchor, constant: 12),
+            geoCheckbox.topAnchor.constraint(equalTo: editor.view.bottomAnchor, constant: 12),
+            geoCheckbox.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
+
+            domainsLabel.topAnchor.constraint(equalTo: geoCheckbox.bottomAnchor, constant: 8),
             domainsLabel.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
             domainsLabel.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor, constant: -10),
             domainsLabel.bottomAnchor.constraint(lessThanOrEqualTo: wallpaperEditorContainer.bottomAnchor, constant: -10)
@@ -456,4 +474,14 @@ private final class PreferencesViewController: NSViewController {
         let importer = WallpaperImporter()
         NSWorkspace.shared.open(importer.wallpapersDirectory)
     }
+
+    @objc private func geoPermissionChanged(_ sender: NSButton) {
+        guard let bundleID = objc_getAssociatedObject(sender, &AssociatedKeys.bundleID) as? UUID else { return }
+        let permission: GeolocationPermission = (sender.state == .on) ? .allowed : .denied
+        GeolocationPermissionStore.shared.save(permission, for: bundleID)
+    }
+}
+
+private enum AssociatedKeys {
+    static var bundleID: UInt8 = 0
 }
