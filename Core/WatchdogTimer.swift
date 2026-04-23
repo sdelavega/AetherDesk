@@ -32,7 +32,8 @@ final class WatchdogTimer {
     }
 
     deinit {
-        stop()
+        isArmed = false
+        cancelSourceLocked()
     }
 
     /// Arms (or re-arms) the timer. If already running, this is a heartbeat.
@@ -47,7 +48,6 @@ final class WatchdogTimer {
                 guard let self = self else { return }
                 guard self.isArmed else { return }
                 self.isArmed = false
-                // Only fire once per start(); cancel before calling out.
                 self.source?.cancel()
                 self.source = nil
                 DispatchQueue.main.async { self.onTimeout() }
@@ -68,10 +68,11 @@ final class WatchdogTimer {
     }
 
     /// Cancels any pending trip. After `stop()` the timer is inert until
-    /// `start()` is called again.
+    /// `start()` is called again. Uses queue.sync to guarantee the cancel
+    /// has taken effect before returning, which prevents spurious timeout
+    /// callbacks after a logical stop.
     func stop() {
-        queue.async { [weak self] in
-            guard let self = self else { return }
+        queue.sync {
             self.cancelSourceLocked()
         }
     }
