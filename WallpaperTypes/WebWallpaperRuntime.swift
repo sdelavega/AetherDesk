@@ -818,7 +818,8 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
             task.didFailWithError(URLError(.noPermissionsToReadFile))
             return
         }
-        guard let data = try? Data(contentsOf: fileURL) else {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+              let fileSize = attrs[.size] as? Int64 else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
@@ -831,8 +832,28 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
                 "X-Content-Type-Options": "nosniff",
             ])!
         task.didReceive(response)
-        task.didReceive(data)
-        task.didFinish()
+
+        let streamingThreshold: Int64 = 1_048_576
+        if fileSize <= streamingThreshold {
+            guard let data = try? Data(contentsOf: fileURL) else {
+                task.didFailWithError(URLError(.fileDoesNotExist))
+                return
+            }
+            task.didReceive(data)
+            task.didFinish()
+        } else {
+            guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
+                task.didFailWithError(URLError(.fileDoesNotExist))
+                return
+            }
+            let chunkSize = 512 * 1024
+            while true {
+                guard let chunk = try? handle.read(upToCount: chunkSize), !chunk.isEmpty else { break }
+                task.didReceive(chunk)
+            }
+            try? handle.close()
+            task.didFinish()
+        }
     }
 
     func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
