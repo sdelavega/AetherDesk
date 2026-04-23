@@ -657,6 +657,8 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
             return true
         case "http", "https":
             return consumeNetworkBudget()
+        case "javascript":
+            return false
         default:
             return false
         }
