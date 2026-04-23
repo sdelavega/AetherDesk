@@ -38,6 +38,7 @@ final class WallpaperImporter {
 
     private let validator = WallpaperValidator()
     private let runtimePolicyStore = RuntimePolicyStore.shared
+    private let propertyStore = PropertyStore()
     private let fileManager = FileManager.default
     private var cachedWallpapers: [WallpaperBundle]?
 
@@ -151,6 +152,8 @@ final class WallpaperImporter {
         }
         try fileManager.removeItem(at: bundle.baseURL)
         runtimePolicyStore.delete(for: bundle.id)
+        GeolocationPermissionStore.shared.delete(for: bundle.id)
+        propertyStore.delete(for: bundle.id)
         invalidateCache()
         // Notify WallpaperManager so it can tear down any live runtime that is
         // currently showing this bundle, rather than waiting until next launch.
