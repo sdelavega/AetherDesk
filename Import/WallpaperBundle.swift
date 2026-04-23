@@ -79,47 +79,74 @@ final class WallpaperBundle {
 
     // MARK: Resource URLs
 
+    private var _cachedIndexURL: URL?
+    private var _cachedVideoURL: URL?
+    private var _cachedImageURL: URL?
+    private var _cachedPreviewImageURL: URL?
+    private var _didResolveIndexURL = false
+    private var _didResolveVideoURL = false
+    private var _didResolveImageURL = false
+    private var _didResolvePreviewImageURL = false
+
     var indexURL: URL? {
+        if _didResolveIndexURL { return _cachedIndexURL }
+        _didResolveIndexURL = true
         if let declared = Self.declaredResourceURL(from: livelyInfo?.FileName, in: baseURL),
            Self.webExtensions.contains(declared.pathExtension.lowercased()) {
-            return declared
+            _cachedIndexURL = declared
+        } else {
+            let url = baseURL.appendingPathComponent(Constants.Keys.indexFile)
+            _cachedIndexURL = FileManager.default.fileExists(atPath: url.path) ? url : nil
         }
-        let url = baseURL.appendingPathComponent(Constants.Keys.indexFile)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        return _cachedIndexURL
     }
 
     var videoURL: URL? {
+        if _didResolveVideoURL { return _cachedVideoURL }
+        _didResolveVideoURL = true
         if let declared = Self.declaredResourceURL(from: livelyInfo?.FileName, in: baseURL),
            Self.videoExtensions.contains(declared.pathExtension.lowercased()) {
-            return declared
+            _cachedVideoURL = declared
+        } else {
+            _cachedVideoURL = WallpaperBundle.firstFile(in: baseURL, withExtensions: WallpaperBundle.videoExtensions)
         }
-        return WallpaperBundle.firstFile(in: baseURL, withExtensions: WallpaperBundle.videoExtensions)
+        return _cachedVideoURL
     }
 
     var imageURL: URL? {
+        if _didResolveImageURL { return _cachedImageURL }
+        _didResolveImageURL = true
         if let declared = Self.declaredResourceURL(from: livelyInfo?.FileName, in: baseURL),
            Self.imageExtensions.contains(declared.pathExtension.lowercased()),
            !declared.lastPathComponent.localizedCaseInsensitiveContains("preview") {
-            return declared
+            _cachedImageURL = declared
+        } else {
+            _cachedImageURL = WallpaperBundle.firstFile(in: baseURL,
+                                             withExtensions: WallpaperBundle.imageExtensions,
+                                             excludingNameContaining: "preview")
         }
-        return WallpaperBundle.firstFile(in: baseURL,
-                                         withExtensions: WallpaperBundle.imageExtensions,
-                                         excludingNameContaining: "preview")
+        return _cachedImageURL
     }
 
     var previewImageURL: URL? {
+        if _didResolvePreviewImageURL { return _cachedPreviewImageURL }
+        _didResolvePreviewImageURL = true
         // LivelyInfo.Preview takes precedence if present.
         if let preview = livelyInfo?.Preview {
             let url = baseURL.appendingPathComponent(preview)
-            if FileManager.default.fileExists(atPath: url.path) { return url }
+            if FileManager.default.fileExists(atPath: url.path) {
+                _cachedPreviewImageURL = url
+                return url
+            }
         }
         // Otherwise look for an image file whose name contains "preview".
         let contents = (try? FileManager.default.contentsOfDirectory(at: baseURL,
                                                                      includingPropertiesForKeys: nil)) ?? []
-        return contents.first {
+        _cachedPreviewImageURL = contents.first {
             $0.lastPathComponent.localizedCaseInsensitiveContains("preview") &&
             Self.imageExtensions.contains($0.pathExtension.lowercased())
         }
+        return _cachedPreviewImageURL
     }
 
     // MARK: Helpers
