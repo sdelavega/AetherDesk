@@ -50,7 +50,7 @@ final class WallpaperValidator {
         report(at: url).classification
     }
 
-    func report(at url: URL) -> Report {
+    func report(at url: URL, bundle: WallpaperBundle? = nil) -> Report {
         var warnings: [String] = []
         var issues: [String] = []
 
@@ -59,7 +59,7 @@ final class WallpaperValidator {
             issues.append("Bundle size \(totalSize / 1024 / 1024) MB exceeds \(maxBundleBytes / 1024 / 1024) MB limit")
         }
 
-        let indexURL = WallpaperBundle(from: url)?.indexURL
+        let indexURL = bundle?.indexURL
             ?? url.appendingPathComponent(Constants.Keys.indexFile)
         let js = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? ""
 
@@ -67,7 +67,8 @@ final class WallpaperValidator {
             inspectJavaScript(js, warnings: &warnings, issues: &issues)
         }
 
-        if let info = LivelyInfoParser().parse(from: url), let typeString = info.type?.lowercased() {
+        let info = bundle?.livelyInfo ?? LivelyInfoParser().parse(from: url)
+        if let info, let typeString = info.type?.lowercased() {
             if typeString == "application" {
                 issues.append("Executable wallpapers are not supported on macOS")
             }

@@ -53,7 +53,8 @@ import Foundation
     @Test func allBundlesPassValidation() throws {
         let validator = WallpaperValidator()
         for dir in try bundleDirs() {
-            let report = validator.report(at: dir)
+            let bundle = try #require(WallpaperBundle(from: dir))
+            let report = validator.report(at: dir, bundle: bundle)
             if case .rejected(let reason) = report.classification {
                 Issue.record("\(dir.lastPathComponent) rejected by validator: \(reason)")
             }
