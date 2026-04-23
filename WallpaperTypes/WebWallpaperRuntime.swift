@@ -946,9 +946,15 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
                 return
             }
             let chunkSize = 512 * 1024
-            while true {
-                guard let chunk = try? handle.read(upToCount: chunkSize), !chunk.isEmpty else { break }
-                task.didReceive(chunk)
+            var done = false
+            while !done {
+                autoreleasepool {
+                    guard let chunk = try? handle.read(upToCount: chunkSize), !chunk.isEmpty else {
+                        done = true
+                        return
+                    }
+                    task.didReceive(chunk)
+                }
             }
             try? handle.close()
             task.didFinish()
