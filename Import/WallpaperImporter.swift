@@ -193,6 +193,53 @@ final class WallpaperImporter {
                                     userInfo: [NSLocalizedDescriptionKey: "ditto exited with status \(process.terminationStatus)"])
             )
         }
+
+        try sanitizeExtractedContent(at: destinationURL)
+    }
+
+    /// Walks the extracted directory tree and removes any files or symlinks that
+    /// resolve outside the destination directory (zip slip / symlink traversal).
+    private func sanitizeExtractedContent(at rootURL: URL) throws {
+        let rootPath = rootURL.standardizedFileURL.path
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
+        guard let enumerator = fileManager.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]) else { return }
+
+        var violations: [URL] = []
+
+        for case let itemURL as URL in enumerator {
+            let resolved = itemURL.resolvingSymlinksInPath().standardizedFileURL
+            let resolvedPath = resolved.path
+            if resolvedPath != rootPath && !resolvedPath.hasPrefix(rootPath + "/") {
+                NSLog("ÆtherDesk: zip-slip detected — removing entry that resolves to %@", resolvedPath)
+                violations.append(itemURL)
+                continue
+            }
+
+            let resourceValues = try? itemURL.resourceValues(forKeys: Set(keys))
+            if resourceValues?.isSymbolicLink == true {
+                let destPath = try? fileManager.destinationOfSymbolicLink(atPath: itemURL.path)
+                if let destPath = destPath {
+                    let destResolved = URL(fileURLWithPath: destPath, relativeTo: itemURL)
+                        .resolvingSymlinksInPath().standardizedFileURL.path
+                    if destResolved != rootPath && !destResolved.hasPrefix(rootPath + "/") {
+                        NSLog("ÆtherDesk: symlink escape detected — removing symlink at %@", itemURL.path)
+                        violations.append(itemURL)
+                    }
+                }
+            }
+        }
+
+        for url in violations {
+            try? fileManager.removeItem(at: url)
+        }
+
+        if !violations.isEmpty {
+            NSLog("ÆtherDesk: removed %d zip-slip/symlink-escape entries from extracted archive",
+                  violations.count)
+        }
     }
 
     private func resolvedBundleRoot(in extractedDirectory: URL) throws -> URL {
