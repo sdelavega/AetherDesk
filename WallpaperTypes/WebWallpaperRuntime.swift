@@ -56,6 +56,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private var networkRequestsInWindow = 0
     private let locationProxy: LocationProxy
     private let networkPolicy: NetworkPolicy
+    private var isStopped = false
 
     var contentView: NSView { containerView }
 
@@ -171,6 +172,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     // MARK: WallpaperRuntime
 
     func start() throws {
+        isStopped = false
         guard let indexURL = bundle.indexURL else {
             throw WallpaperRuntimeError.contentNotFound
         }
@@ -235,6 +237,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     func stop() {
+        isStopped = true
         watchdog.stop()
         propertyBridge.flushNow()
         webView?.stopLoading()
@@ -625,7 +628,7 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
         } else {
             NSLog("ÆtherDesk: attempting to recover web content on display %u", displayID)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self = self else { return }
+                guard let self = self, !self.isStopped else { return }
                 do {
                     try self.start()
                 } catch {
