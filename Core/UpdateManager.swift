@@ -39,6 +39,7 @@ final class UpdateManager {
         case downloadFailed(Error)
         case extractionFailed(Int32)
         case appBundleNotFound
+        case signatureVerificationFailed(String)
         case scriptLaunchFailed(Error)
 
         var errorDescription: String? {
@@ -51,6 +52,8 @@ final class UpdateManager {
                 return "Extraction failed (ditto exit \(code))."
             case .appBundleNotFound:
                 return "Could not locate .app bundle in the downloaded archive."
+            case .signatureVerificationFailed(let reason):
+                return "Update rejected — signature verification failed: \(reason)"
             case .scriptLaunchFailed(let e):
                 return "Could not launch the update installer: \(e.localizedDescription)"
             }
@@ -266,6 +269,88 @@ final class UpdateManager {
         }.resume()
     }
 
+    // MARK: - Code signature verification
+
+    /// Verifies the downloaded .app has a valid code signature and was signed
+    /// by the same identity as the currently running app. Without this check a
+    /// MITM'd or compromised download could replace the app with arbitrary code.
+    private func verifyCodeSignature(ofAppAtPath appPath: String) throws {
+        let verify = Process()
+        verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        verify.arguments = ["--verify", "--deep", "--strict", appPath]
+        verify.standardOutput = FileHandle.nullDevice
+        let errPipe = Pipe()
+        verify.standardError = errPipe
+
+        do {
+            try verify.run()
+            verify.waitUntilExit()
+        } catch {
+            throw UpdateError.signatureVerificationFailed(
+                "Could not run codesign: \(error.localizedDescription)")
+        }
+
+        guard verify.terminationStatus == 0 else {
+            let output = (try? errPipe.fileHandleForReading.readToEnd())
+                .flatMap { String(data: $0, encoding: .utf8) }
+                ?? "unknown error"
+            throw UpdateError.signatureVerificationFailed(
+                "Invalid code signature: \(output.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))")
+        }
+
+        guard let currentTeamID = teamIdentifier(ofAppAtPath: Bundle.main.bundlePath),
+              let newTeamID = teamIdentifier(ofAppAtPath: appPath) else {
+            throw UpdateError.signatureVerificationFailed(
+                "Could not determine signing identity of current or downloaded app")
+        }
+
+        guard currentTeamID == newTeamID else {
+            throw UpdateError.signatureVerificationFailed(
+                "Signing identity mismatch: update was signed by a different developer (team \(newTeamID), expected \(currentTeamID))")
+        }
+    }
+
+    /// Extracts the TeamIdentifier from `codesign -dvvv` output, which
+    /// identifies the Apple Developer team regardless of whether the cert
+    /// is "Developer ID Application" or "Apple Development".
+    private func teamIdentifier(ofAppAtPath appPath: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["-dvvv", appPath]
+        let pipe = Pipe()
+        process.standardError = pipe
+        process.standardOutput = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = try? pipe.fileHandleForReading.readToEnd()
+            let output = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+
+            for line in output.components(separatedBy: "\n") {
+                if line.hasPrefix("TeamIdentifier=") {
+                    let teamID = line.dropFirst("TeamIdentifier=".count)
+                        .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    return teamID.isEmpty ? nil : teamID
+                }
+            }
+
+            for line in output.components(separatedBy: "\n") {
+                if line.hasPrefix("Authority=") {
+                    let authority = line.dropFirst("Authority=".count)
+                        .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    if authority.lowercased() == "adhoc" { return "adhoc" }
+                    return authority
+                }
+            }
+
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Shell-script self-replacement
 
     private func performInstall(zipURL: URL) {
@@ -312,6 +397,14 @@ final class UpdateManager {
         let newAppPath     = extractDir.appendingPathComponent(appName).path
         let currentAppPath = Bundle.main.bundlePath
         let pid            = ProcessInfo.processInfo.processIdentifier
+
+        do {
+            try verifyCodeSignature(ofAppAtPath: newAppPath)
+        } catch {
+            try? fm.removeItem(at: tempDir)
+            return reportInstallError(error as? UpdateError
+                ?? .signatureVerificationFailed(error.localizedDescription))
+        }
 
         // Script waits for this process to die, swaps the .app, relaunches.
         let script = """
