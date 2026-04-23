@@ -32,7 +32,6 @@ final class ThumbnailRenderer {
     /// Holds a strong ref to the per-request offscreen WKWebView / delegate
     /// while it loads. Keyed by the request's UUID.
     private var pendingWebRenders: [UUID: WebRender] = [:]
-    private let pendingLock = NSLock()
 
     /// In-memory cache of bundle directory modification dates to avoid
     /// repeated filesystem stat calls for cache validation.
@@ -215,10 +214,7 @@ final class ThumbnailRenderer {
                                    completion: @escaping (NSImage?) -> Void) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { completion(nil); return }
-            self.pendingLock.lock()
-            let active = self.pendingWebRenders.count
-            self.pendingLock.unlock()
-            if active >= Self.maxConcurrentWebRenders {
+            if self.pendingWebRenders.count >= Self.maxConcurrentWebRenders {
                 // Defer until a slot opens up.
                 self.webRenderQueue.append(
                     WebRenderRequest(indexURL: indexURL, baseURL: baseURL,
@@ -237,16 +233,12 @@ final class ThumbnailRenderer {
         let render = WebRender(token: token, size: size, webView: wv,
                                onFinish: { [weak self] image, usedView in
             guard let self = self else { return }
-            self.pendingLock.lock()
             self.pendingWebRenders.removeValue(forKey: token)
-            self.pendingLock.unlock()
             if let usedView = usedView { self.returnWebView(usedView) }
             completion(image)
             self.drainWebRenderQueue()
         })
-        pendingLock.lock()
         pendingWebRenders[token] = render
-        pendingLock.unlock()
         render.load(indexURL: indexURL, baseURL: baseURL)
     }
 
@@ -254,10 +246,7 @@ final class ThumbnailRenderer {
     /// on the main queue (from the onFinish completion path).
     private func drainWebRenderQueue() {
         while !webRenderQueue.isEmpty {
-            pendingLock.lock()
-            let active = pendingWebRenders.count
-            pendingLock.unlock()
-            guard active < Self.maxConcurrentWebRenders else { break }
+            guard pendingWebRenders.count < Self.maxConcurrentWebRenders else { break }
             let next = webRenderQueue.removeFirst()
             startWebRender(indexURL: next.indexURL, baseURL: next.baseURL,
                            size: next.size, completion: next.completion)
