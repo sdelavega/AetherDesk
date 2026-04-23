@@ -73,12 +73,10 @@ final class ThumbnailRenderer {
 
             // Fresh render.
             self.render(bundle: bundle, size: size) { [weak self] image in
-                guard let self = self else {
-                    DispatchQueue.main.async { completion(nil) }
-                    return
-                }
-                if let image = image {
-                    self.writeCache(image: image, to: cacheURL)
+                if let image = image, let self = self {
+                    self.queue.async {
+                        self.writeCache(image: image, to: cacheURL)
+                    }
                 }
                 DispatchQueue.main.async { completion(image) }
             }
