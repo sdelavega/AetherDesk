@@ -30,6 +30,11 @@
     <string>Copyright 2026. All rights reserved.</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>ÆtherDesk uses your location to show local weather on your wallpaper.</string>
     <key>NSPrincipalClass</key>
