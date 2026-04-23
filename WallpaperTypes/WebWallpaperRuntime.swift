@@ -798,6 +798,8 @@ private final class LocationProxy: NSObject, CLLocationManagerDelegate {
 /// WKPreferences keys.
 private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
 
+    private static let maxSchemeHandlerFileSize: Int64 = 100_000_000 // 100 MB
+
     private let bundleBaseURL: URL
 
     init(bundleBaseURL: URL) {
@@ -830,6 +832,12 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
               let fileSize = attrs[.size] as? Int64 else {
             task.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        guard fileSize <= Self.maxSchemeHandlerFileSize else {
+            NSLog("ÆtherDesk: rejected wallpaper request for oversized file (%lld bytes): %@",
+                  fileSize, url.path)
+            task.didFailWithError(URLError(.resourceUnavailable))
             return
         }
         let response = HTTPURLResponse(
