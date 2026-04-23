@@ -342,13 +342,20 @@ final class WallpaperManager {
                     setWallpaper(bundle, for: id)
                 } else {
                     // Genuinely new display — try persistence, then fallback.
-                    let available = WallpaperImporter.shared.listWallpapers()
-                    let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
-                    let saved = wallpaperStore.loadAssignments(for: [id])
-                    if let savedID = saved[id], let bundle = byID[savedID] {
-                        setWallpaper(bundle, for: id)
-                    } else if let fallback = fallbackBundle {
-                        setWallpaper(fallback, for: id)
+                    // Directory scans can hitch the main thread; do the lookup
+                    // on a background queue and apply on main.
+                    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                        guard let self = self else { return }
+                        let available = WallpaperImporter.shared.listWallpapers()
+                        let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
+                        let saved = self.wallpaperStore.loadAssignments(for: [id])
+                        DispatchQueue.main.async {
+                            if let savedID = saved[id], let bundle = byID[savedID] {
+                                self.setWallpaper(bundle, for: id)
+                            } else if let fallback = self.fallbackBundle {
+                                self.setWallpaper(fallback, for: id)
+                            }
+                        }
                     }
                 }
             }
