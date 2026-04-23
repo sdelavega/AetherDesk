@@ -90,28 +90,19 @@ final class NetworkPolicy {
     }
 
     private func logDomain(_ host: String) {
-        let domain = Self.stripSubdomain(host)
         Self.domainLogLock.lock()
         if Self.domainLogs[bundleID] == nil {
             Self.domainLogs[bundleID] = []
         }
         var list = Self.domainLogs[bundleID]!
-        if !list.contains(domain) {
+        if !list.contains(host) {
             if list.count >= Self.maxDomainsPerBundle {
                 list.removeFirst()
             }
-            list.append(domain)
+            list.append(host)
             Self.domainLogs[bundleID] = list
         }
         Self.domainLogLock.unlock()
-    }
-
-    private static func stripSubdomain(_ host: String) -> String {
-        let parts = host.split(separator: ".")
-        if parts.count > 2 {
-            return parts.suffix(2).joined(separator: ".")
-        }
-        return host
     }
 
     // MARK: - IP classification
