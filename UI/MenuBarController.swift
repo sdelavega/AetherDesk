@@ -25,6 +25,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let menu: NSMenu
     private weak var wallpaperManager: WallpaperManager?
     private var importer: WallpaperImporter { WallpaperImporter.shared }
+    private var cachedWallpapers: [WallpaperBundle]?
     private var menuNeedsFullRebuild = true
 
     // Submenu + items that need dynamic updates.
@@ -139,11 +140,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(quit)
     }
 
-    private func buildWallpapersSubmenu() -> NSMenu {
+    private func buildWallpapersSubmenu(from all: [WallpaperBundle]? = nil) -> NSMenu {
         let submenu = NSMenu()
 
-        let all = importer.listWallpapers()
-        if all.isEmpty {
+        let list = all ?? importer.listWallpapers()
+        if list.isEmpty {
             let placeholder = NSMenuItem(title: "No wallpapers installed", action: nil, keyEquivalent: "")
             placeholder.isEnabled = false
             submenu.addItem(placeholder)
@@ -153,8 +154,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let primaryID = NSScreen.main?.displayID ?? 0
         let current = wallpaperManager?.currentBundle(for: primaryID)
 
-        let bundled = all.filter { isBundled($0) }
-        let imported = all.filter { !isBundled($0) }
+        let bundled = list.filter { isBundled($0) }
+        let imported = list.filter { !isBundled($0) }
 
         if !bundled.isEmpty {
             let header = NSMenuItem(title: "Built-in", action: nil, keyEquivalent: "")
@@ -223,11 +224,36 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: NSMenuDelegate
 
     func menuWillOpen(_ menu: NSMenu) {
-        // Rebuild the Wallpapers submenu so check marks + per-display state
-        // are fresh every time the user opens the menu.
-        wallpapersItem.submenu = buildWallpapersSubmenu()
+        let currentList = importer.listWallpapers()
+        let needsRebuild = cachedWallpapers == nil || cachedWallpapers!.count != currentList.count
+            || !Set(cachedWallpapers!.map(\.id)).isSuperset(of: currentList.map(\.id))
+        if needsRebuild {
+            cachedWallpapers = currentList
+            wallpapersItem.submenu = buildWallpapersSubmenu(from: currentList)
+        } else {
+            updateCheckmarks(in: wallpapersItem.submenu, from: currentList)
+        }
         pauseItem.title = isPaused ? "Resume" : "Pause"
         safeModeItem.state = (wallpaperManager?.isSafeMode ?? false) ? .on : .off
+    }
+
+    private func updateCheckmarks(in submenu: NSMenu?, from bundles: [WallpaperBundle]) {
+        guard let submenu else { return }
+        let primaryID = NSScreen.main?.displayID ?? 0
+        let current = wallpaperManager?.currentBundle(for: primaryID)
+        for item in submenu.items {
+            guard let bundle = item.representedObject as? WallpaperBundle else { continue }
+            item.state = (current?.id == bundle.id) ? .on : .off
+            if let perDisplay = item.submenu {
+                for subitem in perDisplay.items {
+                    if let sel = subitem.representedObject as? SelectionTarget {
+                        subitem.state = (wallpaperManager?.currentBundle(for: sel.displayID)?.id == bundle.id) ? .on : .off
+                    } else if subitem.representedObject is WallpaperBundle {
+                        subitem.state = (current?.id == bundle.id) ? .on : .off
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Actions
