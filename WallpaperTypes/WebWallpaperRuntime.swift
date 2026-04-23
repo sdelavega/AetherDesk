@@ -274,36 +274,41 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
         switch networkPolicy.validate(url: url) {
         case .success(let validatedURL):
-            switch networkPolicy.validateResolvedAddresses(for: validatedURL) {
-            case .success(let safeURL):
-                var request = URLRequest(url: safeURL, timeoutInterval: 30)
-                request.httpMethod = method
-                URLSession.shared.downloadTask(with: request) { [weak self] tempURL, response, error in
-                    let status: Int
-                    if error != nil {
-                        status = 0
-                    } else {
-                        status = (response as? HTTPURLResponse)?.statusCode ?? 200
-                    }
-                    let body: String? = {
-                        guard let tempURL = tempURL else { return nil }
-                        let fm = FileManager.default
-                        guard let attrs = try? fm.attributesOfItem(atPath: tempURL.path),
-                              let fileSize = attrs[.size] as? Int64,
-                              fileSize <= Constants.Defaults.maxNativeFetchResponseBytes else {
-                            let actualSize = (try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int64 ?? -1
-                            NSLog("ÆtherDesk: rejected oversized fetch response (%lld bytes)",
-                                  actualSize)
-                            return nil
+            // DNS resolution (getaddrinfo) is synchronous and can block for
+            // seconds on slow/unreachable servers — move it off the main thread.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else { return }
+                switch self.networkPolicy.validateResolvedAddresses(for: validatedURL) {
+                case .success(let safeURL):
+                    var request = URLRequest(url: safeURL, timeoutInterval: 30)
+                    request.httpMethod = method
+                    URLSession.shared.downloadTask(with: request) { [weak self] tempURL, response, error in
+                        let status: Int
+                        if error != nil {
+                            status = 0
+                        } else {
+                            status = (response as? HTTPURLResponse)?.statusCode ?? 200
                         }
-                        guard let data = try? Data(contentsOf: tempURL) else { return nil }
-                        return String(data: data, encoding: .utf8)
-                    }()
-                    self?.deliverFetchResult(id: id, status: status, body: body)
-                }.resume()
-            case .failure(let reason):
-                NSLog("ÆtherDesk: blocked wallpaper fetch — %@", reason.description)
-                deliverFetchResult(id: id, status: 0, body: nil)
+                        let body: String? = {
+                            guard let tempURL = tempURL else { return nil }
+                            let fm = FileManager.default
+                            guard let attrs = try? fm.attributesOfItem(atPath: tempURL.path),
+                                  let fileSize = attrs[.size] as? Int64,
+                                  fileSize <= Constants.Defaults.maxNativeFetchResponseBytes else {
+                                let actualSize = (try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int64 ?? -1
+                                NSLog("ÆtherDesk: rejected oversized fetch response (%lld bytes)",
+                                      actualSize)
+                                return nil
+                            }
+                            guard let data = try? Data(contentsOf: tempURL) else { return nil }
+                            return String(data: data, encoding: .utf8)
+                        }()
+                        self?.deliverFetchResult(id: id, status: status, body: body)
+                    }.resume()
+                case .failure(let reason):
+                    NSLog("ÆtherDesk: blocked wallpaper fetch — %@", reason.description)
+                    self.deliverFetchResult(id: id, status: 0, body: nil)
+                }
             }
         case .failure(let reason):
             NSLog("ÆtherDesk: blocked wallpaper fetch — %@", reason.description)
