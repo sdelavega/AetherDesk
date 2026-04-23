@@ -752,6 +752,13 @@ private final class LocationProxy: NSObject, CLLocationManagerDelegate {
     /// Called with (id, lat, lon) on success or (id, nil, nil) on failure.
     var onResult: ((_ id: Int, _ lat: Double?, _ lon: Double?) -> Void)?
 
+    /// Static queue that prevents stacked modal alerts for the same bundle.
+    /// If an alert is already showing, new request IDs are queued and resolved
+    /// with the same answer when the alert closes.
+    private static var consentQueues: [UUID: [Int]] = [:]
+    private static var isShowingAlert: Set<UUID> = []
+    private static let consentLock = NSLock()
+
     init(bundleID: UUID, bundleName: String) {
         self.bundleID = bundleID
         self.bundleName = bundleName
@@ -772,8 +779,17 @@ private final class LocationProxy: NSObject, CLLocationManagerDelegate {
                 pendingIDs.append(id)
                 if pendingIDs.count == 1 { startUpdates() }
             case .notDetermined:
-                pendingIDs.append(id)
-                promptForConsent()
+                Self.consentLock.lock()
+                let isShowing = Self.isShowingAlert.contains(bundleID)
+                if isShowing {
+                    Self.consentQueues[bundleID, default: []].append(id)
+                    Self.consentLock.unlock()
+                } else {
+                    Self.isShowingAlert.insert(bundleID)
+                    Self.consentLock.unlock()
+                    pendingIDs.append(id)
+                    promptForConsent()
+                }
             }
         }
     }
@@ -792,10 +808,22 @@ private final class LocationProxy: NSObject, CLLocationManagerDelegate {
         let response = alert.runModal()
         let permission: GeolocationPermission = (response == .alertFirstButtonReturn) ? .allowed : .denied
         GeolocationPermissionStore.shared.save(permission, for: bundleID)
+
+        // Resolve any IDs that were queued while the alert was showing.
+        Self.consentLock.lock()
+        let queued = Self.consentQueues.removeValue(forKey: bundleID) ?? []
+        Self.isShowingAlert.remove(bundleID)
+        Self.consentLock.unlock()
+
         if permission == .denied {
             flushPending(lat: nil, lon: nil)
-        } else if pendingIDs.count == 1 {
-            startUpdates()
+            for qid in queued { onResult?(qid, nil, nil) }
+        } else {
+            if !pendingIDs.isEmpty { startUpdates() }
+            for qid in queued {
+                pendingIDs.append(qid)
+                if pendingIDs.count == 1 { startUpdates() }
+            }
         }
     }
 
