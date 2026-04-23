@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+# release — bump version, build, sign, notarize, and publish ÆtherDesk
+#
+# Usage:
+#   ./release [patch|minor|major|X.Y.Z] [--no-notarize] [--dry-run]
+#
+# For notarization (skip with --no-notarize for local/dev builds):
+#   export NOTARIZE_APPLE_ID="you@example.com"
+#   export NOTARIZE_TEAM_ID="N5PUFD82GV"
+#   export NOTARIZE_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # app-specific password
+#
+# The script:
+#   1. Bumps MARKETING_VERSION and CURRENT_PROJECT_VERSION in project.yml
+#   2. Runs xcodegen to regenerate the Xcode project
+#   3. Stages all modified tracked files + the version bump and commits
+#   4. Tags and pushes
+#   5. Builds a Release archive with xcodebuild
+#   6. Exports and signs with the existing ExportOptions.plist
+#   7. Optionally notarizes and staples
+#   8. Zips the .app and creates a GitHub release via gh
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_YML="$REPO_ROOT/project.yml"
+XCODEPROJ="$REPO_ROOT/ÆtherDesk.xcodeproj"
+EXPORT_OPTIONS="$REPO_ROOT/ExportOptions.plist"
+SCHEME="AetherDesk"
+GITHUB_REPO="sdelavega/AetherDesk"
+ASSET_NAME="AetherDesk.zip"
+XCODEGEN="${XCODEGEN:-/opt/homebrew/bin/xcodegen}"
+GH="${GH:-/opt/homebrew/bin/gh}"
+
+# ── Colours ────────────────────────────────────────────────────────────────
+R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' B='\033[0;34m' N='\033[0m'
+die()  { echo -e "${R}✗  $*${N}" >&2; exit 1; }
+info() { echo -e "${G}→  $*${N}"; }
+step() { echo -e "${B}── $* ──${N}"; }
+warn() { echo -e "${Y}⚠  $*${N}"; }
+
+# ── Argument parsing ───────────────────────────────────────────────────────
+BUMP="${1:-patch}"
+NOTARIZE=true
+DRY_RUN=false
+
+shift 2>/dev/null || true
+for arg in "$@"; do
+    case "$arg" in
+        --no-notarize) NOTARIZE=false ;;
+        --dry-run)     DRY_RUN=true   ;;
+        --help|-h)
+            sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+        *) die "Unknown option: $arg" ;;
+    esac
+done
+
+run() {
+    if $DRY_RUN; then
+        echo -e "${Y}[dry-run]${N} $*"
+    else
+        "$@"
+    fi
+}
+
+# ── Preflight ──────────────────────────────────────────────────────────────
+step "Preflight"
+
+command -v xcodebuild &>/dev/null || die "xcodebuild not found — install Xcode command-line tools"
+[[ -x "$XCODEGEN" ]]              || die "xcodegen not found at $XCODEGEN — brew install xcodegen"
+[[ -x "$GH" ]]                    || die "gh not found at $GH — brew install gh"
+[[ -f "$EXPORT_OPTIONS" ]]        || die "ExportOptions.plist not found at $EXPORT_OPTIONS"
+
+"$GH" auth status &>/dev/null     || die "gh not authenticated — run: gh auth login"
+
+cd "$REPO_ROOT"
+git rev-parse --is-inside-work-tree &>/dev/null || die "Not inside a git repository"
+
+if ! git diff --quiet HEAD 2>/dev/null; then
+    warn "Working tree has uncommitted changes — they will be included in the release commit."
+fi
+
+# ── Version bump ───────────────────────────────────────────────────────────
+step "Version bump"
+
+CURRENT_VERSION=$(grep 'MARKETING_VERSION:' "$PROJECT_YML" \
+    | sed 's/.*MARKETING_VERSION: "\(.*\)".*/\1/')
+CURRENT_BUILD=$(grep 'CURRENT_PROJECT_VERSION:' "$PROJECT_YML" \
+    | sed 's/.*CURRENT_PROJECT_VERSION: "\(.*\)".*/\1/')
+
+info "Current: $CURRENT_VERSION (build $CURRENT_BUILD)"
+
+if [[ "$BUMP" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    NEW_VERSION="$BUMP"
+else
+    IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+    case "$BUMP" in
+        major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+        minor) MINOR=$((MINOR + 1)); PATCH=0           ;;
+        patch) PATCH=$((PATCH + 1))                    ;;
+        *)     die "Unknown bump type '$BUMP'. Use patch, minor, major, or X.Y.Z" ;;
+    esac
+    NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+fi
+
+NEW_BUILD=$((CURRENT_BUILD + 1))
+TAG="v$NEW_VERSION"
+
+info "New:     $NEW_VERSION (build $NEW_BUILD)"
+
+# Abort if the tag already exists remotely.
+if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+    die "Tag $TAG already exists on the remote. Choose a different version."
+fi
+
+run sed -i '' \
+    -e "s/MARKETING_VERSION: \"$CURRENT_VERSION\"/MARKETING_VERSION: \"$NEW_VERSION\"/" \
+    -e "s/CURRENT_PROJECT_VERSION: \"$CURRENT_BUILD\"/CURRENT_PROJECT_VERSION: \"$NEW_BUILD\"/" \
+    "$PROJECT_YML"
+
+# ── Regenerate project ─────────────────────────────────────────────────────
+step "xcodegen"
+run "$XCODEGEN" --quiet
+
+# ── Commit, tag, push ──────────────────────────────────────────────────────
+step "Commit & push"
+
+# Stage the version bump + any other modified tracked files.
+run git add -u
+run git add "$PROJECT_YML" "$XCODEPROJ"
+
+run git commit -m "$(cat <<MSG
+Release $TAG
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+MSG
+)"
+run git tag -a "$TAG" -m "ÆtherDesk $NEW_VERSION"
+run git push origin HEAD
+run git push origin "$TAG"
+
+# ── Build ──────────────────────────────────────────────────────────────────
+step "Build (Release)"
+
+BUILD_DIR="$(mktemp -d)"
+ARCHIVE_PATH="$BUILD_DIR/AetherDesk.xcarchive"
+
+run xcodebuild archive \
+    -project "$XCODEPROJ" \
+    -scheme "$SCHEME" \
+    -configuration Release \
+    -archivePath "$ARCHIVE_PATH" \
+    -destination "generic/platform=macOS" \
+    ONLY_ACTIVE_ARCH=NO \
+    -allowProvisioningUpdates
+
+# ── Export ─────────────────────────────────────────────────────────────────
+step "Export (Developer ID)"
+
+EXPORT_DIR="$BUILD_DIR/export"
+
+run xcodebuild -exportArchive \
+    -archivePath "$ARCHIVE_PATH" \
+    -exportPath "$EXPORT_DIR" \
+    -exportOptionsPlist "$EXPORT_OPTIONS" \
+    -allowProvisioningUpdates
+
+APP_PATH="$EXPORT_DIR/ÆtherDesk.app"
+if ! $DRY_RUN; then
+    [[ -d "$APP_PATH" ]] || die "Export failed — app not found at $APP_PATH"
+fi
+
+# ── Notarize ───────────────────────────────────────────────────────────────
+if $NOTARIZE; then
+    step "Notarize"
+
+    [[ -n "${NOTARIZE_APPLE_ID:-}" ]] \
+        || die "Set NOTARIZE_APPLE_ID (your Apple ID email)"
+    [[ -n "${NOTARIZE_TEAM_ID:-}" ]] \
+        || die "Set NOTARIZE_TEAM_ID (10-char team ID from developer.apple.com)"
+    [[ -n "${NOTARIZE_PASSWORD:-}" ]] \
+        || die "Set NOTARIZE_PASSWORD (app-specific password from appleid.apple.com)"
+
+    NOTARIZE_ZIP="$BUILD_DIR/AetherDesk-notarize.zip"
+    info "Zipping for notarization..."
+    run ditto -c -k --keepParent "$APP_PATH" "$NOTARIZE_ZIP"
+
+    info "Submitting to Apple notarization service (this takes a minute)..."
+    run xcrun notarytool submit "$NOTARIZE_ZIP" \
+        --apple-id  "$NOTARIZE_APPLE_ID" \
+        --team-id   "$NOTARIZE_TEAM_ID"  \
+        --password  "$NOTARIZE_PASSWORD" \
+        --wait
+
+    info "Stapling ticket..."
+    run xcrun stapler staple "$APP_PATH"
+else
+    warn "Notarization skipped (--no-notarize). App may be blocked by Gatekeeper on other machines."
+fi
+
+# ── Package ────────────────────────────────────────────────────────────────
+step "Package"
+
+RELEASE_ZIP="$BUILD_DIR/$ASSET_NAME"
+info "Creating $ASSET_NAME..."
+run ditto -c -k --keepParent "$APP_PATH" "$RELEASE_ZIP"
+
+# Sanity-check the zip contains a signed app.
+if ! $DRY_RUN; then
+    codesign --verify --deep --strict "$APP_PATH" \
+        || warn "Code signature verification failed — double-check before distributing."
+fi
+
+# ── GitHub release ─────────────────────────────────────────────────────────
+step "GitHub release"
+
+run "$GH" release create "$TAG" \
+    --repo "$GITHUB_REPO" \
+    --title "ÆtherDesk $NEW_VERSION" \
+    --generate-notes \
+    "$RELEASE_ZIP#$ASSET_NAME"
+
+echo ""
+info "Released ÆtherDesk $NEW_VERSION → https://github.com/$GITHUB_REPO/releases/tag/$TAG"

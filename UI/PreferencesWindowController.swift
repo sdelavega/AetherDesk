@@ -432,17 +432,19 @@ private final class PreferencesViewController: NSViewController {
         self.contactedDomainsLabel = domainsLabel
 
         NSLayoutConstraint.activate([
+            // Scroll view fills from the top down to the geo section.
             editor.view.topAnchor.constraint(equalTo: wallpaperEditorContainer.topAnchor),
             editor.view.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor),
             editor.view.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor),
+            editor.view.bottomAnchor.constraint(equalTo: geoCheckbox.topAnchor, constant: -12),
 
-            geoCheckbox.topAnchor.constraint(equalTo: editor.view.bottomAnchor, constant: 12),
+            // Geo section is anchored at the bottom of the container.
             geoCheckbox.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
 
             domainsLabel.topAnchor.constraint(equalTo: geoCheckbox.bottomAnchor, constant: 8),
             domainsLabel.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
             domainsLabel.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor, constant: -10),
-            domainsLabel.bottomAnchor.constraint(lessThanOrEqualTo: wallpaperEditorContainer.bottomAnchor, constant: -10)
+            domainsLabel.bottomAnchor.constraint(equalTo: wallpaperEditorContainer.bottomAnchor, constant: -10)
         ])
     }
 
