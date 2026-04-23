@@ -98,25 +98,38 @@ final class ContentRuleListManager {
             completion()
             return
         }
+
+        // The three rule lists are independent — compile/load them concurrently.
+        let group = DispatchGroup()
+
+        group.enter()
         compileOrLoadRuleList(store: store,
                               identifier: Self.blocklistStoreIdentifier,
                               encodedRuleList: Self.blocklistJSON,
                               label: "content blocklist") { [weak self] list in
             self?.ruleList = list
-            self?.compileOrLoadRuleList(store: store,
-                                        identifier: Self.externalNetworkStoreIdentifier,
-                                        encodedRuleList: Self.externalNetworkBlockJSON,
-                                        label: "external network blocklist") { [weak self] list in
-                self?.externalNetworkBlockRuleList = list
-                self?.compileOrLoadRuleList(store: store,
-                                            identifier: Self.rawIPWebSocketStoreIdentifier,
-                                            encodedRuleList: Self.rawIPWebSocketBlockJSON,
-                                            label: "raw-IP WebSocket blocklist") { [weak self] list in
-                    self?.rawIPWebSocketRuleList = list
-                    DispatchQueue.main.async { completion() }
-                }
-            }
+            group.leave()
         }
+
+        group.enter()
+        compileOrLoadRuleList(store: store,
+                              identifier: Self.externalNetworkStoreIdentifier,
+                              encodedRuleList: Self.externalNetworkBlockJSON,
+                              label: "external network blocklist") { [weak self] list in
+            self?.externalNetworkBlockRuleList = list
+            group.leave()
+        }
+
+        group.enter()
+        compileOrLoadRuleList(store: store,
+                              identifier: Self.rawIPWebSocketStoreIdentifier,
+                              encodedRuleList: Self.rawIPWebSocketBlockJSON,
+                              label: "raw-IP WebSocket blocklist") { [weak self] list in
+            self?.rawIPWebSocketRuleList = list
+            group.leave()
+        }
+
+        group.notify(queue: .main) { completion() }
     }
 
     private func compileOrLoadRuleList(store: WKContentRuleListStore,
