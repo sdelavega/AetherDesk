@@ -24,6 +24,9 @@ enum Constants {
 
         /// Seconds between periodic update checks (24 hours).
         static let updateCheckInterval: TimeInterval = 86_400
+
+        /// Maximum response body size (bytes) for wallpaper native fetch proxy.
+        static let maxNativeFetchResponseBytes: Int64 = 5_000_000 // 5 MB
     }
 
     enum Directories {
