@@ -54,6 +54,8 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     private var networkWindowStart = Date()
     private var networkRequestsInWindow = 0
+    private var nativeFetchWindowStart = Date()
+    private var nativeFetchRequestsInWindow = 0
     private let locationProxy: LocationProxy
     private let networkPolicy: NetworkPolicy
     private var isStopped = false
@@ -268,6 +270,12 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     /// can reach external APIs (weather data, geolocation, etc.).
     private func performNativeFetch(id: Int, urlStr: String, method: String) {
         guard let url = URL(string: urlStr) else {
+            deliverFetchResult(id: id, status: 0, body: nil)
+            return
+        }
+
+        guard consumeNativeFetchBudget() else {
+            NSLog("ÆtherDesk: blocked wallpaper fetch — native fetch budget exceeded on display %u", displayID)
             deliverFetchResult(id: id, status: 0, body: nil)
             return
         }
@@ -706,6 +714,24 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
 
         guard networkRequestsInWindow < budget else { return false }
         networkRequestsInWindow += 1
+        return true
+    }
+
+    /// Enforce the same per-minute network budget on the native fetch path
+    /// that the JS shim enforces for fetch()/XMLHttpRequest. Prevents a
+    /// wallpaper from bypassing the budget by calling the native bridge directly.
+    private func consumeNativeFetchBudget() -> Bool {
+        guard let budget = policy.networkBudgetPerMinute else { return true }
+        guard budget > 0 else { return false }
+
+        let now = Date()
+        if now.timeIntervalSince(nativeFetchWindowStart) >= 60 {
+            nativeFetchWindowStart = now
+            nativeFetchRequestsInWindow = 0
+        }
+
+        guard nativeFetchRequestsInWindow < budget else { return false }
+        nativeFetchRequestsInWindow += 1
         return true
     }
 }
