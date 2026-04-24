@@ -64,3 +64,7 @@ mac-lively-wrapper-expert-prompt.md
 CLAUDE.md
 AGENTS.md
 release
+
+
+#Ignore insiders AI rules
+.github/instructions/codacy.instructions.md

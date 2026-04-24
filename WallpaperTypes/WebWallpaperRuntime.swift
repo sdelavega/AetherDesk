@@ -111,7 +111,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             self?.deliverGeolocationResult(id: id, lat: lat, lon: lon)
         }
         handler.onNetworkBudgetExceeded = { [displayID] in
-            Logger.app.info("ÆtherDesk: web wallpaper on display \(self.displayID) its JS network budget")
+            Logger.app.info("ÆtherDesk: web wallpaper on display \(displayID) its JS network budget")
         }
     }
 
@@ -290,6 +290,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                 case .success(let safeURL):
                     var request = URLRequest(url: safeURL, timeoutInterval: 30)
                     request.httpMethod = method
+                    request.cachePolicy = .reloadIgnoringLocalCacheData
                     URLSession.shared.downloadTask(with: request) { [weak self] tempURL, response, error in
                         let status: Int
                         if error != nil {
