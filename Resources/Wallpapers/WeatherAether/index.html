@@ -313,7 +313,9 @@ function resolveLocation(){
 // localStorage data on screen indefinitely.
 //
 // Fallback chain:
-//   CoreLocation (geoTimer 5s) → fetchIP (ipapi.co, 6s) → loadCachedLocation()
+//   CoreLocation (geoTimer 5s) → reverseGeocode (BigDataCloud) → cache + resolve
+//                 ↓ (on CoreLocation failure)
+//   fetchIP (ipapi.co, 6s) → loadCachedLocation()
 function autoLocation(){
   return new Promise(function(resolve){
     var done=false;
@@ -323,12 +325,49 @@ function autoLocation(){
     },5000);
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(
-        function(p){if(done)return;done=true;clearTimeout(geoTimer);S.lat=p.coords.latitude;S.lon=p.coords.longitude;S.label='Current Location';cacheLocation();resolve(true);},
+        function(p){
+          // Mark done immediately so the geoTimer cannot race fetchIP()
+          // while we wait for the reverse-geocode network call.
+          if(done)return;done=true;clearTimeout(geoTimer);
+          S.lat=p.coords.latitude;S.lon=p.coords.longitude;
+          // Resolve coordinates to a human-readable city name before
+          // caching and resolving; falls back to 'Current Location' if
+          // the reverse-geocode request fails.
+          reverseGeocode(S.lat,S.lon).then(function(label){
+            S.label=label;cacheLocation();resolve(true);
+          });
+        },
         function(){if(done)return;done=true;clearTimeout(geoTimer);fetchIP().then(function(ok){resolve(ok);});},
         {timeout:4000}
       );
     }else{clearTimeout(geoTimer);fetchIP().then(function(ok){resolve(ok);});}
   });
+}
+
+
+
+// ── reverseGeocode() ─────────────────────────────────────────────────────────
+// Converts a lat/lon pair into a human-readable city label using the
+// BigDataCloud reverse-geocoding API (free, no API key required). Returns a
+// Promise that always resolves to a non-empty string — falls back gracefully
+// to 'Current Location' if the network request fails, times out, or returns
+// no recognisable place data. The label format mirrors fetchIP(): "City, ST CC".
+function reverseGeocode(lat,lon){
+  var url='https://api.bigdatacloud.net/data/reverse-geocode-client'
+        +'?latitude='+lat+'&longitude='+lon+'&localityLanguage=en';
+  return fetchWithTimeout(url,6000)
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){
+      if(!d)return'Current Location';
+      // 'city' is the preferred field; 'locality' is a finer-grained fallback
+      // (neighbourhood/suburb level) used when city is absent.
+      var city=d.city||d.locality||'';
+      // principalSubdivisionCode is the short state/province code (e.g. "CA").
+      var state=d.principalSubdivisionCode||'';
+      var label=(city+(state?', '+state:'')).trim();
+      return label||'Current Location';
+    })
+    .catch(function(){return'Current Location';});
 }
 
 
@@ -343,8 +382,8 @@ function fetchIP(){
     .then(function(d){
       if(d.latitude!=null&&d.longitude!=null){
         S.lat=d.latitude;S.lon=d.longitude;
-        S.label=((d.city||'Unknown')+', '+(d.region_code||'')+' '+(d.country_code||'')).trim().replace(/,\s*$/,'').replace(/^\s*,\s*/,'');
-        if(!S.label||S.label===',')S.label=(d.city||'Unknown')+', '+(d.country_name||d.country_code||'??');
+        S.label=((d.city||'Unknown')+(d.region_code?', '+d.region_code:'')).trim();
+        if(!S.label)S.label=d.city||'Unknown';
         cacheLocation();return true;
       }
       return fallbackLoc();
@@ -381,7 +420,7 @@ function geocodeManual(q){
       if(!d.results||d.results.length===0){showPill("couldn't find '"+q+"'");return false;}
       var r0=d.results[0];
       S.lat=r0.latitude;S.lon=r0.longitude;
-      S.label=r0.name+(r0.admin1?', '+r0.admin1:'')+(r0.country_code?' '+r0.country_code:'');
+      S.label=r0.name+(r0.admin1?', '+r0.admin1:'');
       cacheLocation();hidePill();return true;
     })
     .catch(function(){showPill("couldn't find '"+q+"'");return false;});
