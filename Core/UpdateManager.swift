@@ -414,10 +414,18 @@ final class UpdateManager {
         let tempDir = fm.temporaryDirectory
             .appendingPathComponent("AetherDesk-Update-\(UUID().uuidString)")
 
-        // Hardened cleanup: tempDir and the downloaded zip are always removed.
+        // On error paths, clean up tempDir and the downloaded zip immediately.
+        // On the success path the updater subprocess owns tempDir — it contains
+        // newAppPath and will remove it after the swap. Setting cleanupTempDir
+        // to false before the function returns prevents the defer from deleting
+        // the new bundle while the subprocess is still waiting to move it.
+        // hashURL lives outside tempDir and is always cleaned up unconditionally.
+        var cleanupTempDir = true
         defer {
-            try? fm.removeItem(at: tempDir)
-            try? fm.removeItem(at: zipURL)
+            if cleanupTempDir {
+                try? fm.removeItem(at: tempDir)
+                try? fm.removeItem(at: zipURL)
+            }
             if let hashURL = hashURL {
                 try? fm.removeItem(at: hashURL)
             }
@@ -489,6 +497,10 @@ final class UpdateManager {
         } catch {
             return reportInstallError(.scriptLaunchFailed(error))
         }
+
+        // Hand off tempDir ownership to the subprocess; the defer must not
+        // delete it when performInstall() returns on this success path.
+        cleanupTempDir = false
 
         DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
     }
