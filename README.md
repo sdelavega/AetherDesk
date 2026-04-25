@@ -1,171 +1,164 @@
 # ÆtherDesk
 
-**Live wallpapers for macOS — powered by HTML, video, and images.**
+**Live wallpapers for macOS, with a narrower scope and a stricter attitude than most desktop wallpaper toys.**
 
-ÆtherDesk is a lightweight menu-bar app that renders animated wallpapers behind your desktop icons on every connected display. Drop in any HTML5 canvas/WebGL page, a looping video, or a static image and ÆtherDesk takes care of the rest.
+ÆtherDesk is a native menu-bar-only macOS app that hosts live wallpapers behind your desktop icons. It supports animated HTML/JS wallpapers in `WKWebView`, looping muted video, and static images. If you want the one-sentence pitch: it is a macOS Lively-style wallpaper host, but intentionally focused on the parts that fit well on the platform.
 
-It ships with full [Lively Wallpaper](https://www.rocksdanister.com/lively/) compatibility, so thousands of community-made wallpapers work out of the box.
+It reads Lively's bundle metadata and property formats, so a lot of existing community wallpapers import cleanly. It does **not** try to run everything Lively can run on Windows. Web, video, and image bundles are in scope. Executables, Unity, and other platform-specific runtimes are not.
 
----
+## What It Does Well
 
-## Features
+- Runs as an `LSUIElement` accessory app: no Dock icon, no app window hanging around, no clutter in Cmd-Tab
+- Hosts one wallpaper window per display at the desktop window level
+- Supports per-display wallpaper assignment and restores it on launch
+- Reads `LivelyInfo.json` and `LivelyProperties.json` directly
+- Lets wallpapers expose live controls in Preferences
+- Generates thumbnails for imported and bundled wallpapers
+- Watches web wallpapers with a heartbeat watchdog and demotes a hung runtime to safe black content instead of taking the whole app down
+- Includes automatic update checking and optional automatic install for GitHub Releases builds
 
-- **Web, Video, and Image wallpapers** — anything from a hand-crafted Three.js scene to a simple `.mp4` loop
-- **Per-display wallpaper assignment** — different wallpaper on each monitor, remembered across reboots
-- **Lively Wallpaper compatible** — reads `LivelyInfo.json` and `LivelyProperties.json` natively; import `.zip` bundles directly
-- **Real-time property controls** — tweak colors, speeds, densities, and any custom slider the wallpaper author exposes, live from the Preferences panel
-- **Menu-bar only** — no Dock icon, no windows cluttering your Cmd+Tab; everything lives in the status bar
-- **Launch at Login** — optional, toggle from Preferences
-- **Smart resource management**
-  - Configurable FPS cap (15–60, default 30)
-  - Pause/resume from the menu bar or automatically when the display sleeps
-  - Safe Mode fallback if a wallpaper misbehaves
-  - Watchdog timer catches hung web content and recovers gracefully
-- **Sandboxed WebViews** — each wallpaper runs in its own WKWebView process; ad networks, analytics trackers, and crypto miners are blocked via a compiled content rule list; `file://` access is scoped to the wallpaper's own bundle
-- **Import validation** — bundles are screened on import for excessive size, suspicious scripts, and resource abuse before they ever run
+## Current Feature Set
 
-## Getting Started
+- **Web, video, and image wallpapers**
+  HTML/JS wallpapers run in `WKWebView`, videos loop through `AVPlayer`, and stills use `NSImageView`.
 
-### Download
+- **Per-display control**
+  Different wallpaper on each monitor, plus an “All Displays” apply path from the menu.
 
-Grab the latest signed and notarized `.app` from the [Releases](https://github.com/sdelavega/AetherDesk/releases) page. Unzip, drag to Applications, and launch — no Gatekeeper warnings. The binary is universal and runs natively on both Apple Silicon and Intel Macs.
+- **Live property editing**
+  If a wallpaper ships `LivelyProperties.json`, ÆtherDesk builds the controls dynamically and pushes updates live into the running wallpaper.
 
-### Using wallpapers
+- **Menu bar workflow**
+  The app lives in the status item. Preferences is the only real window.
 
-1. Click the **ÆtherDesk** icon in your menu bar
-2. **Wallpapers** submenu shows all available wallpapers — click one to apply
-3. If you have multiple displays, each gets its own submenu section
-4. **Import Wallpaper...** lets you add `.zip` bundles or folders containing a wallpaper
-5. Open **Preferences** to adjust FPS, tweak wallpaper-specific properties, or enable Launch at Login
+- **Performance controls**
+  FPS cap is configurable at 15, 30, or 60. Wallpapers can also pause when occluded, when the Mac enters low power mode, or when running on battery, depending on your settings.
 
-### Bundled wallpapers
+- **Import screening**
+  Imported bundles are checked before they run. Oversized bundles, obvious tracker/ad scripts, crypto-mining patterns, infinite loops, and unsupported wallpaper types get rejected. Riskier-but-not-fatal bundles can still import under tighter limits.
 
-ÆtherDesk comes with three built-in wallpapers to get you started:
+- **Network controls for web wallpapers**
+  ÆtherDesk can block external network requests entirely, block raw-IP WebSocket connections, deny access to private IPs unless LAN access is explicitly allowed, and reject cloud metadata endpoint access / DNS rebinding tricks.
 
-| Wallpaper | Description |
-|-----------|-------------|
-| **NeonCity** | Procedural neon-lit cityscape with rain, fog, and parallax |
-| **MatrixRain** | Classic falling-code effect with configurable colors and density |
-| **GradientWave** | Smooth animated color gradients with customizable palettes |
+- **Tracker and miner blocking**
+  A compiled WebKit content rule list blocks a set of known analytics, ad-tech, and cryptomining domains inside wallpaper WebViews.
 
-All three support real-time property tweaking from Preferences.
+- **Safe failure behavior**
+  A wallpaper that wedges its web content process or stops heartbeating gets demoted on that display only. The rest of the app keeps running.
+
+## Bundled Wallpapers
+
+The repo currently ships with four sample wallpapers:
+
+- `GradientWave`
+- `MatrixRain`
+- `NeonCity`
+- `WeatherAether`
+
+They exist partly as usable defaults and partly as reference bundles for the import/runtime pipeline.
+
+## Using It
+
+Click the ÆtherDesk menu bar item and open the `Wallpapers` submenu. On a single display, applying one is straightforward. On multiple displays, the menu lets you apply to all displays or target a specific one.
+
+`Preferences` gives you four tabs:
+
+- `General`: launch at login, update settings, reveal wallpaper folder
+- `Performance`: FPS cap, pause policies, network controls
+- `Wallpaper`: picker, preview thumbnails, wallpaper property editor, contacted domains view for the selected wallpaper
+- `About`: version/build info
+
+Imported wallpapers are copied into the app's Application Support wallpaper library and become available immediately.
 
 ## Importing Lively Wallpapers
 
-ÆtherDesk reads the same `LivelyInfo.json` and `LivelyProperties.json` format used by [Lively Wallpaper](https://www.rocksdanister.com/lively/) on Windows. To import:
+ÆtherDesk uses Lively's on-disk bundle format:
 
-1. Find a wallpaper you like (e.g. from the [Lively GitHub community](https://github.com/rocksdanister/lively))
-2. Download the `.zip` bundle
-3. In ÆtherDesk, click **Import Wallpaper...** and select the zip
-4. The importer validates the bundle, copies it to `~/Library/Application Support/ÆtherDesk/Wallpapers/`, and makes it available immediately
-
-Supported types: **web/HTML**, **video** (mp4, mov, m4v, webm), and **image** (png, jpg, gif, webp, heic).
-
----
-
-## Creating Your Own Wallpaper
-
-A wallpaper is just a folder with an `index.html` and a `LivelyInfo.json`:
-
-```
+```text
 MyWallpaper/
-├── index.html              # Your wallpaper (canvas, WebGL, CSS, etc.)
-├── LivelyInfo.json         # Metadata (title, author, type)
-└── LivelyProperties.json   # Optional: sliders, color pickers, toggles
+├── LivelyInfo.json
+├── LivelyProperties.json   # optional
+├── index.html              # for web wallpapers
+├── preview.png             # optional
+└── assets...
 ```
 
-**Minimal `LivelyInfo.json`:**
+Supported content types today:
+
+- **Web**: HTML/JS wallpapers
+- **Video**: `mp4`, `mov`, `m4v`, `webm`
+- **Image**: common still-image formats
+
+Not supported:
+
+- executable/application wallpapers
+- Unity / Godot / other engine-specific bundles
+- anything that assumes Windows-only runtime behavior
+
+So “Lively compatible” here means the metadata and property model are compatible, and the supported media/runtime types import cleanly. It is not a claim of total feature parity with Lively on Windows.
+
+## Writing a Wallpaper
+
+At minimum, a web wallpaper is just a folder with an `index.html` and `LivelyInfo.json`.
+
 ```json
 {
   "Title": "My Wallpaper",
   "Author": "You",
-  "Description": "A cool animated wallpaper",
+  "Description": "A small animated wallpaper",
   "Type": "web",
   "FileName": "index.html"
 }
 ```
 
-**Adding user-tweakable properties** (`LivelyProperties.json`):
-```json
-{
-  "speed": {
-    "text": "Animation Speed",
-    "type": "slider",
-    "value": 1.0,
-    "min": 0.1,
-    "max": 5.0,
-    "step": 0.1
-  },
-  "color": {
-    "text": "Primary Color",
-    "type": "color",
-    "value": "#ff6600"
-  }
-}
-```
+If you add `LivelyProperties.json`, ÆtherDesk will build native controls for it and push updates into the running wallpaper.
 
-Your `index.html` receives property updates through the Lively-compatible JS bridge:
+For wallpapers that already speak Lively's JS property contract, that mostly just works. ÆtherDesk also injects its own bridge with wallpaper properties, display information, power/network state, suspend/resume hooks, heartbeat plumbing, native fetch support, and geolocation request handling.
 
-```javascript
-// Called by ÆtherDesk when the user changes a property
-function livelyPropertyListener(name, val) {
-  if (name === "speed") animationSpeed = val;
-  if (name === "color") primaryColor = val;
-}
-```
-
-Zip the folder and import it, or drop it directly into `~/Library/Application Support/ÆtherDesk/Wallpapers/`.
-
----
+In other words: if you're already authoring Lively-style web wallpapers, you usually do not need to learn a brand-new bundle format to get started here.
 
 ## Under the Hood
 
-```
-ÆtherDesk (menu-bar app, LSUIElement)
-│
-├── AppDelegate              — Bootstrap, restore last session
-├── WallpaperManager         — Orchestrates runtimes across all displays
-│   ├── DisplayManager       — Resolves CGDirectDisplayID ↔ NSScreen; change events via NSApplicationDidChangeScreenParametersNotification
-│   ├── WallpaperHostWindow  — Borderless NSWindow at kCGDesktopWindowLevel
-│   └── WallpaperRuntime     — Protocol with three concrete implementations:
-│       ├── WebWallpaperRuntime    — WKWebView with lazy alloc/dealloc lifecycle
-│       ├── VideoWallpaperRuntime  — AVPlayer + AVPlayerView with seamless looping
-│       └── ImageWallpaperRuntime  — NSImageView
-│
-├── PropertyBridge           — Lively-compatible JS ↔ native bridge (50ms debounced batching)
-├── WallpaperImporter        — Import, validate, and manage wallpaper bundles
-├── WallpaperStore           — Per-display wallpaper persistence (UserDefaults, in-memory cached)
-├── PropertyStore            — Per-wallpaper property overrides (UserDefaults, in-memory cached)
-├── ThumbnailRenderer        — Snapshot generator with WebView pooling
-├── WatchdogTimer            — Heartbeat monitor; silence → safe-mode demotion
-│
-└── UI
-    ├── MenuBarController              — NSMenu-based status item; Wallpapers submenu rebuilt on each open
-    ├── PreferencesWindowController    — Tabbed prefs (General, Performance, Wallpaper, About)
-    ├── WallpaperPickerViewController  — List picker with async thumbnails
-    └── PropertyEditorViewController   — Dynamic controls from LivelyProperties.json
-```
+The spine of the app is `WallpaperManager`, which owns one host window and at most one runtime per display. It restores persisted assignments at launch, rebuilds hosts as display configuration changes, and demotes only the failing display when a runtime misbehaves.
 
-**Some design decisions that might interest you:**
+The web runtime is intentionally disposable. `WKWebView` instances are created on `start()` and torn down fully on `stop()` so rapidly switching wallpapers does not leave zombie web content processes hanging around. A JS heartbeat resets a native watchdog timer; if the wallpaper goes silent for too long or the content process dies, the runtime posts a failure notification and the manager swaps in safe content.
 
-- **WebView lifecycle** — WKWebViews are created on `start()` and fully deallocated on `stop()`. No idle web processes sitting around eating memory when you swap wallpapers.
-- **Debounced property bridge** — Rapid slider drags batch into a single `evaluateJavaScript` call every 50ms instead of flooding the web process with individual updates.
-- **rAF throttle shim** — A `requestAnimationFrame` wrapper is injected at document start to enforce the FPS cap natively, regardless of what the wallpaper's JS does.
-- **No Combine, no SwiftUI** — Pure AppKit + GCD + NotificationCenter. The entire app bundle is under 2 MB.
-- **Stable wallpaper IDs** — Imported bundles use their UUID folder name; built-in wallpapers get a deterministic FNV-1a hash of their path, so property overrides survive moves and reinstalls.
+Persistence is split cleanly:
 
-## Building from Source
+- `WallpaperStore` remembers which wallpaper is assigned to which display
+- `PropertyStore` remembers per-wallpaper property overrides
+- `AppSettingsStore`, `RuntimePolicyStore`, `UpdateSettingsStore`, and `GeolocationPermissionStore` cover the rest of the user-tunable state
+
+Thumbnail generation is also native: preview image if present, otherwise type-specific rendering. Web thumbnails come from an offscreen `WKWebView` snapshot path with caching on disk.
+
+## Building From Source
+
+This project is XcodeGen-driven. The checked-in `.xcodeproj` is generated output, not the source of truth.
 
 ```bash
+brew install xcodegen
 git clone https://github.com/sdelavega/AetherDesk.git
 cd AetherDesk
-open ÆtherDesk.xcodeproj
+xcodegen
+open AetherDesk.xcodeproj
 ```
 
-Build and run (`Cmd+R`). No SPM dependencies, no CocoaPods, no external frameworks — just AppKit, WebKit, and AVFoundation.
+Requirements:
 
-**Requirements:** macOS 12.0+ · Swift 5.9+ · Xcode 15+
+- macOS 12.0+
+- Xcode 26.3+ recommended
+- Swift 5.9
+
+There are no third-party package dependencies. It is just AppKit, WebKit, AVFoundation, and the usual Apple frameworks.
+
+## Project Status Notes
+
+A few things are worth stating plainly:
+
+- The app is currently **unsandboxed** by design, though there is scaffolding in place for a future sandbox migration.
+- Display restore at launch is in good shape; display hot-plug restore still has room to improve.
+- The codebase is AppKit-first and intentionally avoids piling on abstraction for a small utility app.
 
 ## License
 
-MIT License — Copyright (c) 2026 Stephen de la Vega. See [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE).

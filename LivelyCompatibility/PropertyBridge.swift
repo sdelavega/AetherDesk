@@ -48,6 +48,10 @@ final class PropertyBridge: NSObject {
         properties.merge(overrides) { _, override in override }
     }
 
+    func currentProperties() -> [String: Any] {
+        properties
+    }
+
     // MARK: Outbound (native -> JS)
 
     /// Push the full property dictionary into the page and fire the

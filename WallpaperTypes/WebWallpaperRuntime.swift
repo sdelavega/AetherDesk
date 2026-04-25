@@ -61,6 +61,8 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private let networkPolicy: NetworkPolicy
     private var isStopped = false
     private var initialOverrides: [String: Any] = [:]
+    private let pausedSnapshotView: NSImageView
+    private var pendingPauseSnapshotID: UUID?
 
     var contentView: NSView { containerView }
 
@@ -93,12 +95,18 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             bundleID: bundle.id,
             allowLANAccess: AppSettingsStore.shared.loadPerformanceSettings().allowLANAccess)
         self.locationProxy = LocationProxy(bundleID: bundle.id, bundleName: bundle.name)
+        self.pausedSnapshotView = NSImageView()
 
         super.init()
 
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
         containerView.autoresizingMask = [.width, .height]
+
+        pausedSnapshotView.translatesAutoresizingMaskIntoConstraints = false
+        pausedSnapshotView.imageScaling = .scaleAxesIndependently
+        pausedSnapshotView.imageAlignment = .alignCenter
+        pausedSnapshotView.isHidden = true
 
         handler.onHeartbeat = { [weak self] in self?.watchdog.heartbeat() }
         handler.onNativeFetch = { [weak self] id, urlStr, method in
@@ -214,44 +222,67 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     func pause() {
+        guard !isPaused else { return }
         isPaused = true
         watchdog.stop()
-        webView?.evaluateJavaScript(
+
+        guard let webView else { return }
+        propertyBridge.flushNow()
+        initialOverrides = propertyBridge.currentProperties()
+
+        webView.evaluateJavaScript(
             """
             if (window.aetherDesk) {
                 window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(false);
                 window.aetherDesk._suspend && window.aetherDesk._suspend();
             }
             """,
-            completionHandler: nil
+            completionHandler: { [weak self] _, _ in
+                self?.freezeAndTearDownWebViewIfStillPaused(webView)
+            }
         )
-        webView?.isHidden = true
     }
 
     func resume() {
+        guard isPaused else { return }
         isPaused = false
-        webView?.isHidden = false
-        webView?.evaluateJavaScript(
-            """
-            if (window.aetherDesk) {
-                window.aetherDesk._resume && window.aetherDesk._resume();
-                window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(true);
-            }
-            """,
-            completionHandler: nil
-        )
-        watchdog.start()
+        pendingPauseSnapshotID = nil
+        removePausedSnapshot()
+
+        if let webView {
+            webView.evaluateJavaScript(
+                """
+                if (window.aetherDesk) {
+                    window.aetherDesk._resume && window.aetherDesk._resume();
+                    window.aetherDesk._notifyVisibility && window.aetherDesk._notifyVisibility(true);
+                }
+                """,
+                completionHandler: nil
+            )
+            watchdog.start()
+            return
+        }
+
+        do {
+            try start()
+        } catch {
+            Logger.app.error("ÆtherDesk: failed to resume web wallpaper on display \(self.displayID): \(String(describing: error))")
+            NotificationCenter.default.post(
+                name: Constants.Notifications.runtimeDidFail,
+                object: nil,
+                userInfo: ["displayID": displayID,
+                           "reason": "resume failed"]
+            )
+        }
     }
 
     func stop() {
         isStopped = true
         watchdog.stop()
+        pendingPauseSnapshotID = nil
+        removePausedSnapshot()
         propertyBridge.flushNow()
-        webView?.stopLoading()
-        webView?.navigationDelegate = nil
-        webView?.removeFromSuperview()
-        webView = nil
-        propertyBridge.setWebView(nil)
+        tearDownWebView()
     }
 
     func reload() throws {
@@ -261,6 +292,52 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     func updateProperty(_ key: String, value: Any) {
         propertyBridge.updateProperty(key, value: value)
+    }
+
+    private func freezeAndTearDownWebViewIfStillPaused(_ webView: WKWebView) {
+        let snapshotID = UUID()
+        pendingPauseSnapshotID = snapshotID
+
+        let snapshotConfig = WKSnapshotConfiguration()
+        snapshotConfig.rect = webView.bounds
+        webView.takeSnapshot(with: snapshotConfig) { [weak self] image, _ in
+            guard let self,
+                  self.isPaused,
+                  self.pendingPauseSnapshotID == snapshotID else { return }
+            if let image {
+                self.installPausedSnapshot(image)
+            }
+            if self.webView === webView {
+                self.tearDownWebView()
+            }
+        }
+    }
+
+    private func installPausedSnapshot(_ image: NSImage) {
+        pausedSnapshotView.image = image
+        if pausedSnapshotView.superview == nil {
+            containerView.addSubview(pausedSnapshotView)
+            NSLayoutConstraint.activate([
+                pausedSnapshotView.topAnchor.constraint(equalTo: containerView.topAnchor),
+                pausedSnapshotView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+                pausedSnapshotView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+                pausedSnapshotView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor)
+            ])
+        }
+        pausedSnapshotView.isHidden = false
+    }
+
+    private func removePausedSnapshot() {
+        pausedSnapshotView.isHidden = true
+        pausedSnapshotView.image = nil
+    }
+
+    private func tearDownWebView() {
+        webView?.stopLoading()
+        webView?.navigationDelegate = nil
+        webView?.removeFromSuperview()
+        webView = nil
+        propertyBridge.setWebView(nil)
     }
 
     // MARK: Native fetch proxy

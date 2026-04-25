@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
    LastUpgradeVersion = "1500"
-   version = "1.7">
+   version = "1.3">
    <BuildAction
       parallelizeBuildables = "YES"
-      buildImplicitDependencies = "YES"
-      runPostActionsOnFailure = "NO">
+      buildImplicitDependencies = "YES">
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
@@ -16,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "FBA11D06B9427CFB2D37A96D"
-               BuildableName = "AetherDesk.app"
+               BuildableName = "&#xc6;therDesk.app"
                BlueprintName = "AetherDesk"
-               ReferencedContainer = "container:ÆtherDesk.xcodeproj">
+               ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -30,9 +29,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "98454B4E1708BC36D752F77B"
-               BuildableName = "AetherDeskTests.xctest"
+               BuildableName = "&#xc6;therDesk.xctest"
                BlueprintName = "AetherDeskTests"
-               ReferencedContainer = "container:ÆtherDesk.xcodeproj">
+               ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -41,15 +40,14 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-      shouldUseLaunchSchemeArgsEnv = "YES"
-      onlyGenerateCoverageForSpecifiedTargets = "NO">
+      shouldUseLaunchSchemeArgsEnv = "YES">
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "FBA11D06B9427CFB2D37A96D"
-            BuildableName = "AetherDesk.app"
+            BuildableName = "&#xc6;therDesk.app"
             BlueprintName = "AetherDesk"
-            ReferencedContainer = "container:ÆtherDesk.xcodeproj">
+            ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -59,14 +57,12 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "98454B4E1708BC36D752F77B"
-               BuildableName = "AetherDeskTests.xctest"
+               BuildableName = "&#xc6;therDesk.xctest"
                BlueprintName = "AetherDeskTests"
-               ReferencedContainer = "container:ÆtherDesk.xcodeproj">
+               ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
-      <CommandLineArguments>
-      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -83,9 +79,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "FBA11D06B9427CFB2D37A96D"
-            BuildableName = "AetherDesk.app"
+            BuildableName = "&#xc6;therDesk.app"
             BlueprintName = "AetherDesk"
-            ReferencedContainer = "container:ÆtherDesk.xcodeproj">
+            ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -100,9 +96,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "FBA11D06B9427CFB2D37A96D"
-            BuildableName = "AetherDesk.app"
+            BuildableName = "&#xc6;therDesk.app"
             BlueprintName = "AetherDesk"
-            ReferencedContainer = "container:ÆtherDesk.xcodeproj">
+            ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

@@ -22,6 +22,8 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
     private let playerView: AVPlayerView
     private let player: AVPlayer
     private var playerItem: AVPlayerItem?
+    private let pausedSnapshotView: NSImageView
+    private var pausedTime: CMTime?
 
     private var endObserver:    NSObjectProtocol?
     private var failedObserver: NSObjectProtocol?
@@ -34,6 +36,7 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
         self.displayID = displayID
         self.player = AVPlayer()
         self.playerView = AVPlayerView()
+        self.pausedSnapshotView = NSImageView()
         super.init()
 
         player.isMuted = true
@@ -45,6 +48,11 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
         playerView.videoGravity = .resizeAspectFill
         playerView.wantsLayer = true
         playerView.layer?.backgroundColor = NSColor.black.cgColor
+
+        pausedSnapshotView.translatesAutoresizingMaskIntoConstraints = false
+        pausedSnapshotView.imageScaling = .scaleAxesIndependently
+        pausedSnapshotView.imageAlignment = .alignCenter
+        pausedSnapshotView.isHidden = true
     }
 
     deinit {
@@ -87,24 +95,40 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
             }
         }
 
+        removePausedSnapshot()
         if !isPaused { player.play() }
     }
 
     func pause() {
+        guard !isPaused else { return }
         isPaused = true
+        pausedTime = player.currentTime()
+        capturePausedFrame()
         player.pause()
+        removeObservers()
+        removePlayerItem()
     }
 
     func resume() {
+        guard isPaused else { return }
         isPaused = false
-        player.play()
+        do {
+            try start()
+            if let pausedTime {
+                player.seek(to: pausedTime, toleranceBefore: .zero, toleranceAfter: .zero)
+            }
+            player.play()
+        } catch {
+            reportFailure(reason: "resume failed: \(error)")
+        }
     }
 
     func stop() {
         removeObservers()
+        pausedTime = nil
+        removePausedSnapshot()
         player.pause()
-        player.replaceCurrentItem(with: nil)
-        playerItem = nil
+        removePlayerItem()
     }
 
     func reload() throws {
@@ -133,6 +157,52 @@ final class VideoWallpaperRuntime: NSObject, WallpaperRuntime {
             name: Constants.Notifications.runtimeDidFail,
             object: nil,
             userInfo: ["displayID": displayID, "reason": reason])
+    }
+
+    private func capturePausedFrame() {
+        guard let videoURL = bundle.videoURL else { return }
+        let asset = AVURLAsset(url: videoURL)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: max(playerView.bounds.width, 1),
+                                       height: max(playerView.bounds.height, 1))
+        let targetTime = pausedTime ?? .zero
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let image: NSImage? = {
+                guard let cgImage = try? generator.copyCGImage(at: targetTime, actualTime: nil) else { return nil }
+                return NSImage(cgImage: cgImage, size: self.playerView.bounds.size)
+            }()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isPaused, let image else { return }
+                self.installPausedSnapshot(image)
+            }
+        }
+    }
+
+    private func installPausedSnapshot(_ image: NSImage) {
+        pausedSnapshotView.image = image
+        if pausedSnapshotView.superview == nil {
+            playerView.addSubview(pausedSnapshotView)
+            NSLayoutConstraint.activate([
+                pausedSnapshotView.topAnchor.constraint(equalTo: playerView.topAnchor),
+                pausedSnapshotView.bottomAnchor.constraint(equalTo: playerView.bottomAnchor),
+                pausedSnapshotView.leadingAnchor.constraint(equalTo: playerView.leadingAnchor),
+                pausedSnapshotView.trailingAnchor.constraint(equalTo: playerView.trailingAnchor)
+            ])
+        }
+        pausedSnapshotView.isHidden = false
+    }
+
+    private func removePausedSnapshot() {
+        pausedSnapshotView.isHidden = true
+        pausedSnapshotView.image = nil
+    }
+
+    private func removePlayerItem() {
+        player.replaceCurrentItem(with: nil)
+        playerItem = nil
     }
 
     private func removeObservers() {
