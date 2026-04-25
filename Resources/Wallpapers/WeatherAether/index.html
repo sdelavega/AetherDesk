@@ -53,8 +53,86 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:-apple-system,Blink
 (function(){
 'use strict';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Weather Aether — ÆtherDesk bundled wallpaper
+//
+// A live weather wallpaper: sky gradient, particle weather effects, current
+// conditions, and a 5-day forecast — all driven by real-time data from the
+// Open-Meteo API (free, no API key required).
+//
+// ── AetherDesk integration points used ───────────────────────────────────────
+//
+//   window.fetch (native bridge)
+//     AetherDesk replaces window.fetch with a proxy that routes all HTTP/HTTPS
+//     requests through URLSession on the host process. This bypasses WKWebView's
+//     CORS restrictions so the wallpaper can reach external APIs (weather data,
+//     IP geolocation) without a server-side proxy. All fetch() calls in this
+//     file transparently use the native bridge — no special handling needed.
+//     The bridge enforces a per-minute network budget (see LivelyProperties.json
+//     and WallpaperValidator in the host app).
+//
+//   navigator.geolocation (native bridge)
+//     AetherDesk replaces navigator.geolocation with a CoreLocation-backed
+//     implementation. IMPORTANT: the {timeout} option passed to
+//     getCurrentPosition() is silently ignored by the native bridge. A manual
+//     5-second timeout guard is used in autoLocation() to work around this.
+//
+//   window.aetherDesk.properties.onUpdate(callback)
+//     Receives property changes from the sidebar. Also fires once on load with
+//     all initial values from LivelyProperties.json.
+//
+//   window.livelyPropertyListener(name, value) [legacy compat]
+//     Single-property alternative. Registered below for hosts that call this
+//     global instead of onUpdate.
+//
+// ── Properties (defined in LivelyProperties.json) ────────────────────────────
+//
+//   locationMode     ['auto'|'manual']  Use device location or a typed city
+//   manualLocation   [string]           City/region name for geocoding
+//   units            ['imperial'|'metric'] °F/mph vs °C/km·h⁻¹
+//   forecastOpacity  [number, 0–1]      Forecast strip opacity
+//   animationSpeed   [number]           Particle animation speed multiplier
+//   showParticles    [boolean]          Enable rain/snow/cloud particles
+//   accentColor      [color string]     Precipitation probability text colour
+//
+// ── Data flow ─────────────────────────────────────────────────────────────────
+//
+//   init()
+//     ↓ load cached location from localStorage → set S.lat/lon
+//     ↓ load cached weather from localStorage → applyWeather() [stale display]
+//     ↓ start rAF render loop
+//     ↓ if cached location exists: immediately call refreshWeather() [fixes stale]
+//     ↓ resolveLocation() → [CoreLocation or IP geolocation] → refreshWeather()
+//
+//   refreshWeather()
+//     → Open-Meteo forecast API (cache-busted with _t timestamp param)
+//     → on success: cacheWeather() + applyWeather() [live display]
+//     → on failure: re-apply last cached data with "stale as of" pill
+//     → scheduleRefresh() → retry in 10–11 minutes
+//
+// ── localStorage caching ──────────────────────────────────────────────────────
+//
+//   The wallpaper caches weather data and last-known location in localStorage
+//   so it can display something meaningful immediately on load before the API
+//   call completes. Cache keys are derived from the lat/lon so each location
+//   has its own entry. The host WKWebView uses a persistent WKWebsiteDataStore,
+//   so cache survives app restarts.
+//
+//   Key format:  wa_<lat.2f>_<lon.2f>   (weather data JSON)
+//                wa.lastLoc              (last location {lat, lon, label})
+// ─────────────────────────────────────────────────────────────────────────────
+
+// WMO weather interpretation codes → human-readable descriptions.
+// Source: https://open-meteo.com/en/docs — "WMO Weather interpretation codes"
+// Used to populate the condition label in renderUI().
 var WMO_DESC={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Depositing rime fog',51:'Light drizzle',53:'Moderate drizzle',55:'Dense drizzle',56:'Light freezing drizzle',57:'Dense freezing drizzle',61:'Slight rain',63:'Moderate rain',65:'Heavy rain',66:'Light freezing rain',67:'Heavy freezing rain',71:'Slight snowfall',73:'Moderate snowfall',75:'Heavy snowfall',77:'Snow grains',80:'Slight rain showers',81:'Moderate rain showers',82:'Violent rain showers',85:'Slight snow showers',86:'Heavy snow showers',95:'Thunderstorm',96:'Thunderstorm with slight hail',99:'Thunderstorm with heavy hail'};
 
+
+// ── wmoBucket() ──────────────────────────────────────────────────────────────
+// Maps a WMO weather code to one of eight visual buckets used throughout the
+// renderer: 'clear', 'partly', 'overcast', 'fog', 'rain', 'sleet', 'snow',
+// 'thunder'. The bucket drives the sky tint (WEATHER_TINT), the particle type
+// (rebuildParticles), and the canvas icon drawn in renderUI().
 function wmoBucket(code){
   if(code<=1)return'clear';
   if(code===2)return'partly';
@@ -70,6 +148,15 @@ function wmoBucket(code){
   return'clear';
 }
 
+
+// ── Sky colour definitions ────────────────────────────────────────────────────
+// PHASE_C maps named time-of-day phases to three-stop vertical gradient colours
+// (top, mid, bot) in RGB. The render loop interpolates between adjacent stops
+// based on the current hour to produce a smooth 24-hour sky cycle.
+//
+// WEATHER_TINT defines how much each weather condition desaturates and greys
+// the sky. `factor` 0 = no tint (clear sky), 0.35 = heavy overcast/thunder.
+// The tint colour is blended toward c[R,G,B] by the factor amount.
 var PHASE_C={
   night:   {top:[8,12,30],  mid:[12,18,45],  bot:[18,24,58]},
   dawn:    {top:[50,35,90], mid:[150,80,110], bot:[220,130,70]},
@@ -93,6 +180,30 @@ var WEATHER_TINT={
 var COMPASS=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 var DAY_NAMES=['SUN','MON','TUE','WED','THU','FRI','SAT'];
 
+
+// ── Global state object (S) ───────────────────────────────────────────────────
+// All mutable runtime state lives here. Keeping it in one place makes it easy
+// to understand what's shared between functions and to reset state on reload.
+//
+//   lat, lon       Current location (decimal degrees). null until resolved.
+//   label          Human-readable location name shown in the UI.
+//   weather        Last-received weather API response object.
+//   staleTime      Timestamp of cached data currently displayed (null = live).
+//   sunrise/sunset Date objects from the API's daily data. Used to anchor the
+//                  sky gradient phase transitions to actual solar times.
+//   isDay          Whether the current time is between sunrise and sunset.
+//   props          Live property values — updated by applyProps().
+//   particles      Active weather particle objects (rain drops, snowflakes…).
+//   stars          Star objects — visible on clear nights.
+//   particleType   The weatherBucket active when particles were last built.
+//                  Used to detect changes that require a full particle rebuild.
+//   weatherBucket  Current weather type ('clear', 'rain', etc.).
+//   animationFrameId / refreshTimeout — handles for cleanup on reload.
+//   lightningAlpha  Current flash intensity (0 when no storm).
+//   lightningCooldown  Seconds until next lightning is allowed.
+//   fogAlpha        Current rendered fog opacity (animated toward target).
+//   canvas, ctx     The main rendering surface.
+//   iconCache       Keyed off-screen canvases for weather icons (code_d/n).
 var S={
   lat:null,lon:null,label:'Unknown',
   weather:null,staleTime:null,
@@ -130,6 +241,18 @@ function convertWind(v,from,to){
   return v;
 }
 
+
+// ── fetchWithTimeout() ───────────────────────────────────────────────────────
+// Wraps fetch() with an abort timeout. Prefers AbortSignal.timeout() (Safari
+// 15.4+) for a single-expression path; falls back to AbortController for older
+// WebKit versions bundled with macOS 12.
+//
+// IMPORTANT (AetherDesk-specific): the native fetch bridge that routes HTTP
+// requests through URLSession does NOT propagate the abort signal — it ignores
+// the {signal} option. This means the timeout does not abort an in-flight
+// URLSession task, but it also does not cause the Promise to hang: the native
+// bridge resolves its Promise independently when the network call completes.
+// The effective timeout for network calls is the URLSession task timeout (30s).
 function fetchWithTimeout(url,ms){
   if(typeof AbortSignal!=='undefined'&&typeof AbortSignal.timeout==='function'){
     return fetch(url,{signal:AbortSignal.timeout(ms)});
@@ -139,6 +262,17 @@ function fetchWithTimeout(url,ms){
   return fetch(url,{signal:ctrl.signal});
 }
 
+
+// ── localStorage cache helpers ────────────────────────────────────────────────
+// Weather data and location are cached in localStorage so the wallpaper can
+// display something immediately on load before any API calls complete. The
+// weather cache key includes lat/lon so each location has an independent entry.
+//
+// cKey()            → storage key for current location's weather data, or null
+// cacheWeather(d)   → serialise and store the API response
+// loadCachedWeather()→ parse and return cached data, or null
+// cacheLocation()   → store {lat, lon, label} for use on the next startup
+// loadCachedLocation()→ restore last location on startup before geolocation runs
 function cKey(){
   if(S.lat!=null&&S.lon!=null)return'wa_'+S.lat.toFixed(2)+'_'+S.lon.toFixed(2);
   return null;
@@ -157,23 +291,52 @@ function loadCachedLocation(){
   try{var d=localStorage.getItem('wa.lastLoc');return d?JSON.parse(d):null;}catch(e){return null;}
 }
 
+
+// ── resolveLocation() ────────────────────────────────────────────────────────
+// Entry point for location resolution. Dispatches to geocodeManual() for a
+// typed location or autoLocation() for device/IP-based detection.
+// Returns a Promise<boolean> — true if location was resolved successfully.
 function resolveLocation(){
   if(S.props.locationMode==='manual')return geocodeManual(S.props.manualLocation);
   return autoLocation();
 }
 
+
+// ── autoLocation() ───────────────────────────────────────────────────────────
+// Attempts device geolocation via the native CoreLocation bridge, then falls
+// back to IP-based geolocation (ipapi.co) if CoreLocation fails or is denied.
+//
+// IMPORTANT: the native geolocation bridge ignores the {timeout:4000} option
+// passed to getCurrentPosition(). A manual 5-second timer (geoTimer) is used
+// to guarantee the Promise always settles — without it, a hanging CoreLocation
+// request would prevent refreshWeather() from ever being called, leaving stale
+// localStorage data on screen indefinitely.
+//
+// Fallback chain:
+//   CoreLocation (geoTimer 5s) → fetchIP (ipapi.co, 6s) → loadCachedLocation()
 function autoLocation(){
   return new Promise(function(resolve){
+    var done=false;
+    var geoTimer=setTimeout(function(){
+      if(done)return;done=true;
+      fetchIP().then(function(ok){resolve(ok);});
+    },5000);
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(
-        function(p){S.lat=p.coords.latitude;S.lon=p.coords.longitude;S.label='Current Location';cacheLocation();resolve(true);},
-        function(){fetchIP().then(function(ok){resolve(ok);});},
+        function(p){if(done)return;done=true;clearTimeout(geoTimer);S.lat=p.coords.latitude;S.lon=p.coords.longitude;S.label='Current Location';cacheLocation();resolve(true);},
+        function(){if(done)return;done=true;clearTimeout(geoTimer);fetchIP().then(function(ok){resolve(ok);});},
         {timeout:4000}
       );
-    }else{fetchIP().then(function(ok){resolve(ok);});}
+    }else{clearTimeout(geoTimer);fetchIP().then(function(ok){resolve(ok);});}
   });
 }
 
+
+// ── fetchIP() ────────────────────────────────────────────────────────────────
+// Resolves location from the client's public IP via ipapi.co. Used when
+// CoreLocation is unavailable or denied. Constructs a human-readable label
+// from city + region + country fields. Falls through to fallbackLoc() (last
+// cached location) if the request fails or returns incomplete data.
 function fetchIP(){
   return fetchWithTimeout('https://ipapi.co/json/',6000)
     .then(function(r){return r.json();})
@@ -189,12 +352,23 @@ function fetchIP(){
     .catch(function(){return fallbackLoc();});
 }
 
+
+// ── fallbackLoc() ────────────────────────────────────────────────────────────
+// Last resort: restores the previously cached location from localStorage.
+// Called when both CoreLocation and ipapi.co fail. Ensures the wallpaper can
+// still show weather (even if slightly stale location) rather than going blank.
 function fallbackLoc(){
   var loc=loadCachedLocation();
   if(loc){S.lat=loc.lat;S.lon=loc.lon;S.label=loc.label;return true;}
   return false;
 }
 
+
+// ── geocodeManual() ──────────────────────────────────────────────────────────
+// Resolves a human-typed location string (e.g. "Charlotte, NC") to lat/lon
+// using the Open-Meteo geocoding API. Free, no key required. Shows an error
+// pill if the location string isn't recognised. Called when locationMode is
+// 'manual' or when the manualLocation property changes.
 function geocodeManual(q){
   if(!q||!q.trim()){showPill("couldn't find ''");return Promise.resolve(false);}
   var url=new URL('https://geocoding-api.open-meteo.com/v1/search');
@@ -213,6 +387,14 @@ function geocodeManual(q){
     .catch(function(){showPill("couldn't find '"+q+"'");return false;});
 }
 
+
+// ── buildForecastUrl() ───────────────────────────────────────────────────────
+// Constructs the Open-Meteo forecast API URL for the current location and unit
+// system. Requests 5 days of daily data plus current conditions.
+//
+// The _t parameter (current minute epoch) busts any CDN or network-level cache
+// so each call fetches truly fresh data. Without it, a caching intermediary
+// could serve yesterday's response for hours.
 function buildForecastUrl(){
   var url=new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude',String(S.lat));
@@ -221,6 +403,7 @@ function buildForecastUrl(){
   url.searchParams.set('daily','temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset,precipitation_probability_max,uv_index_max');
   url.searchParams.set('forecast_days','5');
   url.searchParams.set('timezone','auto');
+  url.searchParams.set('_t',String(Math.floor(Date.now()/60000)));
   if(S.props.units==='imperial'){
     url.searchParams.set('temperature_unit','fahrenheit');
     url.searchParams.set('wind_speed_unit','mph');
@@ -228,6 +411,17 @@ function buildForecastUrl(){
   return url.toString();
 }
 
+
+// ── refreshWeather() ─────────────────────────────────────────────────────────
+// Fetches fresh weather data and updates the display. The main data pipeline:
+//   1. Bail early if location isn't resolved yet.
+//   2. Snapshot the current cached data (used as fallback in the catch block).
+//   3. Fetch from Open-Meteo (cache-busted URL, 6s timeout).
+//   4. On success: stamp with _ts, write to localStorage, call applyWeather().
+//   5. On failure: re-apply cached data with a "stale as of" pill, or show
+//      the "waiting for weather" pill if there's no cache at all.
+//   6. Schedule the next refresh in 10–11 minutes (jitter avoids thundering
+//      herd on multi-monitor setups where each display runs its own runtime).
 function refreshWeather(){
   if(S.lat==null||S.lon==null){scheduleRefresh();return;}
   var cached=loadCachedWeather();
@@ -253,12 +447,23 @@ function refreshWeather(){
     .finally(function(){scheduleRefresh();});
 }
 
+
+// ── scheduleRefresh() ────────────────────────────────────────────────────────
+// Queues the next refreshWeather() call. The 10-minute base interval plus
+// up to 60 seconds of jitter prevents all wallpaper instances from hitting the
+// Open-Meteo API simultaneously when the user has multiple displays.
 function scheduleRefresh(){
   if(S.refreshTimeout)clearTimeout(S.refreshTimeout);
   var jitter=Math.random()*60000;
   S.refreshTimeout=setTimeout(function(){refreshWeather();},10*60*1000+jitter);
 }
 
+
+// ── applyWeather() ───────────────────────────────────────────────────────────
+// Applies a weather API response object to the global state and re-renders the
+// UI. Called both with fresh data (from refreshWeather) and stale data (from
+// localStorage on startup). Also triggers a particle rebuild if the weather
+// type changed (e.g., was clear, now rainy).
 function applyWeather(d){
   S.weather=d;
   var cur=d.current;
@@ -276,6 +481,14 @@ function applyWeather(d){
   renderUI();
 }
 
+
+// ── buildTimeline() ──────────────────────────────────────────────────────────
+// Builds the colour keyframe array for today's sky gradient, anchored to the
+// actual sunrise and sunset times from the API. Each keyframe has a clock hour
+// and top/mid/bot RGB values. getPhaseColors() interpolates between adjacent
+// keyframes based on the current real-world time.
+//
+// Falls back to 06:00 / 18:00 if sunrise/sunset data isn't available yet.
 function buildTimeline(){
   var sr,ss;
   if(S.sunrise&&S.sunset&&!isNaN(S.sunrise.getTime())&&!isNaN(S.sunset.getTime())){
@@ -301,6 +514,15 @@ function buildTimeline(){
   ];
 }
 
+
+// ── getPhaseColors() ─────────────────────────────────────────────────────────
+// Returns the sky gradient colours for the current moment. Walks the keyframe
+// timeline built by buildTimeline(), finds the two keyframes bracketing the
+// current hour, and lerps between them. Then applies the weather tint for the
+// current condition (e.g., grey desaturation for overcast/rain).
+//
+// Called every frame from render() — must be cheap. buildTimeline() is the
+// expensive part; getPhaseColors() itself is ~10 lerps and a lookup.
 function getPhaseColors(){
   var tl=buildTimeline();
   var now=new Date();
@@ -324,6 +546,16 @@ function getPhaseColors(){
   return{top:top,mid:mid,bot:bot,phase:a.p};
 }
 
+
+// ── rebuildParticles() ───────────────────────────────────────────────────────
+// Constructs the particle pool for the current weather type. Called when
+// weatherBucket changes (rain → clear, etc.) or on resize. Particle types:
+//   rain/thunder  — fast diagonal lines
+//   snow          — slow drifting circles with sinusoidal horizontal wobble
+//   sleet         — mixed: fast lines (rain) + slower circles (ice pellets)
+//   overcast/partly — slow drifting cloud puffs
+//   clear night   — stationary twinkling stars
+// showParticles:false short-circuits and clears all pools immediately.
 function rebuildParticles(){
   S.particles=[];
   S.stars=[];
@@ -361,6 +593,13 @@ function rebuildParticles(){
   }
 }
 
+
+// ── updateParticles() ────────────────────────────────────────────────────────
+// Advances particle positions by `dt` seconds scaled by animationSpeed. Each
+// particle type has its own physics: rain falls diagonally, snow wobbles
+// horizontally, cloud puffs drift rightward. Particles that exit the canvas
+// are recycled back to a random position at the top (or left edge for puffs).
+// Lightning alpha decays exponentially each frame; fog alpha ramps to target.
 function updateParticles(dt){
   if(!S.props.showParticles)return;
   var w=cssW(),h=cssH(),spd=S.props.animationSpeed,bk=S.weatherBucket;
@@ -415,6 +654,13 @@ function updateParticles(dt){
   }else{S.fogAlpha=0;}
 }
 
+
+// ── drawParticles() ──────────────────────────────────────────────────────────
+// Renders all particles, stars, lightning flash, and fog overlay for the
+// current frame. Each weather type uses a different drawing primitive:
+// rain=strokeLine, snow=arc, sleet=mixed, cloud puffs=arc, stars=arc+twinkle.
+// Lightning: full-canvas white fillRect at lightningAlpha opacity.
+// Fog: full-canvas grey fillRect at fogAlpha opacity.
 function drawParticles(ctx){
   if(!S.props.showParticles)return;
   var bk=S.weatherBucket;
@@ -474,6 +720,15 @@ function drawParticles(ctx){
   }
 }
 
+
+// ── Canvas weather icon primitives ───────────────────────────────────────────
+// Simple Canvas 2D drawing functions for the weather icons shown in the current-
+// conditions card and forecast strip. Each function draws into an existing ctx
+// using the provided centre point (x, y) and radius (r). No images or SVGs —
+// icons are drawn at runtime so they scale perfectly to any DPI.
+//
+// All primitives are also composed together in drawWeatherIcon() for compound
+// icons like "partly cloudy" (sun + cloud) or "rainy" (cloud + drops).
 function drawSun(ctx,x,y,r){
   r=Math.max(1,r);
   ctx.fillStyle='#FFD93D';
@@ -550,6 +805,11 @@ function drawFogIcon(ctx,x,y,r){
   }
 }
 
+
+// ── getLunarPhase() ──────────────────────────────────────────────────────────
+// Returns the current lunar phase as a value 0–1 (0 = new moon, 0.5 = full
+// moon) using the Julian Day Number formula. Used by drawBgMoon() to render
+// the correct crescent/gibbous phase rather than always drawing a full moon.
 function getLunarPhase(){
   var JD=Date.now()/86400000+2440587.5;
   var age=(JD-2451549.5)%29.53058867;
@@ -557,6 +817,16 @@ function getLunarPhase(){
   return age/29.53058867; // 0=new, 0.5=full
 }
 
+
+// ── drawBgSun() / drawBgMoon() / drawBgCelestial() ──────────────────────────
+// Render the large background sun or moon disc in the sky canvas. These are
+// separate from the small card icons — they're the ambient light sources
+// painted directly behind the city/sky gradient, not inside the UI card.
+//
+// drawBgSun: radial gradient disc + outer glow halo + slowly rotating rays.
+// drawBgMoon: lunar phase using clip + overlapping arc technique (no images).
+// drawBgCelestial: dispatcher — chooses sun or moon based on S.isDay,
+//   and fades the body out for non-clear conditions (overcast hides the sun).
 function drawBgSun(ctx,cx,cy,r,t){
   r=Math.max(4,r);
   // outer glow halo
@@ -638,6 +908,11 @@ function drawBgCelestial(ctx,w,h,t){
   ctx.restore();
 }
 
+
+// ── drawWeatherIcon() ────────────────────────────────────────────────────────
+// Draws the compound icon for a WMO weather code into ctx. Maps code → bucket
+// → appropriate combination of primitives. The `isDay` flag switches between
+// sun and moon for clear/partly-cloudy conditions.
 function drawWeatherIcon(ctx,code,isDay,sz){
   ctx.save();ctx.clearRect(0,0,sz,sz);
   var cx=sz/2,cy=sz/2,r=sz*0.15;
@@ -663,6 +938,11 @@ function drawWeatherIcon(ctx,code,isDay,sz){
   ctx.restore();
 }
 
+
+// ── getIconCanvas() ──────────────────────────────────────────────────────────
+// Returns a cached 48×48 off-screen canvas for the given weather code and
+// day/night flag. Draws the icon on first request and caches in S.iconCache
+// so repeated calls (e.g., per forecast day per frame) are O(1) lookups.
 function getIconCanvas(code,isDay){
   var key=code+'_'+(isDay?'d':'n');
   if(S.iconCache[key])return S.iconCache[key];
@@ -671,6 +951,12 @@ function getIconCanvas(code,isDay){
   S.iconCache[key]=c;return c;
 }
 
+
+// ── renderUI() ───────────────────────────────────────────────────────────────
+// Updates all DOM elements in the conditions card and forecast strip from
+// S.weather. Converts units if the stored data's unit system differs from the
+// current preference (allows unit switching without re-fetching). Safe to call
+// with either fresh or cached data — always guards against missing fields.
 function renderUI(){
   var d=S.weather;
   if(!d||!d.current){renderFallbackUI();return;}
@@ -699,6 +985,12 @@ function renderUI(){
   applyAccentColor();
 }
 
+
+// ── renderForecast() ─────────────────────────────────────────────────────────
+// Rebuilds the 5-day forecast card strip from the API's daily data arrays.
+// Each card shows: day name (TODAY for index 0), weather icon, high/low temps,
+// and precipitation probability. Cards are created as DOM nodes and appended
+// to #wa-forecast.
 function renderForecast(daily){
   var strip=document.getElementById('wa-forecast');
   if(!strip)return;
@@ -732,6 +1024,11 @@ function renderForecast(daily){
   }
 }
 
+
+// ── renderFallbackUI() ───────────────────────────────────────────────────────
+// Clears all UI text fields and hides the icon and forecast strip. Called when
+// there is no weather data to display (first load before any fetch completes,
+// or after a complete data loss). Leaves the sky animation running.
 function renderFallbackUI(){
   var locEl=document.getElementById('wa-location');if(locEl)locEl.textContent=S.label||'Unknown';
   var tempEl=document.getElementById('wa-temp');if(tempEl)tempEl.textContent='--'+tUnit();
@@ -762,6 +1059,15 @@ function hidePill(){
   if(pill)pill.classList.remove('wa-pill-visible');
 }
 
+
+// ── applyProps() ─────────────────────────────────────────────────────────────
+// Applies a partial property update from the AetherDesk property bridge or
+// livelyPropertyListener. Compares each incoming value to the current state and
+// only triggers side effects when something actually changed:
+//   locationMode/manualLocation change → re-resolve location + re-fetch weather
+//   units change → re-render UI (unit conversion only, no new fetch)
+//   forecastOpacity/animationSpeed/accentColor → immediate visual update
+//   showParticles change → rebuild particle pool
 function applyProps(props){
   var needLoc=false,needRefresh=false;
   if(props.locationMode!==undefined&&props.locationMode!==S.props.locationMode){
@@ -798,6 +1104,13 @@ function applyProps(props){
   }
 }
 
+
+// ── setupBridge() ────────────────────────────────────────────────────────────
+// Registers both property bridge hooks so this wallpaper works with any version
+// of the ÆtherDesk host:
+//   onUpdate — modern callback-based bridge (preferred)
+//   livelyPropertyListener — legacy global function hook (some older hosts)
+// Both delegate to applyProps() so the handling logic stays in one place.
 function setupBridge(){
   if(window.aetherDesk&&window.aetherDesk.properties&&typeof window.aetherDesk.properties.onUpdate==='function'){
     window.aetherDesk.properties.onUpdate(function(props){applyProps(props);});
@@ -807,6 +1120,12 @@ function setupBridge(){
   };
 }
 
+
+// ── setupVisibility() ────────────────────────────────────────────────────────
+// Pauses the rAF loop when the page is hidden (e.g., display turned off or
+// wallpaper covered by a full-screen app) and resumes it when visible again.
+// This prevents unnecessary CPU/GPU usage when the wallpaper isn't visible.
+// Uses the Page Visibility API (document.hidden / 'visibilitychange').
 function setupVisibility(){
   document.addEventListener('visibilitychange',function(){
     if(document.hidden){
@@ -826,6 +1145,13 @@ function resizeCanvas(){
   rebuildParticles();
 }
 
+
+// ── render() — main animation loop ───────────────────────────────────────────
+// Called every frame via requestAnimationFrame. Computes elapsed time (dt),
+// advances particle physics, and paints the sky gradient + particles to the
+// canvas. Does NOT update the DOM UI — that happens only in applyWeather() /
+// renderUI() when data changes. Separating data updates from frame rendering
+// keeps the render loop lean and avoids DOM thrashing every 33ms.
 function render(timestamp){
   if(!timestamp)timestamp=performance.now();
   var dt=S.lastFrameTime?Math.min((timestamp-S.lastFrameTime)/1000,0.1):0.016;
@@ -846,6 +1172,24 @@ function render(timestamp){
   }
 }
 
+
+// ── init() — boot sequence ────────────────────────────────────────────────────
+// Entry point. Runs once when the DOM is ready.
+//
+//   1. Bind canvas and set up sizing.
+//   2. Register bridge, visibility, and resize handlers.
+//   3. Load last-known location from localStorage → pre-populate S.lat/lon.
+//   4. Load last-known weather from localStorage → applyWeather() for instant
+//      display (even if stale from a previous session).
+//   5. Start the rAF render loop — sky animation begins immediately.
+//   6. If cached location exists, call refreshWeather() right away so fresh
+//      data arrives without waiting for geolocation to complete. This is the
+//      key fix for the stale-data bug: we no longer depend on resolveLocation()
+//      settling before the first network fetch.
+//   7. Kick off resolveLocation() in parallel — updates S.lat/lon with the
+//      current device location, then calls refreshWeather() again with the
+//      fresh coordinates. The second call overwrites step 6's result if the
+//      location has moved.
 function init(){
   S.canvas=document.getElementById('wa-sky');
   S.ctx=S.canvas.getContext('2d');
@@ -862,6 +1206,7 @@ function init(){
   if(cachedW){applyWeather(cachedW);}
   else{renderFallbackUI();showPill('waiting for weather\u2026');}
   S.animationFrameId=requestAnimationFrame(render);
+  if(S.lat!=null&&S.lon!=null){setTimeout(function(){refreshWeather();},100);}
   resolveLocation().then(function(){
     refreshWeather();
   });
