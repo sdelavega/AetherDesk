@@ -8,7 +8,7 @@ import os.log
 /// Migration moves the pre-sandbox wallpaper library from
 ///   ~/Library/Application Support/ÆtherDesk/Wallpapers/
 /// into the sandbox container at
-///   ~/Library/Containers/com.aetherdesk.AetherDesk/Data/Library/Application Support/ÆtherDesk/Wallpapers/
+///   ~/Library/Containers/com.sdelavega.AetherDesk/Data/Library/Application Support/ÆtherDesk/Wallpapers/
 ///
 /// Security-scoped bookmark helpers are provided for persistent access to
 /// user-selected import directories across launches.

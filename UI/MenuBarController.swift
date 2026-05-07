@@ -53,10 +53,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                                name: Constants.Notifications.wallpaperDidChange,
                                                object: nil)
 
+        #if !AETHERDESK_STORE
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(handleUpdateAvailable(_:)),
                                                name: Constants.Notifications.updateAvailable,
                                                object: nil)
+        #endif
     }
 
     deinit {
@@ -120,11 +122,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        #if !AETHERDESK_STORE
         let checkUpdatesItem = NSMenuItem(title: "Check for Updates…",
                                           action: #selector(checkForUpdates),
                                           keyEquivalent: "u")
         checkUpdatesItem.target = self
         menu.addItem(checkUpdatesItem)
+        #endif
 
         let preferencesItem = NSMenuItem(title: "Preferences…",
                                          action: #selector(showPreferences),
@@ -336,6 +340,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         PreferencesWindowController.shared.showWindow(nil)
     }
 
+    #if !AETHERDESK_STORE
     @objc private func checkForUpdates() {
         UpdateManager.shared.checkForUpdatesInteractively()
     }
@@ -344,6 +349,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         guard let release = note.object as? UpdateManager.GitHubRelease else { return }
         UpdateManager.shared.presentUpdateAlert(release)
     }
+    #endif
 
     @objc private func quit() {
         NSApplication.shared.terminate(nil)

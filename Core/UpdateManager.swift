@@ -87,7 +87,7 @@ final class UpdateManager {
     }
 
     private let session: URLSession
-    private let queue = DispatchQueue(label: "com.aetherdesk.UpdateManager", qos: .utility)
+    private let queue = DispatchQueue(label: "com.sdelavega.UpdateManager", qos: .utility)
     private var checkTimer: DispatchSourceTimer?
 
     private static let apiURL = URL(string:
@@ -108,12 +108,17 @@ final class UpdateManager {
     // MARK: - Lifecycle
 
     /// Start periodic automatic checks. Call once from AppDelegate at launch.
+    /// No-op in App Store builds — updates are managed by the Mac App Store.
     func startPeriodicChecks() {
+        #if AETHERDESK_STORE
+        // App Store builds receive updates through the Mac App Store.
+        #else
         guard UpdateSettingsStore.shared.load().automaticallyCheckForUpdates else { return }
         queue.asyncAfter(deadline: .now() + Constants.Defaults.updateCheckInitialDelay) { [weak self] in
             self?.checkQuietly()
         }
         armTimer()
+        #endif
     }
 
     /// Restart or cancel the timer when the user toggles the auto-check setting.
@@ -175,7 +180,11 @@ final class UpdateManager {
     // MARK: - Check (interactive)
 
     /// Called from the "Check for Updates…" menu item. Always shows UI feedback.
+    /// No-op in App Store builds — the menu item is hidden in those builds.
     func checkForUpdatesInteractively() {
+        #if AETHERDESK_STORE
+        // App Store builds receive updates through the Mac App Store.
+        #else
         setState(.checking)
         fetchLatestRelease { [weak self] result in
             guard let self else { return }
@@ -202,6 +211,7 @@ final class UpdateManager {
                 }
             }
         }
+        #endif
     }
 
     // MARK: - Network

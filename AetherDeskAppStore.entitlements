@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Sandbox (required for Mac App Store) -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Network access: wallpapers fetch weather data and other external resources -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- User-selected files: import wallpaper bundles from anywhere on disk -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!-- WeatherKit: native weather data for WeatherAether and compatible wallpapers -->
+	<key>com.apple.developer.weatherkit</key>
+	<true/>
+
+	<!-- Location: CoreLocation-backed geolocation bridge for weather wallpapers -->
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
+</dict>
+</plist>

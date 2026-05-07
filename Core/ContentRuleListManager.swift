@@ -23,9 +23,9 @@ final class ContentRuleListManager {
     private(set) var externalNetworkBlockRuleList: WKContentRuleList?
     private(set) var rawIPWebSocketRuleList: WKContentRuleList?
 
-    private static let blocklistStoreIdentifier = "com.aetherdesk.WallpaperBlocklist.v1"
-    private static let externalNetworkStoreIdentifier = "com.aetherdesk.ExternalNetworkBlock.v1"
-    private static let rawIPWebSocketStoreIdentifier = "com.aetherdesk.RawIPWebSocketBlock.v1"
+    private static let blocklistStoreIdentifier = "com.sdelavega.WallpaperBlocklist.v1"
+    private static let externalNetworkStoreIdentifier = "com.sdelavega.ExternalNetworkBlock.v1"
+    private static let rawIPWebSocketStoreIdentifier = "com.sdelavega.RawIPWebSocketBlock.v1"
 
     // MARK: - Blocklist
 

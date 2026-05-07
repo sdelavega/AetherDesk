@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- ÆtherDesk does not track users and collects no data from users. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <!--
+        Required reason API declarations.
+
+        Apple requires apps to declare the reason for using certain APIs that
+        could theoretically be used to fingerprint users. ÆtherDesk uses
+        these APIs only for the purposes stated below.
+    -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <!--
+            UserDefaults: used to persist wallpaper assignments, property
+            overrides, and app preferences across launches. Data stays
+            on-device and is never transmitted.
+        -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- Access from the same app that wrote the defaults -->
+                <string>CA92.1</string>
+            </array>
+        </dict>
+
+        <!--
+            File modification timestamps: used by ThumbnailRenderer to
+            validate its on-disk thumbnail cache against wallpaper bundle
+            modification dates. Timestamps are never transmitted.
+        -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- Timestamps of files the app created or manages -->
+                <string>C617.1</string>
+            </array>
+        </dict>
+
+        <!--
+            System boot time (ProcessInfo.systemUptime): used in
+            WebWallpaperRuntime to detect rapid web-content-process crashes
+            and decide whether to retry or demote to safe mode.
+        -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- Measure elapsed time to order and compare events -->
+                <string>35F9.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

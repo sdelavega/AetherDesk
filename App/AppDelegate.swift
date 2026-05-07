@@ -11,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // Migrate pre-sandbox wallpaper data into the sandbox container on first
+        // launch of the App Store build. No-op when running unsandboxed (OSS).
+        SandboxSupport.migrateIfNeeded()
+
         let manager = WallpaperManager()
         self.wallpaperManager = manager
         self.menuBarController = MenuBarController(wallpaperManager: manager)

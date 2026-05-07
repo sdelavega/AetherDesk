@@ -3,7 +3,7 @@ import os.log
 
 enum Constants {
     static let appName = "ÆtherDesk"
-    static let bundleIdentifier = "com.aetherdesk.AetherDesk"
+    static let bundleIdentifier = "com.sdelavega.AetherDesk"
 
     enum Defaults {
         static let fpsCap: Int = 30

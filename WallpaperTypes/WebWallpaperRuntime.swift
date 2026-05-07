@@ -357,6 +357,17 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             return
         }
 
+        // In App Store builds, intercept weather API calls and fulfil them via
+        // WeatherKit instead of forwarding to open-meteo over URLSession.
+        #if AETHERDESK_STORE
+        if WeatherKitBridge.shouldIntercept(url) {
+            WeatherKitBridge.shared.fetch(url: url) { [weak self] status, body in
+                self?.deliverFetchResult(id: id, status: status, body: body)
+            }
+            return
+        }
+        #endif
+
         switch networkPolicy.validate(url: url) {
         case .success(let validatedURL):
             // DNS resolution (getaddrinfo) is synchronous and can block for

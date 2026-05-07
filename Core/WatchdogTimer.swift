@@ -19,7 +19,7 @@ final class WatchdogTimer {
     private let timeout: TimeInterval
     private let onTimeout: () -> Void
 
-    private let queue = DispatchQueue(label: "com.aetherdesk.watchdog", qos: .utility)
+    private let queue = DispatchQueue(label: "com.sdelavega.watchdog", qos: .utility)
     private var source: DispatchSourceTimer?
     private var isArmed = false
 

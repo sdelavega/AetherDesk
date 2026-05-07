@@ -1,6 +1,6 @@
 name: ÆtherDesk
 options:
-  bundleIdPrefix: com.aetherdesk
+  bundleIdPrefix: com.sdelavega
   deploymentTarget:
     macOS: "12.0"
   xcodeVersion: "15.0"
@@ -8,12 +8,19 @@ options:
   groupSortPosition: top
   createIntermediateGroups: true
 
+# AppStore is a release-type configuration that enables sandbox + WeatherKit.
+# OSS builds use Debug or Release — no changes to those configs.
+configs:
+  Debug: debug
+  Release: release
+  AppStore: release
+
 settings:
   base:
     PRODUCT_NAME: ÆtherDesk
-    PRODUCT_BUNDLE_IDENTIFIER: com.aetherdesk.AetherDesk
-    MARKETING_VERSION: "1.0.16"
-    CURRENT_PROJECT_VERSION: "20"
+    PRODUCT_BUNDLE_IDENTIFIER: com.sdelavega.AetherDesk
+    MARKETING_VERSION: "1.1"
+    CURRENT_PROJECT_VERSION: "24"
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "12.0"
     CODE_SIGN_STYLE: Automatic
@@ -23,6 +30,9 @@ settings:
     CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: YES
     GCC_WARN_UNUSED_VARIABLE: YES
     DEAD_CODE_STRIPPING: YES
+  configs:
+    AppStore:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: AETHERDESK_STORE
 
 targets:
   AetherDesk:
@@ -58,6 +68,12 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Resources/AetherDesk.entitlements
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        # AppStore: macOS 13 minimum, sandbox enabled, WeatherKit linked.
+        AppStore:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
+          CODE_SIGN_ENTITLEMENTS: AetherDeskAppStore.entitlements
+          OTHER_LDFLAGS: "$(inherited) -weak_framework WeatherKit"
     entitlements:
       path: Resources/AetherDesk.entitlements
     dependencies: []
@@ -99,3 +115,23 @@ schemes:
     test:
       targets:
         - AetherDeskTests
+
+  # Use this scheme to build / archive the Mac App Store version.
+  # It activates the AppStore configuration, which enables sandbox,
+  # WeatherKit, and the AETHERDESK_STORE compilation flag.
+  AetherDesk-AppStore:
+    build:
+      targets:
+        AetherDesk: all
+    run:
+      config: AppStore
+    test:
+      config: AppStore
+      targets:
+        - AetherDeskTests
+    profile:
+      config: AppStore
+    analyze:
+      config: AppStore
+    archive:
+      config: AppStore

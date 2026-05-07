@@ -18,14 +18,14 @@ import Foundation
 ///   3. On failure → nil (callers should show a placeholder)
 ///
 /// All results are disk-cached under
-///   ~/Library/Caches/com.aetherdesk.ÆtherDesk/thumbnails/<bundleID>_<w>x<h>.png
+///   ~/Library/Caches/com.sdelavega.ÆtherDesk/thumbnails/<bundleID>_<w>x<h>.png
 /// keyed by bundle id + requested pixel size. Cache entries older than the
 /// source bundle's mtime are invalidated at lookup time.
 final class ThumbnailRenderer {
 
     static let shared = ThumbnailRenderer()
 
-    private let queue = DispatchQueue(label: "com.aetherdesk.thumbnails", qos: .utility)
+    private let queue = DispatchQueue(label: "com.sdelavega.thumbnails", qos: .utility)
     private let fileManager = FileManager.default
     private let cacheDir: URL
 
@@ -207,18 +207,21 @@ final class ThumbnailRenderer {
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: size.width * 2, height: size.height * 2)
 
-        // Target t=1s, clamped to the asset duration.
-        let duration = CMTimeGetSeconds(asset.duration)
-        let target = CMTime(seconds: min(1.0, max(0.0, duration / 2.0)),
-                            preferredTimescale: 600)
-
-        generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: target)]) {
-            _, cgImage, _, _, _ in
-            guard let cgImage = cgImage else {
-                completion(nil); return
+        Task {
+            do {
+                let cmDuration = try await asset.load(.duration)
+                let duration = CMTimeGetSeconds(cmDuration)
+                let target = CMTime(seconds: min(1.0, max(0.0, duration / 2.0)),
+                                    preferredTimescale: 600)
+                generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: target)]) {
+                    _, cgImage, _, _, _ in
+                    guard let cgImage = cgImage else { completion(nil); return }
+                    let nsImage = NSImage(cgImage: cgImage, size: size)
+                    completion(nsImage.resized(to: size))
+                }
+            } catch {
+                completion(nil)
             }
-            let nsImage = NSImage(cgImage: cgImage, size: size)
-            completion(nsImage.resized(to: size))
         }
     }
 
