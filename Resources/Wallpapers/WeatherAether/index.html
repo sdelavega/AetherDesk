@@ -396,11 +396,18 @@ function fetchIP(){
 
 // ── fallbackLoc() ────────────────────────────────────────────────────────────
 // Last resort: restores the previously cached location from localStorage.
-// Called when both CoreLocation and ipapi.co fail. Ensures the wallpaper can
-// still show weather (even if slightly stale location) rather than going blank.
+// If no cache exists, geocodes the configured manualLocation property via
+// geocoding-api.open-meteo.com (the same service manual mode uses). This
+// ensures auto mode can still display weather on networks where CoreLocation
+// is unavailable and all IP-geolocation services are DNS-blocked, as long as
+// the user's configured manualLocation resolves. Returns a boolean or
+// Promise<boolean>; both are safe to return from a Promise .catch() handler.
 function fallbackLoc(){
   var loc=loadCachedLocation();
   if(loc){S.lat=loc.lat;S.lon=loc.lon;S.label=loc.label;return true;}
+  if(S.props.manualLocation&&S.props.manualLocation.trim()){
+    return geocodeManual(S.props.manualLocation);
+  }
   return false;
 }
 
