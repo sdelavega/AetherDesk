@@ -68,14 +68,13 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Resources/AetherDesk.entitlements
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MACOSX_DEPLOYMENT_TARGET: "12.0"
       configs:
         # AppStore: macOS 13 minimum, sandbox enabled, WeatherKit linked.
         AppStore:
           MACOSX_DEPLOYMENT_TARGET: "13.0"
           CODE_SIGN_ENTITLEMENTS: AetherDeskAppStore.entitlements
           OTHER_LDFLAGS: "$(inherited) -weak_framework WeatherKit"
-    entitlements:
-      path: Resources/AetherDesk.entitlements
     dependencies: []
 
   AetherDeskTests:

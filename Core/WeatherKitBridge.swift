@@ -9,8 +9,8 @@ import os.log
 /// WeatherAether already parses. Zero changes to the wallpaper HTML required.
 ///
 /// Only compiled in `AETHERDESK_STORE` builds; the OSS build never references
-/// this type. The AppStore build configuration sets a macOS 13 minimum, so no
-/// `@available` guard is needed here.
+/// this type. The AppStore build configuration sets a macOS 13 minimum.
+@available(macOS 13.0, *)
 final class WeatherKitBridge {
 
     static let shared = WeatherKitBridge()
@@ -115,7 +115,7 @@ final class WeatherKitBridge {
             "apparent_temperature":  temp(current.apparentTemperature),
             "relative_humidity_2m":  Int((current.humidity * 100).rounded()),
             "wind_speed_10m":        wind(current.wind.speed),
-            "wind_direction_10m":    compassDegrees(current.wind.direction),
+            "wind_direction_10m":    current.wind.direction.converted(to: .degrees).value,
             "weather_code":          wmoCode(for: current.condition),
             "is_day":                current.isDaylight ? 1 : 0,
             "uv_index":              current.uvIndex.value,
@@ -151,33 +151,6 @@ final class WeatherKitBridge {
             "hourly":  hourlyDict,
             "daily":   dailyDict,
         ]
-    }
-
-    // MARK: - Wind direction → degrees
-
-    /// Converts WeatherKit's compass direction enum to meteorological degrees
-    /// (0° = N, 90° = E, 180° = S, 270° = W), matching open-meteo's
-    /// `wind_direction_10m` field that WeatherAether's JS reads.
-    private func compassDegrees(_ dir: Wind.CompassDirection) -> Double {
-        switch dir {
-        case .north:          return 0
-        case .northNortheast: return 22.5
-        case .northeast:      return 45
-        case .eastNortheast:  return 67.5
-        case .east:           return 90
-        case .eastSoutheast:  return 112.5
-        case .southeast:      return 135
-        case .southSoutheast: return 157.5
-        case .south:          return 180
-        case .southSouthwest: return 202.5
-        case .southwest:      return 225
-        case .westSouthwest:  return 247.5
-        case .west:           return 270
-        case .westNorthwest:  return 292.5
-        case .northwest:      return 315
-        case .northNorthwest: return 337.5
-        @unknown default:     return 0
-        }
     }
 
     // MARK: - WeatherCondition → WMO code
