@@ -94,7 +94,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         self.networkPolicy = NetworkPolicy(
             bundleID: bundle.id,
             allowLANAccess: AppSettingsStore.shared.loadPerformanceSettings().allowLANAccess)
-        self.locationProxy = LocationProxy(bundleID: bundle.id, bundleName: bundle.name)
+        self.locationProxy = LocationProxy(bundleID: bundle.id)
         self.pausedSnapshotView = NSImageView()
 
         super.init()
@@ -833,22 +833,13 @@ private final class LocationProxy: NSObject, CLLocationManagerDelegate {
 
     private let manager: CLLocationManager
     private let bundleID: UUID
-    private let bundleName: String
     /// Pending request IDs waiting for a location fix.
     private var pendingIDs: [Int] = []
     /// Called with (id, lat, lon) on success or (id, nil, nil) on failure.
     var onResult: ((_ id: Int, _ lat: Double?, _ lon: Double?) -> Void)?
 
-    /// Static queue that prevents stacked modal alerts for the same bundle.
-    /// If an alert is already showing, new request IDs are queued and resolved
-    /// with the same answer when the alert closes.
-    private static var consentQueues: [UUID: [Int]] = [:]
-    private static var isShowingAlert: Set<UUID> = []
-    private static let consentLock = NSLock()
-
-    init(bundleID: UUID, bundleName: String) {
+    init(bundleID: UUID) {
         self.bundleID = bundleID
-        self.bundleName = bundleName
         manager = CLLocationManager()
         super.init()
         manager.delegate = self
@@ -858,59 +849,17 @@ private final class LocationProxy: NSObject, CLLocationManagerDelegate {
     func request(id: Int) {
         DispatchQueue.main.async { [self] in
             let permission = GeolocationPermissionStore.shared.load(for: bundleID)
-            switch permission {
-            case .denied:
+            // .denied = user explicitly blocked via Preferences; reject immediately.
+            // .allowed / .notDetermined = proceed; the system CoreLocation
+            // authorization dialog (non-blocking) handles the actual grant.
+            // We do NOT show a secondary app-level modal because runModal()
+            // blocks the main thread and races the JS fallback timers.
+            if permission == .denied {
                 onResult?(id, nil, nil)
                 return
-            case .allowed:
-                pendingIDs.append(id)
-                if pendingIDs.count == 1 { startUpdates() }
-            case .notDetermined:
-                Self.consentLock.lock()
-                let isShowing = Self.isShowingAlert.contains(bundleID)
-                if isShowing {
-                    Self.consentQueues[bundleID, default: []].append(id)
-                    Self.consentLock.unlock()
-                } else {
-                    Self.isShowingAlert.insert(bundleID)
-                    Self.consentLock.unlock()
-                    pendingIDs.append(id)
-                    promptForConsent()
-                }
             }
-        }
-    }
-
-    private func promptForConsent() {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Allow Geolocation?"
-        alert.informativeText = """
-            The wallpaper "\(bundleName)" is requesting access to your location. \
-            Allow this wallpaper to use geolocation?
-            """
-        alert.addButton(withTitle: "Allow")
-        alert.addButton(withTitle: "Deny")
-        NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
-        let permission: GeolocationPermission = (response == .alertFirstButtonReturn) ? .allowed : .denied
-        GeolocationPermissionStore.shared.save(permission, for: bundleID)
-
-        // Resolve any IDs that were queued while the alert was showing.
-        Self.consentLock.lock()
-        let queued = Self.consentQueues.removeValue(forKey: bundleID) ?? []
-        Self.isShowingAlert.remove(bundleID)
-        Self.consentLock.unlock()
-
-        if permission == .denied {
-            flushPending(lat: nil, lon: nil)
-            for qid in queued { onResult?(qid, nil, nil) }
-        } else {
-            if !pendingIDs.isEmpty { startUpdates() }
-            for qid in queued {
-                pendingIDs.append(qid)
-                if pendingIDs.count == 1 { startUpdates() }
-            }
+            pendingIDs.append(id)
+            if pendingIDs.count == 1 { startUpdates() }
         }
     }
 

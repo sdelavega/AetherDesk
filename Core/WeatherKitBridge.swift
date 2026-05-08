@@ -108,13 +108,15 @@ final class WeatherKitBridge {
         dateFmt.dateFormat = "yyyy-MM-dd"
         dateFmt.timeZone   = TimeZone(identifier: "UTC")
 
-        // Current conditions
+        // Current conditions — keys must match open-meteo's response schema
+        // because WeatherAether's JS parses them by name.
         let currentDict: [String: Any] = [
             "temperature_2m":        temp(current.temperature),
             "apparent_temperature":  temp(current.apparentTemperature),
             "relative_humidity_2m":  Int((current.humidity * 100).rounded()),
             "wind_speed_10m":        wind(current.wind.speed),
-            "weathercode":           wmoCode(for: current.condition),
+            "wind_direction_10m":    compassDegrees(current.wind.direction),
+            "weather_code":          wmoCode(for: current.condition),
             "is_day":                current.isDaylight ? 1 : 0,
             "uv_index":              current.uvIndex.value,
         ]
@@ -124,19 +126,24 @@ final class WeatherKitBridge {
         let hourlyDict: [String: Any] = [
             "time":                      hours.map { iso.string(from: $0.date) },
             "temperature_2m":            hours.map { temp($0.temperature) },
-            "weathercode":               hours.map { wmoCode(for: $0.condition) },
+            "weather_code":              hours.map { wmoCode(for: $0.condition) },
             "precipitation_probability": hours.map { Int(($0.precipitationChance * 100).rounded()) },
         ]
 
-        // Daily — next 7 days
+        // Daily — next 7 days.
+        // precipitation_probability_max MUST be present; WeatherAether accesses
+        // it without an existence guard and a missing key throws a TypeError that
+        // aborts the entire weather display render.
         let days = Array(daily.prefix(7))
         let dailyDict: [String: Any] = [
-            "time":              days.map { dateFmt.string(from: $0.date) },
-            "temperature_2m_max": days.map { temp($0.highTemperature) },
-            "temperature_2m_min": days.map { temp($0.lowTemperature) },
-            "weathercode":        days.map { wmoCode(for: $0.condition) },
-            "sunrise":            days.map { iso.string(from: $0.sun.sunrise ?? $0.date) },
-            "sunset":             days.map { iso.string(from: $0.sun.sunset  ?? $0.date) },
+            "time":                          days.map { dateFmt.string(from: $0.date) },
+            "temperature_2m_max":            days.map { temp($0.highTemperature) },
+            "temperature_2m_min":            days.map { temp($0.lowTemperature) },
+            "weather_code":                  days.map { wmoCode(for: $0.condition) },
+            "sunrise":                       days.map { iso.string(from: $0.sun.sunrise ?? $0.date) },
+            "sunset":                        days.map { iso.string(from: $0.sun.sunset  ?? $0.date) },
+            "precipitation_probability_max": days.map { Int(($0.precipitationChance * 100).rounded()) },
+            "uv_index_max":                  days.map { Double($0.uvIndex.value) },
         ]
 
         return [
@@ -144,6 +151,33 @@ final class WeatherKitBridge {
             "hourly":  hourlyDict,
             "daily":   dailyDict,
         ]
+    }
+
+    // MARK: - Wind direction → degrees
+
+    /// Converts WeatherKit's compass direction enum to meteorological degrees
+    /// (0° = N, 90° = E, 180° = S, 270° = W), matching open-meteo's
+    /// `wind_direction_10m` field that WeatherAether's JS reads.
+    private func compassDegrees(_ dir: Wind.CompassDirection) -> Double {
+        switch dir {
+        case .north:          return 0
+        case .northNortheast: return 22.5
+        case .northeast:      return 45
+        case .eastNortheast:  return 67.5
+        case .east:           return 90
+        case .eastSoutheast:  return 112.5
+        case .southeast:      return 135
+        case .southSoutheast: return 157.5
+        case .south:          return 180
+        case .southSouthwest: return 202.5
+        case .southwest:      return 225
+        case .westSouthwest:  return 247.5
+        case .west:           return 270
+        case .westNorthwest:  return 292.5
+        case .northwest:      return 315
+        case .northNorthwest: return 337.5
+        @unknown default:     return 0
+        }
     }
 
     // MARK: - WeatherCondition → WMO code
