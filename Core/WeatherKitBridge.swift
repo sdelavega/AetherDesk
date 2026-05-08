@@ -69,8 +69,20 @@ final class WeatherKitBridge {
                     completion(0, nil)
                 }
             } catch {
-                Logger.app.error("ÆtherDesk WeatherKitBridge: \(error.localizedDescription)")
-                completion(0, nil)
+                // WeatherKit unavailable (e.g. capability not yet active on this
+                // App ID, or service error). Fall back to the original open-meteo
+                // URL via URLSession so weather still works.
+                Logger.app.error("ÆtherDesk WeatherKitBridge: WeatherKit failed (\(error.localizedDescription)), falling back to URLSession")
+                URLSession.shared.dataTask(with: url) { data, response, taskError in
+                    if let taskError {
+                        Logger.app.error("ÆtherDesk WeatherKitBridge: URLSession fallback also failed: \(taskError.localizedDescription)")
+                        completion(0, nil)
+                        return
+                    }
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    let body = data.flatMap { String(data: $0, encoding: .utf8) }
+                    completion(status, body)
+                }.resume()
             }
         }
     }
