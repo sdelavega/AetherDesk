@@ -326,15 +326,17 @@ function autoLocation(){
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(
         function(p){
-          // Mark done immediately so the geoTimer cannot race fetchIP()
-          // while we wait for the reverse-geocode network call.
-          if(done)return;done=true;clearTimeout(geoTimer);
+          // Accept CoreLocation coordinates even if geoTimer already fired
+          // (e.g., the system auth dialog took longer than 5 seconds). When
+          // the Promise is already settled (alreadyResolved=true), skip
+          // resolve() and trigger a weather refresh directly instead.
+          var alreadyResolved=done;
+          done=true;clearTimeout(geoTimer);
           S.lat=p.coords.latitude;S.lon=p.coords.longitude;
-          // Resolve coordinates to a human-readable city name before
-          // caching and resolving; falls back to 'Current Location' if
-          // the reverse-geocode request fails.
           reverseGeocode(S.lat,S.lon).then(function(label){
-            S.label=label;cacheLocation();resolve(true);
+            S.label=label;cacheLocation();
+            if(!alreadyResolved){resolve(true);}
+            else{refreshWeather();}
           });
         },
         function(){if(done)return;done=true;clearTimeout(geoTimer);fetchIP().then(function(ok){resolve(ok);});},
@@ -462,7 +464,14 @@ function buildForecastUrl(){
 //   6. Schedule the next refresh in 10–11 minutes (jitter avoids thundering
 //      herd on multi-monitor setups where each display runs its own runtime).
 function refreshWeather(){
-  if(S.lat==null||S.lon==null){scheduleRefresh();return;}
+  if(S.lat==null||S.lon==null){
+    // Location not yet resolved; retry resolution before scheduling a long
+    // 10-minute wait. This handles the case where CoreLocation auth was
+    // denied the first time but may be granted now, or where IP geolocation
+    // failed transiently.
+    resolveLocation().then(function(ok){if(ok){refreshWeather();}else{scheduleRefresh();}});
+    return;
+  }
   var cached=loadCachedWeather();
   fetchWithTimeout(buildForecastUrl(),6000)
     .then(function(r){return r.json();})
