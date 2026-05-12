@@ -20,9 +20,8 @@ Build/
 *.dSYM.zip
 *.dSYM
 
-# Generated Xcode project (we commit project.yml; regenerate with XcodeGen)
-# Uncomment the next line if you want to exclude the generated project:
-# ÆtherDesk.xcodeproj/
+# XcodeGen source (xcodeproj is committed directly; project.yml is no longer needed)
+project.yml
 
 # Swift Package Manager
 .build/

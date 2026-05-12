@@ -10,13 +10,13 @@ It reads Lively's bundle format directly, so a lot of community wallpapers just 
 
 ## Get It
 
-The app is currently in TestFlight while the App Store submission finishes review. Same build, just a different distribution pipe.
+**TestFlight (App Store build):** The current build is on TestFlight while the App Store submission finishes review. Sandboxed, WeatherKit weather data, macOS 13.5+.
 
 [**Join the TestFlight Beta →**](https://testflight.apple.com/join/KFUDzBqY)
 
-Found something broken? [Open an issue.](https://github.com/sdelavega/AetherDesk/issues) Steps to reproduce, what you expected, what actually happened — that's all you need. Console output is a bonus but never required.
+**GitHub Releases (OSS build):** Prefer the open-source configuration? Grab the latest release from the [Releases page](https://github.com/sdelavega/AetherDesk/releases). It's signed and notarized by me, so macOS will open it without complaint — no right-click tricks, no disabling Gatekeeper, no terminal incantations. Just download and run.
 
-If you'd rather build it yourself, see [Building From Source](#building-from-source). Fair warning: the open-source build pulls weather data straight from open-meteo; the TestFlight/App Store build goes through WeatherKit. Otherwise they're the same app.
+Found something broken? [Open an issue.](https://github.com/sdelavega/AetherDesk/issues) Steps to reproduce, what you expected, what actually happened — that's all you need. Console output is a bonus but never required.
 
 ---
 
@@ -95,23 +95,27 @@ Persistence is split into two stores: `WallpaperStore` for display-to-wallpaper 
 
 ## Building From Source
 
-XcodeGen-driven. The `.xcodeproj` in the repo is generated output.
+Clone the repo and open `AetherDesk.xcodeproj` directly in Xcode. No package managers, no code generation step, no third-party dependencies — just AppKit, WebKit, AVFoundation, and the usual Apple stack.
 
 ```bash
-brew install xcodegen
 git clone https://github.com/sdelavega/AetherDesk.git
 cd AetherDesk
-xcodegen
 open AetherDesk.xcodeproj
 ```
 
-Requires macOS 12.0+, Xcode 26.3+ recommended, Swift 5.9. No third-party dependencies — just AppKit, WebKit, AVFoundation, and the usual Apple stack.
+There are two build configurations and they're meaningfully different:
+
+**OSS (default):** Unsandboxed, pulls weather data from open-meteo, runs on macOS 12.0+. This is what you get if you just hit Run.
+
+**App Store:** Sandboxed, uses WeatherKit for weather data, requires macOS 13.5+. WeatherKit requires a paid Apple Developer Program membership — if you don't have one, the weather wallpaper will silently fall back to open-meteo anyway, but the App Store scheme won't archive cleanly without valid entitlements. Switching to this config involves changing the scheme and signing settings; it's doable but not the default path.
+
+If you're just poking around or building for yourself, the OSS configuration is the one you want.
 
 ---
 
 ## Honest Caveats
 
-The app ships unsandboxed by design right now, with scaffolding in place for a future sandbox migration. Display restore at launch works well; hot-plug restore (unplug and replug a display mid-session) is on the list. The codebase is AppKit-first and deliberately light on abstraction — it's a focused utility, not a framework.
+The OSS build is unsandboxed by design. The App Store / TestFlight build is fully sandboxed. Display restore at launch works well; hot-plug restore (unplug and replug a display mid-session) is on the list. The codebase is AppKit-first and deliberately light on abstraction — it's a focused utility, not a framework.
 
 ---
 
