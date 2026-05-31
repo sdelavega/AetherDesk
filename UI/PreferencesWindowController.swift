@@ -496,6 +496,18 @@ private final class PreferencesViewController: NSViewController {
         guard let bundleID = objc_getAssociatedObject(sender, &AssociatedKeys.bundleID) as? UUID else { return }
         let permission: GeolocationPermission = (sender.state == .on) ? .allowed : .denied
         GeolocationPermissionStore.shared.save(permission, for: bundleID)
+        // Reload any display currently running this wallpaper so the permission
+        // change takes effect immediately — the wallpaper re-initialises and
+        // either requests location (allowed) or falls back to IP (denied).
+        guard let delegate = NSApp.delegate as? AppDelegate,
+              let manager = delegate.wallpaperManager else { return }
+        for screen in NSScreen.screens {
+            let displayID = screen.displayID
+            guard displayID != 0 else { continue }
+            if manager.currentBundle(for: displayID)?.id == bundleID {
+                manager.reloadWallpaper(for: displayID)
+            }
+        }
     }
 }
 

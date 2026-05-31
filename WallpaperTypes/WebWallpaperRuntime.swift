@@ -185,6 +185,18 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         )
         userContent.addUserScript(bootstrap)
 
+        #if AETHERDESK_STORE
+        // Inject the WeatherKit flag before any page JS runs so that
+        // wallpapers can check window.__weatherKitActive synchronously
+        // during their own init (e.g. to show the Apple Weather attribution).
+        let weatherKitFlag = WKUserScript(
+            source: "window.__weatherKitActive = true;",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        userContent.addUserScript(weatherKitFlag)
+        #endif
+
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.navigationDelegate = self
         wv.wantsLayer = true
@@ -713,6 +725,15 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else {
             decisionHandler(.allow)
+            return
+        }
+
+        // Link clicks (e.g. WeatherKit attribution) open in the default
+        // browser instead of navigating the wallpaper webview.
+        if navigationAction.navigationType == .linkActivated,
+           url.scheme == "https" || url.scheme == "http" {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
             return
         }
 
