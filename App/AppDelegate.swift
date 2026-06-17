@@ -45,7 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let fallback = WallpaperImporter.shared.listBundledWallpapers().first
                 DispatchQueue.main.async {
                     manager.startAndRestore(availableBundles: available, fallback: fallback)
+                    #if !AETHERDESK_STORE
                     UpdateManager.shared.startPeriodicChecks()
+                    #endif
                 }
             }
         }

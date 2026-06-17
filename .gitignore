@@ -67,3 +67,6 @@ release
 
 #Ignore insiders AI rules
 .github/instructions/codacy.instructions.md
+/.claude
+/.codex
+/.ai

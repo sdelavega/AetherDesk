@@ -19,6 +19,15 @@ import os.log
 import Foundation
 import CryptoKit
 
+// The entire self-update mechanism — periodic GitHub Releases polling,
+// downloading, code-signature verification, and the atomic app-bundle
+// swap-and-relaunch — is excluded from App Store builds. Apple Guideline
+// 2.4.5(vii) prohibits apps from updating themselves outside the Mac App
+// Store, and review has flagged this before. App Store builds get updates
+// through the Mac App Store exclusively; none of this code should even be
+// compiled into that binary.
+#if !AETHERDESK_STORE
+
 /// Checks GitHub Releases for a newer version of ÆtherDesk and, depending on
 /// user preferences, either notifies or silently downloads and installs it.
 ///
@@ -124,17 +133,14 @@ final class UpdateManager {
     // MARK: - Lifecycle
 
     /// Start periodic automatic checks. Call once from AppDelegate at launch.
-    /// No-op in App Store builds — updates are managed by the Mac App Store.
+    /// (This whole class is compiled out of App Store builds — see the
+    /// `#if !AETHERDESK_STORE` at the top of this file.)
     func startPeriodicChecks() {
-        #if AETHERDESK_STORE
-        // App Store builds receive updates through the Mac App Store.
-        #else
         guard UpdateSettingsStore.shared.load().automaticallyCheckForUpdates else { return }
         queue.asyncAfter(deadline: .now() + Constants.Defaults.updateCheckInitialDelay) { [weak self] in
             self?.checkQuietly()
         }
         armTimer()
-        #endif
     }
 
     /// Restart or cancel the timer when the user toggles the auto-check setting.
@@ -196,11 +202,9 @@ final class UpdateManager {
     // MARK: - Check (interactive)
 
     /// Called from the "Check for Updates…" menu item. Always shows UI feedback.
-    /// No-op in App Store builds — the menu item is hidden in those builds.
+    /// (This whole class is compiled out of App Store builds — see the
+    /// `#if !AETHERDESK_STORE` at the top of this file.)
     func checkForUpdatesInteractively() {
-        #if AETHERDESK_STORE
-        // App Store builds receive updates through the Mac App Store.
-        #else
         setState(.checking)
         fetchLatestRelease { [weak self] result in
             guard let self else { return }
@@ -227,7 +231,6 @@ final class UpdateManager {
                 }
             }
         }
-        #endif
     }
 
     // MARK: - Network
@@ -607,3 +610,5 @@ extension Data {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
+
+#endif // !AETHERDESK_STORE

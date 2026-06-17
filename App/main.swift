@@ -21,6 +21,14 @@ import Foundation
 // MARK: - Updater mode
 // If launched with --aetherdesk-updater <pid> <oldAppPath> <newAppPath> <tempDir>,
 // perform the atomic swap and relaunch without ever starting NSApplication.
+//
+// Excluded entirely from App Store builds: Apple Guideline 2.4.5(vii)
+// prohibits an app from updating itself outside the Mac App Store, and this
+// is the literal mechanism that does the self-replacing swap-and-relaunch.
+// It must not exist as compiled code in the App Store binary, not merely be
+// unreachable from the UI — so this is a compile-time exclusion, not a
+// runtime guard.
+#if !AETHERDESK_STORE
 if CommandLine.arguments.count == 6,
    CommandLine.arguments[1] == "--aetherdesk-updater",
    let pid = Int32(CommandLine.arguments[2]) {
@@ -65,6 +73,7 @@ if CommandLine.arguments.count == 6,
     }
     exit(0)
 }
+#endif
 
 // MARK: - Normal launch
 
