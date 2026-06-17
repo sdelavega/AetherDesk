@@ -34,6 +34,7 @@
 		4E41097EEB639D4C0A63DA82 /* WallpaperImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB11F9C117CF4427583AF28B /* WallpaperImporter.swift */; };
 		51D0462F497FDB64F7E953A4 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94D91CBEAB70646EE509ABC1 /* AppDelegate.swift */; };
 		54AF8036E368C644BBBA4553 /* LivelyInfoParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 756BA1B4157C54F7791755D5 /* LivelyInfoParser.swift */; };
+		559721E67EA463861FDBEC8C /* WeatherSourceSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860AC94F14A68FF9DC490829 /* WeatherSourceSettingsStore.swift */; };
 		56652B809CEF6CA4FB0ED736 /* Wallpapers in Resources */ = {isa = PBXBuildFile; fileRef = 58794D4FCA3D313830F09776 /* Wallpapers */; };
 		56E7EFBCCA30360A7FA32B57 /* WebWallpaperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22BC1A0A3192932BA58FB0A /* WebWallpaperRuntime.swift */; };
 		5B962424C7A94F6D991931DA /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94D91CBEAB70646EE509ABC1 /* AppDelegate.swift */; };
@@ -86,6 +87,7 @@
 		E1493E87CEADDDBA5C838B36 /* WallpaperStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF3B864FB40C46E23FEEEC9E /* WallpaperStore.swift */; };
 		E78A8D1BC0C6ADAE32B1A5F7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CF514B148862C8CA4AF361B9 /* Assets.xcassets */; };
 		E99E74DA87C64766DCCBDF93 /* NSScreen+DisplayID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0EF3F54F809DD998CF6D1A /* NSScreen+DisplayID.swift */; };
+		F08AECD82AD3C4BAA383E5CF /* WeatherSourceSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860AC94F14A68FF9DC490829 /* WeatherSourceSettingsStore.swift */; };
 		F5BB6F6E8C24855BCD129EA1 /* WatchdogTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 180A4857E93F7D9870B5C672 /* WatchdogTimer.swift */; };
 		F762AF778C90896409BAA504 /* LivelyInfoParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78B5796CC594FB0030C606A /* LivelyInfoParserTests.swift */; };
 		FA07542485DF142FAF3F8B2D /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A1894E1192EEE4193D08C7C /* DisplayManager.swift */; };
@@ -115,6 +117,7 @@
 		78E448097252883FFCECE65B /* VideoWallpaperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoWallpaperRuntime.swift; sourceTree = "<group>"; };
 		7A7D2D905FE5CFCB602DF898 /* WallpaperBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperBundle.swift; sourceTree = "<group>"; };
 		7AED0B46712DE2955E7F8C36 /* LivelyPropertiesParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivelyPropertiesParserTests.swift; sourceTree = "<group>"; };
+		860AC94F14A68FF9DC490829 /* WeatherSourceSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSourceSettingsStore.swift; sourceTree = "<group>"; };
 		8B3C7A945B36736A4D686B57 /* UpdateSettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSettingsStoreTests.swift; sourceTree = "<group>"; };
 		8F5D63B30CEEDFD5FCFD2F78 /* WallpaperValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperValidatorTests.swift; sourceTree = "<group>"; };
 		92557F82688DAB211309C7EB /* UpdateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateManager.swift; sourceTree = "<group>"; };
@@ -264,6 +267,7 @@
 				D5279A479F42BBDE0E8D017E /* RuntimePolicyStore.swift */,
 				C9F7783D63F18FBE2B07B93E /* UpdateSettingsStore.swift */,
 				DF3B864FB40C46E23FEEEC9E /* WallpaperStore.swift */,
+				860AC94F14A68FF9DC490829 /* WeatherSourceSettingsStore.swift */,
 			);
 			path = Persistence;
 			sourceTree = "<group>";
@@ -339,7 +343,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2650;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					98454B4E1708BC36D752F77B = {
 						ProvisioningStyle = Automatic;
@@ -431,6 +435,7 @@
 				664DD838FF8FA538C183EA5B /* WallpaperValidatorTests.swift in Sources */,
 				F5BB6F6E8C24855BCD129EA1 /* WatchdogTimer.swift in Sources */,
 				20B23CCC2D1CBE3139FB8271 /* WeatherKitBridge.swift in Sources */,
+				F08AECD82AD3C4BAA383E5CF /* WeatherSourceSettingsStore.swift in Sources */,
 				56E7EFBCCA30360A7FA32B57 /* WebWallpaperRuntime.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -474,6 +479,7 @@
 				BF57A11AB0F274F9780926BA /* WallpaperValidator.swift in Sources */,
 				3643CAFED46C543C9755BC00 /* WatchdogTimer.swift in Sources */,
 				BBA11FA87BE22ABD10DE3114 /* WeatherKitBridge.swift in Sources */,
+				559721E67EA463861FDBEC8C /* WeatherSourceSettingsStore.swift in Sources */,
 				C5BB99C4EC26482456C4DD5C /* WebWallpaperRuntime.swift in Sources */,
 				A81755CEBC2CCF01AECDD680 /* main.swift in Sources */,
 			);
@@ -507,13 +513,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/AetherDesk.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = N5PUFD82GV;
 				INFOPLIST_FILE = Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = AetherDesk;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -574,7 +577,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -589,7 +592,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 12.4;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -629,13 +632,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AetherDeskAppStore.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = N5PUFD82GV;
 				INFOPLIST_FILE = Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = AetherDesk;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-weak_framework",
@@ -682,7 +682,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -697,7 +697,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 12.4;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -719,13 +719,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/AetherDesk.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = N5PUFD82GV;
 				INFOPLIST_FILE = Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = AetherDesk;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -767,7 +764,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -788,7 +785,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 12.4;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;

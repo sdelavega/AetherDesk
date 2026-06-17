@@ -196,8 +196,9 @@ private final class PreferencesViewController: NSViewController {
             launchAtLoginStatusLabel.topAnchor.constraint(equalTo: launchAtLoginCheckbox.bottomAnchor, constant: 2),
             launchAtLoginStatusLabel.leadingAnchor.constraint(equalTo: launchAtLoginCheckbox.leadingAnchor, constant: 20),
             launchAtLoginStatusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-
-            #if !AETHERDESK_STORE
+        ])
+        #if !AETHERDESK_STORE
+        NSLayoutConstraint.activate([
             autoCheckUpdatesCheckbox.topAnchor.constraint(equalTo: launchAtLoginStatusLabel.bottomAnchor, constant: 16),
             autoCheckUpdatesCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
@@ -205,9 +206,13 @@ private final class PreferencesViewController: NSViewController {
             autoInstallUpdatesCheckbox.leadingAnchor.constraint(equalTo: autoCheckUpdatesCheckbox.leadingAnchor, constant: 20),
 
             revealButton.topAnchor.constraint(equalTo: autoInstallUpdatesCheckbox.bottomAnchor, constant: 16),
-            #else
+        ])
+        #else
+        NSLayoutConstraint.activate([
             revealButton.topAnchor.constraint(equalTo: launchAtLoginStatusLabel.bottomAnchor, constant: 16),
-            #endif
+        ])
+        #endif
+        NSLayoutConstraint.activate([
             revealButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
             note.topAnchor.constraint(equalTo: revealButton.bottomAnchor, constant: 20),
@@ -403,6 +408,28 @@ private final class PreferencesViewController: NSViewController {
         desc.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(desc)
 
+        #if AETHERDESK_STORE
+        // WeatherKit's terms require the data attribution to be reachable from
+        // the app, even though the wallpaper itself can't host a clickable
+        // link (wallpapers aren't supposed to be click-interactive). The
+        // WeatherAether wallpaper shows a plain-text "Apple Weather" /
+        // "Open-Meteo" credit in its current-conditions card; this button is
+        // where the actual legal-attribution link lives. Only the App Store
+        // build uses WeatherKit (see window.__weatherKitActive injection in
+        // WebWallpaperRuntime), so this is gated out of the OSS build, which
+        // is Open-Meteo-only and has nothing to attribute here.
+        let weatherAttributionButton = NSButton(
+            title: "Weather Data Attribution…",
+            target: self,
+            action: #selector(openWeatherKitAttribution))
+        weatherAttributionButton.bezelStyle = .inline
+        weatherAttributionButton.isBordered = false
+        weatherAttributionButton.contentTintColor = .linkColor
+        weatherAttributionButton.font = NSFont.systemFont(ofSize: 11)
+        weatherAttributionButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(weatherAttributionButton)
+        #endif
+
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: view.topAnchor, constant: 30),
             title.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -412,8 +439,14 @@ private final class PreferencesViewController: NSViewController {
 
             desc.topAnchor.constraint(equalTo: version.bottomAnchor, constant: 20),
             desc.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            desc.widthAnchor.constraint(lessThanOrEqualToConstant: 360)
+            desc.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
         ])
+        #if AETHERDESK_STORE
+        NSLayoutConstraint.activate([
+            weatherAttributionButton.topAnchor.constraint(equalTo: desc.bottomAnchor, constant: 14),
+            weatherAttributionButton.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+        ])
+        #endif
         return view
     }
 
@@ -459,12 +492,68 @@ private final class PreferencesViewController: NSViewController {
         wallpaperEditorContainer.addSubview(domainsLabel)
         self.contactedDomainsLabel = domainsLabel
 
+        // Wallpaper-specific controls go between the property editor and the
+        // geolocation/network section below. Currently only WeatherAether has
+        // one: a clearly-labeled control for which weather provider to use.
+        // The App Store build can genuinely serve either Apple Weather or
+        // Open-Meteo data (silent fallback on WeatherKit failure), and until
+        // now there was no user-facing way to see or change that — this
+        // closes that gap. Match on the bundle's folder name rather than its
+        // (possibly retitled/localized) Lively `Title` string.
+        var editorBottomAnchor: NSLayoutYAxisAnchor = geoCheckbox.topAnchor
+        var editorBottomConstant: CGFloat = -12
+
+        #if AETHERDESK_STORE
+        if bundle.baseURL.lastPathComponent == "WeatherAether" {
+            let sourceLabel = NSTextField(labelWithString: "Weather data source")
+            sourceLabel.font = NSFont.boldSystemFont(ofSize: 12)
+            sourceLabel.translatesAutoresizingMaskIntoConstraints = false
+            wallpaperEditorContainer.addSubview(sourceLabel)
+
+            let popup = NSPopUpButton()
+            popup.translatesAutoresizingMaskIntoConstraints = false
+            popup.addItem(withTitle: "Automatic — Apple Weather, falls back to Open-Meteo")
+            popup.addItem(withTitle: "Always use Open-Meteo")
+            let preference = WeatherSourceSettingsStore.shared.load()
+            popup.selectItem(at: preference == .automatic ? 0 : 1)
+            popup.target = self
+            popup.action = #selector(weatherSourceChanged(_:))
+            wallpaperEditorContainer.addSubview(popup)
+
+            let caption = NSTextField(wrappingLabelWithString:
+                "ÆtherDesk tries Apple Weather first and silently falls back to " +
+                "Open-Meteo if it's unavailable. The credit shown in the corner " +
+                "of the wallpaper always reflects whichever source actually " +
+                "supplied the data.")
+            caption.font = NSFont.systemFont(ofSize: 11)
+            caption.textColor = .secondaryLabelColor
+            caption.translatesAutoresizingMaskIntoConstraints = false
+            caption.lineBreakMode = .byWordWrapping
+            wallpaperEditorContainer.addSubview(caption)
+
+            NSLayoutConstraint.activate([
+                sourceLabel.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
+                sourceLabel.bottomAnchor.constraint(equalTo: popup.topAnchor, constant: -4),
+
+                popup.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
+                popup.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -4),
+
+                caption.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
+                caption.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor, constant: -10),
+                caption.bottomAnchor.constraint(equalTo: geoCheckbox.topAnchor, constant: -12)
+            ])
+
+            editorBottomAnchor = sourceLabel.topAnchor
+            editorBottomConstant = -16
+        }
+        #endif
+
         NSLayoutConstraint.activate([
-            // Scroll view fills from the top down to the geo section.
+            // Scroll view fills from the top down to the geo (or weather-source) section.
             editor.view.topAnchor.constraint(equalTo: wallpaperEditorContainer.topAnchor),
             editor.view.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor),
             editor.view.trailingAnchor.constraint(equalTo: wallpaperEditorContainer.trailingAnchor),
-            editor.view.bottomAnchor.constraint(equalTo: geoCheckbox.topAnchor, constant: -12),
+            editor.view.bottomAnchor.constraint(equalTo: editorBottomAnchor, constant: editorBottomConstant),
 
             // Geo section is anchored at the bottom of the container.
             geoCheckbox.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
@@ -503,6 +592,22 @@ private final class PreferencesViewController: NSViewController {
     @objc private func revealWallpaperFolder() {
         NSWorkspace.shared.open(WallpaperImporter.shared.wallpapersDirectory)
     }
+
+    #if AETHERDESK_STORE
+    @objc private func openWeatherKitAttribution() {
+        guard let url = URL(string: "https://weatherkit.apple.com/legal-attribution.html") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// This is a global preference, not a per-bundle one — there's only one
+    /// WeatherAether instance worth configuring in practice, and the choice
+    /// lives in native code (`WeatherKitBridge`), not the JS property bridge.
+    @objc private func weatherSourceChanged(_ sender: NSPopUpButton) {
+        let preference: WeatherDataSourcePreference =
+            (sender.indexOfSelectedItem == 0) ? .automatic : .openMeteoOnly
+        WeatherSourceSettingsStore.shared.save(preference)
+    }
+    #endif
 
     @objc private func geoPermissionChanged(_ sender: NSButton) {
         guard let bundleID = objc_getAssociatedObject(sender, &AssociatedKeys.bundleID) as? UUID else { return }

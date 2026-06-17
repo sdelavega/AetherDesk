@@ -186,9 +186,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         userContent.addUserScript(bootstrap)
 
         #if AETHERDESK_STORE
-        // Inject the WeatherKit flag before any page JS runs so that
-        // wallpapers can check window.__weatherKitActive synchronously
-        // during their own init (e.g. to show the Apple Weather attribution).
+        // Seed window.__weatherKitActive with an initial guess (true: "we're
+        // attempting WeatherKit") before any page JS runs, so wallpapers have
+        // a synchronously-readable value during their own init. This is only
+        // a starting guess, not the source of truth — the real, per-fetch
+        // answer arrives later via _nativeFetchResponse (see bridgeBootstrapScript
+        // above), which overwrites this flag with "weatherkit" or "open-meteo"
+        // based on what each forecast request actually used, including the
+        // silent URLSession fallback when WeatherKit is unavailable. Wallpapers
+        // that want an accurate attribution should re-check the flag after each
+        // fetch resolves (WeatherAether does this from applyWeather()).
         let weatherKitFlag = WKUserScript(
             source: "window.__weatherKitActive = true;",
             injectionTime: .atDocumentStart,
@@ -389,8 +396,11 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         // WeatherKit instead of forwarding to open-meteo over URLSession.
         #if AETHERDESK_STORE
         if WeatherKitBridge.shouldIntercept(url) {
-            WeatherKitBridge.shared.fetch(url: url) { [weak self] status, body in
-                self?.deliverFetchResult(id: id, status: status, body: body)
+            WeatherKitBridge.shared.fetch(url: url) { [weak self] status, body, usedWeatherKit in
+                // Only stamp a source when the request actually succeeded; on
+                // failure (status 0) there's no data to attribute either way.
+                let source: String? = status == 0 ? nil : (usedWeatherKit ? "weatherkit" : "open-meteo")
+                self?.deliverFetchResult(id: id, status: status, body: body, weatherSource: source)
             }
             return
         }
@@ -452,8 +462,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         }
     }
 
-    private func deliverFetchResult(id: Int, status: Int, body: String?) {
-        let payload: [String: Any] = ["id": id, "status": status, "body": body ?? ""]
+    /// `weatherSource`, when non-nil, is one of "weatherkit" / "open-meteo" and
+    /// tells the JS layer which provider actually produced this response so
+    /// WeatherAether's attribution credit line can reflect reality rather than
+    /// a static build-time guess. Only the WeatherKitBridge interception path
+    /// (App Store builds) ever passes a non-nil value.
+    private func deliverFetchResult(id: Int, status: Int, body: String?, weatherSource: String? = nil) {
+        var payload: [String: Any] = ["id": id, "status": status, "body": body ?? ""]
+        if let weatherSource {
+            payload["weatherSource"] = weatherSource
+        }
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
               let jsonStr = String(data: jsonData, encoding: .utf8) else { return }
         DispatchQueue.main.async { [weak self] in
@@ -526,6 +544,17 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                 },
                 // Called by native code with the URLSession response for a proxied fetch.
                 _nativeFetchResponse: function(resp) {
+                    // App Store builds: native side tells us per-request whether
+                    // this particular response came from WeatherKit or the
+                    // Open-Meteo fallback. Set the flag before resolving so any
+                    // .then() handler (e.g. applyWeather -> setupAttribution)
+                    // sees the correct, per-fetch value rather than a stale
+                    // build-time guess.
+                    if (resp.weatherSource === 'weatherkit') {
+                        window.__weatherKitActive = true;
+                    } else if (resp.weatherSource === 'open-meteo') {
+                        window.__weatherKitActive = false;
+                    }
                     var pending = _pendingFetches[resp.id];
                     if (!pending) return;
                     delete _pendingFetches[resp.id];

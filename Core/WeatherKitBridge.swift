@@ -39,16 +39,21 @@ final class WeatherKitBridge {
     /// Returns true when the URL should be fulfilled by WeatherKit instead of
     /// being forwarded to URLSession. Only the forecast endpoint is intercepted;
     /// geocoding requests (geocoding-api.open-meteo.com) pass through normally.
+    /// Honors the user's `WeatherSourceSettingsStore` preference — when the
+    /// user has forced Open-Meteo-only, we never attempt WeatherKit at all.
     static func shouldIntercept(_ url: URL) -> Bool {
-        url.host == "api.open-meteo.com"
+        guard url.host == "api.open-meteo.com" else { return false }
+        return WeatherSourceSettingsStore.shared.load() == .automatic
     }
 
     // MARK: - Fetch
 
     /// Fetches weather via WeatherKit and calls `completion` with an
-    /// (HTTP status, JSON body) pair formatted to match open-meteo's response
-    /// schema. Runs the WeatherKit async call on a Swift concurrency Task.
-    func fetch(url: URL, completion: @escaping (Int, String?) -> Void) {
+    /// (HTTP status, JSON body, usedWeatherKit) triple. `usedWeatherKit` is
+    /// true only when the data genuinely came from WeatherKit; it's false for
+    /// the URLSession fallback so callers can credit Open-Meteo accurately.
+    /// Runs the WeatherKit async call on a Swift concurrency Task.
+    func fetch(url: URL, completion: @escaping (Int, String?, Bool) -> Void) {
         guard
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
             let latStr = components.queryItems?.first(where: { $0.name == "latitude" })?.value,
@@ -57,7 +62,7 @@ final class WeatherKitBridge {
             let lon = Double(lonStr)
         else {
             Logger.app.warning("ÆtherDesk WeatherKitBridge: could not parse lat/lon from URL")
-            completion(0, nil)
+            completion(0, nil, false)
             return
         }
 
@@ -80,9 +85,9 @@ final class WeatherKitBridge {
                 )
                 if let data = try? JSONSerialization.data(withJSONObject: json),
                    let body = String(data: data, encoding: .utf8) {
-                    completion(200, body)
+                    completion(200, body, true)
                 } else {
-                    completion(0, nil)
+                    completion(0, nil, false)
                 }
             } catch {
                 // WeatherKit unavailable (e.g. capability not yet active on this
@@ -92,12 +97,12 @@ final class WeatherKitBridge {
                 URLSession.shared.dataTask(with: url) { data, response, taskError in
                     if let taskError {
                         Logger.app.error("ÆtherDesk WeatherKitBridge: URLSession fallback also failed: \(taskError.localizedDescription)")
-                        completion(0, nil)
+                        completion(0, nil, false)
                         return
                     }
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     let body = data.flatMap { String(data: $0, encoding: .utf8) }
-                    completion(status, body)
+                    completion(status, body, false)
                 }.resume()
             }
         }
