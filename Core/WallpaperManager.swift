@@ -300,6 +300,12 @@ final class WallpaperManager {
                            object: nil)
         }
 
+        // Pause when memory pressure becomes critical.
+        nc.addObserver(self,
+                       selector: #selector(memoryPressureStateChanged),
+                       name: NSNotification.Name("NSProcessInfoMemoryPressureNotification"),
+                       object: nil)
+
         // Pause on display sleep / unpause on wake.
         let wsnc = NSWorkspace.shared.notificationCenter
         wsnc.addObserver(self, selector: #selector(screenDidSleep),
@@ -396,6 +402,12 @@ final class WallpaperManager {
 
     @objc private func sessionDidResignActive() { pauseAll() }
     @objc private func sessionDidBecomeActive() { applyPowerPerformancePolicy() }
+
+        @objc private func memoryPressureStateChanged() {
+        // The notification itself indicates memory pressure.
+        Logger.app.warning("ÆtherDesk: memory pressure notification — pausing all runtimes")
+        pauseAll()
+    }
     @objc private func screenDidSleep() { pauseAll() }
 
     @objc private func screenDidWake() {
