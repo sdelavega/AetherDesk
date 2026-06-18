@@ -53,7 +53,7 @@ final class WeatherKitBridge {
     /// true only when the data genuinely came from WeatherKit; it's false for
     /// the URLSession fallback so callers can credit Open-Meteo accurately.
     /// Runs the WeatherKit async call on a Swift concurrency Task.
-    func fetch(url: URL, completion: @escaping (Int, String?, Bool) -> Void) {
+    func fetch(url: URL, bundleID: UUID, completion: @escaping (Int, String?, Bool) -> Void) {
         guard
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
             let latStr = components.queryItems?.first(where: { $0.name == "latitude" })?.value,
@@ -94,17 +94,53 @@ final class WeatherKitBridge {
                 // App ID, or service error). Fall back to the original open-meteo
                 // URL via URLSession so weather still works.
                 Logger.app.error("ÆtherDesk WeatherKitBridge: WeatherKit failed (\(error.localizedDescription)), falling back to URLSession")
-                URLSession.shared.dataTask(with: url) { data, response, taskError in
-                    if let taskError {
-                        Logger.app.error("ÆtherDesk WeatherKitBridge: URLSession fallback also failed: \(taskError.localizedDescription)")
-                        completion(0, nil, false)
-                        return
-                    }
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    let body = data.flatMap { String(data: $0, encoding: .utf8) }
-                    completion(status, body, false)
-                }.resume()
+                self.performValidatedFallback(url: url, bundleID: bundleID, completion: completion)
             }
+        }
+    }
+
+    // MARK: - Open-Meteo fallback with native fetch guards
+
+    private func performValidatedFallback(url: URL, bundleID: UUID, completion: @escaping (Int, String?, Bool) -> Void) {
+        let settings = AppSettingsStore.shared.loadPerformanceSettings()
+        let policy = NetworkPolicy(bundleID: bundleID, allowLANAccess: settings.allowLANAccess)
+
+        switch policy.validate(url: url) {
+        case .success(let validatedURL):
+            DispatchQueue.global(qos: .userInitiated).async {
+                switch policy.validateResolvedAddresses(for: validatedURL) {
+                case .success(let safeURL):
+                    var request = URLRequest(url: safeURL, timeoutInterval: 30)
+                    request.cachePolicy = .reloadIgnoringLocalCacheData
+                    URLSession.shared.downloadTask(with: request) { tempURL, response, taskError in
+                        if let taskError {
+                            Logger.app.error("ÆtherDesk WeatherKitBridge: URLSession fallback also failed: \(taskError.localizedDescription)")
+                            completion(0, nil, false)
+                            return
+                        }
+                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                        let body: String? = {
+                            guard let tempURL = tempURL else { return nil }
+                            let fm = FileManager.default
+                            guard let attrs = try? fm.attributesOfItem(atPath: tempURL.path),
+                                  let fileSize = attrs[.size] as? Int64,
+                                  fileSize <= Constants.Defaults.maxNativeFetchResponseBytes else {
+                                Logger.app.warning("ÆtherDesk WeatherKitBridge: rejected oversized fallback response")
+                                return nil
+                            }
+                            guard let data = try? Data(contentsOf: tempURL) else { return nil }
+                            return String(data: data, encoding: .utf8)
+                        }()
+                        completion(status, body, false)
+                    }.resume()
+                case .failure(let reason):
+                    Logger.app.warning("ÆtherDesk WeatherKitBridge: fallback DNS rebinding blocked — \(reason.description)")
+                    completion(0, nil, false)
+                }
+            }
+        case .failure(let reason):
+            Logger.app.warning("ÆtherDesk WeatherKitBridge: fallback policy blocked — \(reason.description)")
+            completion(0, nil, false)
         }
     }
 

@@ -409,7 +409,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         // WeatherKit instead of forwarding to open-meteo over URLSession.
         #if AETHERDESK_STORE
         if WeatherKitBridge.shouldIntercept(url) {
-            WeatherKitBridge.shared.fetch(url: url) { [weak self] status, body, usedWeatherKit in
+            WeatherKitBridge.shared.fetch(url: url, bundleID: bundle.id) { [weak self] status, body, usedWeatherKit in
                 // Only stamp a source when the request actually succeeded; on
                 // failure (status 0) there's no data to attribute either way.
                 let source: String? = status == 0 ? nil : (usedWeatherKit ? "weatherkit" : "open-meteo")
