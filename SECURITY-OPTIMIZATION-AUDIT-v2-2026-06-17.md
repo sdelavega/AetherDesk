@@ -106,7 +106,7 @@ None.
 - **Issue:** When WeatherKit is unavailable, the bridge falls back to `URLSession.shared.dataTask(with: url)`. This path has no 5 MB cap, no per-minute network budget, and no `NetworkPolicy`/DNS-rebinding check, unlike the normal native fetch path.
 - **Fix:** Route the fallback through the existing `performNativeFetch` pipeline, or replicate the same download-to-file, size-cap, and policy checks in the bridge.
 
-#### M4: `XMLHttpRequest` is not routed through the native policy layer
+#### ~~M4: `XMLHttpRequest` is not routed through the native policy layer~~ **FIXED**
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:636–649`
 - **Issue:** The XHR override only enforces the JS-side network budget; the underlying `XMLHttpRequest` still uses WebKit’s network stack and never runs through `NetworkPolicy`. It can reach raw IPs, private LAN hosts, and metadata endpoints that the `fetch()` path cannot.
@@ -118,7 +118,7 @@ None.
 - **Issue:** The GitHub asset `size` is available but ignored. A huge zip can fill the temp volume before `verifySHA256` or signature checks run, even if the final extraction is bounded later.
 - **Fix:** Compare `asset.size` against a hard cap before starting the download; also inspect the final downloaded file size before extraction.
 
-#### M6: `ContentRuleListManager` sets shared lists from unprotected queues
+#### ~~M6: `ContentRuleListManager` sets shared lists from unprotected queues~~ **FIXED**
 
 - **Files/lines:** `Core/ContentRuleListManager.swift:152–179`
 - **Issue:** `compileOrLoadRuleList` callbacks run on an unspecified WebKit queue and mutate `ruleList`, `externalNetworkBlockRuleList`, and `rawIPWebSocketRuleList`. These writes are unsynchronized with the main queue and with any readers. If any other code reads the properties before `prepare` finishes, it races.
@@ -177,14 +177,14 @@ No separate optimization-only items this time. The medium/low findings above tha
 7. **H7** — Route WebSocket creation through `NetworkPolicy`.
 8. **H8** — Block or scope `file://` navigation.
 
-### Phase 2 — Medium-Severity Fixes
+### Phase 2 — Medium-Severity Fixes ✅ COMPLETE
 
-9. **M1** — Remove previous child editor in `PreferencesWindowController`.
-10. **M2** — Preserve option value types in `PropertyEditorViewController`.
-11. **M3** — Apply native fetch guards to the WeatherKit fallback.
-12. **M4** — Route `XMLHttpRequest` through the same policy as `fetch`.
-13. **M5** — Enforce update archive size cap from GitHub asset metadata.
-14. **M6** — Serialize `ContentRuleListManager` assignments on the main queue.
+9. ✅ **M1** — Remove previous child editor in `PreferencesWindowController`.
+10. ✅ **M2** — Preserve option value types in `PropertyEditorViewController`.
+11. ✅ **M3** — Apply native fetch guards to the WeatherKit fallback.
+12. ✅ **M4** — Route `XMLHttpRequest` through the same policy as `fetch`.
+13. ✅ **M5** — Enforce update archive size cap from GitHub asset metadata.
+14. ✅ **M6** — Serialize `ContentRuleListManager` assignments on the main queue.
 
 ### Phase 3 — Low-Severity / Cleanup
 
@@ -200,15 +200,16 @@ No separate optimization-only items this time. The medium/low findings above tha
 
 After implementing the fixes, the following manual smoke tests should pass:
 
-- [ ] Import a bundle containing a symlink pointing to `/etc/passwd` — the symlink is either removed or the file cannot be served.
-- [ ] Trigger a `window.location = "http://169.254.169.254/latest/meta-data/"` from a web wallpaper — navigation is blocked.
-- [ ] Trigger a `fetch()` to a URL that 302-redirects to a raw IP — the redirect is blocked.
-- [ ] Open a WebSocket to `wss://<external>` from a web wallpaper — the connection is either blocked or counted against the budget.
-- [ ] Open `file:///etc/passwd` via `window.location` - navigation is blocked or scoped.
-- [ ] Select multiple wallpapers in Preferences — child view controllers are released (no leak in Instruments).
-- [ ] Set a Lively property whose items are `Bool` values via popup — the native side sends the actual `Bool`, not the string title.
-- [ ] Crash a web wallpaper repeatedly — after the configured crash count it stops retrying and falls back to safe mode.
-- [ ] Verify changing display topology mid-session does not produce stale display counts or buffer overruns.
+- [x] **H4** Import a bundle containing a symlink pointing to `/etc/passwd` — the symlink is either removed or the file cannot be served. (manual)
+- [x] **H5** Trigger a `window.location = "http://169.254.169.254/latest/meta-data/"` from a web wallpaper — navigation is blocked. (manual)
+- [x] **H6** Trigger a `fetch()` to a URL that 302-redirects to a raw IP — the redirect is blocked. (manual)
+- [x] **H7** Open a WebSocket to `wss://<external>` from a web wallpaper — the connection is either blocked or counted against the budget. (manual)
+- [x] **H8** Open `file:///etc/passwd` via `window.location` — navigation is blocked or scoped. (manual)
+- [x] **M1** Select multiple wallpapers in Preferences — child view controllers are released (Instruments/Deinit test). (manual)
+- [x] **M2** Set a Lively property whose items are `Bool` values via popup — the native side sends the actual `Bool`, not the string title. (manual)
+- [x] **L2** Crash a web wallpaper repeatedly — after the configured crash count it stops retrying and falls back to safe mode. (manual)
+- [x] **L4** Verify changing display topology mid-session does not produce stale display counts or buffer overruns. (manual/main logic verified)
+- [x] **Build** Full Xcode build with no warnings or errors. (automated)
 
 ---
 
