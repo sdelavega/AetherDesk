@@ -78,14 +78,20 @@ class PropertyStore {
         return result
     }
 
-    private func isSafePropertyValue(_ value: Any) -> Bool {
+    private static let maxCollectionDepth = 5
+
+    private func isSafePropertyValue(_ value: Any, depth: Int = 0) -> Bool {
+        guard depth <= Self.maxCollectionDepth else {
+            Logger.app.warning("ÆtherDesk: property exceeds maximum nesting depth")
+            return false
+        }
         switch value {
         case is String, is Bool, is Int, is Double, is Float:
             return true
         case let arr as [Any]:
-            return arr.count <= 100 && arr.allSatisfy { isSafePropertyValue($0) }
+            return arr.count <= 100 && arr.allSatisfy { isSafePropertyValue($0, depth: depth + 1) }
         case let dict as [String: Any]:
-            return dict.count <= 100 && dict.values.allSatisfy { isSafePropertyValue($0) }
+            return dict.count <= 100 && dict.values.allSatisfy { isSafePropertyValue($0, depth: depth + 1) }
         case is NSNull:
             return true
         default:
