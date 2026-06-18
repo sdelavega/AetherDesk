@@ -33,7 +33,7 @@ class DisplayManager {
         var stable = false
         var attempts = 0
         while !stable && attempts < 5 {
-            var previousCount = displayCount
+            let previousCount = displayCount
             CGGetActiveDisplayList(0, nil, &displayCount)
             stable = (displayCount == previousCount && displayCount > 0)
             attempts += 1

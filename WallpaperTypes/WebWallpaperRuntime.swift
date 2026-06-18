@@ -242,6 +242,12 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         wv.navigationDelegate = self
         wv.wantsLayer = true
         wv.layer?.backgroundColor = NSColor.clear.cgColor
+        // Stop WebKit from painting its own opaque base layer every frame.
+        // Without this the document is composited over an opaque white fill
+        // (overdraw on the desktop-level layer, and a flash of white for any
+        // wallpaper that wants transparency). The thumbnail renderer already
+        // does this; keep the live runtime consistent.
+        wv.setValue(false, forKey: "drawsBackground")
         wv.allowsMagnification = false
         wv.allowsBackForwardNavigationGestures = false
 

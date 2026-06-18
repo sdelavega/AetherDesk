@@ -541,7 +541,18 @@ final class WallpaperManager {
         return false
     }
 
+    /// True only when the system is actually drawing from an internal battery.
+    ///
+    /// Uses the *providing* power-source type rather than the presence of an
+    /// external power adapter. `IOPSCopyExternalPowerAdapterDetails()` returns
+    /// nil on battery-less desktops (Mac mini, Studio, Pro, iMac), so the old
+    /// `== nil` test read those machines as "on battery" — which, with
+    /// `pauseOnBatteryPower` enabled, would freeze the wallpaper permanently on
+    /// a desktop. `IOPSGetProvidingPowerSourceType` reports "AC Power" on those
+    /// machines and only "Battery Power" on a portable actually running unplugged.
     private var isOnBatteryPower: Bool {
-        IOPSCopyExternalPowerAdapterDetails()?.takeRetainedValue() == nil
+        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return false }
+        let type = IOPSGetProvidingPowerSourceType(snapshot).takeUnretainedValue() as String
+        return type == (kIOPSBatteryPowerValue as String)
     }
 }

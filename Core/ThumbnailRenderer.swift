@@ -57,6 +57,12 @@ final class ThumbnailRenderer {
     private var webViewPool: [WKWebView] = []
     private static let maxPoolSize = 2
 
+    /// Releases pooled offscreen WKWebViews after a period of inactivity so the
+    /// picker doesn't leave web-content helper processes (tens of MB each)
+    /// resident for the whole session once thumbnail rendering goes quiet.
+    private var poolDrainWork: DispatchWorkItem?
+    private static let poolIdleTimeout: TimeInterval = 30
+
     /// Renders waiting to start because `maxConcurrentWebRenders` is saturated.
     private var webRenderQueue: [WebRenderRequest] = []
     private static let maxConcurrentWebRenders = 3
@@ -68,7 +74,11 @@ final class ThumbnailRenderer {
             .appendingPathComponent(Constants.bundleIdentifier, isDirectory: true)
             .appendingPathComponent("thumbnails", isDirectory: true)
         try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        pruneOrphanedCache()
+        // Prune on the serial render queue so the disk scan + listWallpapers()
+        // never block whatever thread first touches `.shared` (often the main
+        // thread, when the picker opens). The queue is serial, so this also
+        // can't race or thrash the disk against concurrent thumbnail writes.
+        queue.async { [weak self] in self?.pruneOrphanedCache() }
     }
 
     /// Remove cached thumbnails whose bundle no longer exists. Called once
@@ -269,6 +279,10 @@ final class ThumbnailRenderer {
 
     private func startWebRender(indexURL: URL, baseURL: URL, size: NSSize,
                                 completion: @escaping (NSImage?) -> Void) {
+        // A render is starting — cancel any pending idle-drain so we keep the
+        // pool warm through a burst of thumbnail requests.
+        poolDrainWork?.cancel()
+        poolDrainWork = nil
         let token = UUID()
         let wv = checkoutWebView(size: size)
         let render = WebRender(token: token, size: size, webView: wv,
@@ -292,6 +306,27 @@ final class ThumbnailRenderer {
             startWebRender(indexURL: next.indexURL, baseURL: next.baseURL,
                            size: next.size, completion: next.completion)
         }
+        // Once all rendering has gone quiet, schedule the pool to be released
+        // so idle offscreen web-content processes don't linger for the session.
+        if webRenderQueue.isEmpty && pendingWebRenders.isEmpty {
+            schedulePoolDrain()
+        }
+    }
+
+    /// Schedule release of the pooled offscreen WKWebViews after an idle window.
+    /// Always called on the main queue (the only queue that touches the pool).
+    private func schedulePoolDrain() {
+        guard !webViewPool.isEmpty else { return }
+        poolDrainWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self,
+                  self.pendingWebRenders.isEmpty,
+                  self.webRenderQueue.isEmpty else { return }
+            for wv in self.webViewPool { wv.stopLoading() }
+            self.webViewPool.removeAll()
+        }
+        poolDrainWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.poolIdleTimeout, execute: work)
     }
 
     // MARK: WebView pool
@@ -314,6 +349,14 @@ final class ThumbnailRenderer {
         let userContent = WKUserContentController()
         if let ruleList = ContentRuleListManager.shared.ruleList {
             userContent.add(ruleList)
+        }
+        // Apply the always-on SSRF defense here too. The offscreen webview runs
+        // the bundle's index.html (for the settle window) before the user has
+        // ever selected the wallpaper, so it must not be able to probe raw-IP /
+        // localhost / mDNS / cloud-metadata endpoints during thumbnailing — the
+        // same protection the live runtime always installs.
+        if let ssrf = ContentRuleListManager.shared.ssrfBlockRuleList {
+            userContent.add(ssrf)
         }
         config.userContentController = userContent
         let wv = WKWebView(frame: frame, configuration: config)
