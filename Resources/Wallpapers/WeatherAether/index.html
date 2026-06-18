@@ -211,12 +211,12 @@ var S={
   weather:null,staleTime:null,
   sunrise:null,sunset:null,isDay:true,
   props:{
-    locationMode:'auto',manualLocation:'Charlotte, NC',
+    locationMode:'auto',manualLocation:'20500',
     units:'imperial',forecastOpacity:0.9,
     animationSpeed:1.0,showParticles:true,accentColor:'#6fb8ff'
   },
   particles:[],stars:[],particleType:null,weatherBucket:'clear',
-  animationFrameId:null,refreshTimeout:null,lastFrameTime:0,
+  animationFrameId:null,refreshTimeout:null,lastFrameTime:0,fetchSeq:0,
   lightningAlpha:0,lightningCooldown:5,fogAlpha:0,
   canvas:null,ctx:null,iconCache:{}
 };
@@ -482,9 +482,22 @@ function refreshWeather(){
     return;
   }
   var cached=loadCachedWeather();
+  // Sequence guard: only the most-recently-issued forecast may update the
+  // display. Without this, a slower earlier fetch (e.g. the startup
+  // cached-coordinates request) can resolve last and overwrite the data -- and
+  // the source credit -- of the location the user actually selected.
+  var mySeq=++S.fetchSeq;
   fetchWithTimeout(buildForecastUrl(),6000)
-    .then(function(r){return r.json();})
+    .then(function(r){
+      // The native bridge tags each forecast response with the source that
+      // actually produced it (WeatherKit or the Open-Meteo fallback). Capture
+      // it here so the credit line reflects THIS response, not a global flag
+      // that a concurrent fetch may have changed.
+      var src=r.headers.get('X-AetherDesk-Weather-Source');
+      return r.json().then(function(d){d._src=src||null;return d;});
+    })
     .then(function(d){
+      if(mySeq!==S.fetchSeq)return;
       d._ts=Date.now();
       cacheWeather(d);
       S.staleTime=null;
@@ -492,6 +505,7 @@ function refreshWeather(){
       applyWeather(d);
     })
     .catch(function(){
+      if(mySeq!==S.fetchSeq)return;
       if(cached){
         S.staleTime=cached._ts||Date.now();
         applyWeather(cached);
@@ -523,6 +537,13 @@ function scheduleRefresh(){
 // type changed (e.g., was clear, now rainy).
 function applyWeather(d){
   S.weather=d;
+  // Align the data-source credit with the data actually being shown. `_src` is
+  // attached per-response in refreshWeather() and persisted into the localStorage
+  // cache, so fresh, stale, and on-launch cached displays all credit the source
+  // that genuinely produced the numbers on screen. Absent (older cache / OSS
+  // build with no WeatherKit), leave the existing flag untouched.
+  if(d&&d._src==='weatherkit')window.__weatherKitActive=true;
+  else if(d&&d._src==='open-meteo')window.__weatherKitActive=false;
   var cur=d.current;
   var daily=d.daily;
   if(cur.is_day!==undefined)S.isDay=cur.is_day===1;
@@ -1286,7 +1307,16 @@ function init(){
   if(cachedW){applyWeather(cachedW);}
   else{renderFallbackUI();showPill('waiting for weather\u2026');}
   S.animationFrameId=requestAnimationFrame(render);
-  if(S.lat!=null&&S.lon!=null){setTimeout(function(){refreshWeather();},100);}
+  // Eagerly refresh the cached coordinates ONLY in auto mode, where the cached
+  // location is the user's last real location and showing it fast is the point.
+  // In manual mode the cached coordinates may belong to a different place, and
+  // firing this forecast would race the manual-location forecast below — the
+  // race that made the current-conditions credit flip sources. Manual mode
+  // instead waits for resolveLocation() (geocode) to produce the one forecast
+  // for the location the user actually chose.
+  if(S.props.locationMode!=='manual'&&S.lat!=null&&S.lon!=null){
+    setTimeout(function(){refreshWeather();},100);
+  }
   resolveLocation().then(function(){
     refreshWeather();
   });

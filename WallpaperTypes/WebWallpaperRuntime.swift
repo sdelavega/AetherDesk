@@ -707,7 +707,17 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                         return;
                     }
                     try {
-                        pending.resolve(new Response(resp.body, { status: resp.status }));
+                        // Carry the per-fetch data source (weatherkit / open-meteo)
+                        // on the Response itself so a wallpaper can label exactly
+                        // the response it applies, rather than relying on the
+                        // process-global window.__weatherKitActive flag (which a
+                        // concurrent/older fetch can stomp). Only present when the
+                        // native side actually attributed this response.
+                        var _respInit = { status: resp.status };
+                        if (resp.weatherSource !== undefined) {
+                            _respInit.headers = { 'X-AetherDesk-Weather-Source': String(resp.weatherSource) };
+                        }
+                        pending.resolve(new Response(resp.body, _respInit));
                     } catch(e) {
                         pending.reject(e);
                     }

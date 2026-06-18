@@ -9,9 +9,9 @@
         },
         {
             "Name": "manualLocation",
-            "Description": "City name for manual mode",
+            "Description": "City name or ZIP for manual mode",
             "Type": "textbox",
-            "Value": "Charlotte, NC"
+            "Value": "20500"
         },
         {
             "Name": "units",
