@@ -94,7 +94,7 @@ final class ContentRuleListManager {
     private static let rawIPWebSocketBlockJSON = #"""
     [
       {
-        "trigger": { "url-filter": "^wss?://\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}" },
+        "trigger": { "url-filter": "^wss?://[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?" },
         "action": { "type": "block" }
       },
       {
@@ -118,7 +118,7 @@ final class ContentRuleListManager {
     ///     metadata.azure.com, 169.254.169.254.nip.io, etc.)
     private static let ssrfBlockJSON = #"""
     [
-      { "trigger": { "url-filter": "^https?://\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?" }, "action": { "type": "block" } },
       { "trigger": { "url-filter": "^https?://\\[" }, "action": { "type": "block" } },
       { "trigger": { "url-filter": "^https?://[^/]*localhost([/:]|$)" }, "action": { "type": "block" } },
       { "trigger": { "url-filter": "^https?://[^/]*\\.localhost([/:]|$)" }, "action": { "type": "block" } },

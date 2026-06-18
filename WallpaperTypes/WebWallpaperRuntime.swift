@@ -457,6 +457,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         // WeatherKit instead of forwarding to open-meteo over URLSession.
         #if AETHERDESK_STORE
         if WeatherKitBridge.shouldIntercept(url) {
+            Logger.app.info("ÆtherDesk: intercepting forecast fetch through WeatherKitBridge id=\(id, privacy: .public)")
             WeatherKitBridge.shared.fetch(url: url, bundleID: bundle.id) { [weak self] status, body, usedWeatherKit in
                 // Only stamp a source when the request actually succeeded; on
                 // failure (status 0) there's no data to attribute either way.
@@ -550,6 +551,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     /// a static build-time guess. Only the WeatherKitBridge interception path
     /// (App Store builds) ever passes a non-nil value.
     private func deliverFetchResult(id: Int, status: Int, body: String?, weatherSource: String? = nil) {
+        Logger.app.info("ÆtherDesk: delivering native fetch result id=\(id, privacy: .public) status=\(status, privacy: .public) weatherSource=\(weatherSource ?? "nil", privacy: .public) bodyBytes=\((body?.utf8.count ?? 0), privacy: .public)")
         var payload: [String: Any] = ["id": id, "status": status, "body": body ?? ""]
         if let weatherSource {
             payload["weatherSource"] = weatherSource

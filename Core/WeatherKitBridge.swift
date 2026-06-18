@@ -42,8 +42,14 @@ final class WeatherKitBridge {
     /// Honors the user's `WeatherSourceSettingsStore` preference — when the
     /// user has forced Open-Meteo-only, we never attempt WeatherKit at all.
     static func shouldIntercept(_ url: URL) -> Bool {
-        guard url.host == "api.open-meteo.com" else { return false }
-        return WeatherSourceSettingsStore.shared.load() == .automatic
+        guard url.host == "api.open-meteo.com" else {
+            Logger.app.info("ÆtherDesk WeatherKitBridge: not intercepting host \(url.host ?? "(nil)", privacy: .public)")
+            return false
+        }
+        let preference = WeatherSourceSettingsStore.shared.load()
+        let shouldIntercept = preference == .automatic
+        Logger.app.info("ÆtherDesk WeatherKitBridge: forecast intercept \(shouldIntercept ? "enabled" : "disabled", privacy: .public) preference=\(preference.rawValue, privacy: .public)")
+        return shouldIntercept
     }
 
     // MARK: - Fetch
@@ -72,6 +78,8 @@ final class WeatherKitBridge {
         let windUnit  = components.queryItems?.first(where: { $0.name == "wind_speed_unit" })?.value ?? "kmh"
         let location  = CLLocation(latitude: lat, longitude: lon)
 
+        Logger.app.info("ÆtherDesk WeatherKitBridge: fetching WeatherKit forecast lat=\(lat, privacy: .public) lon=\(lon, privacy: .public) tempUnit=\(tempUnit, privacy: .public) windUnit=\(windUnit, privacy: .public)")
+
         Task {
             do {
                 let (current, hourly, daily) = try await service.weather(
@@ -87,8 +95,10 @@ final class WeatherKitBridge {
                 )
                 if let data = try? JSONSerialization.data(withJSONObject: json),
                    let body = String(data: data, encoding: .utf8) {
+                    Logger.app.info("ÆtherDesk WeatherKitBridge: WeatherKit forecast succeeded")
                     completion(200, body, true)
                 } else {
+                    Logger.app.error("ÆtherDesk WeatherKitBridge: failed to serialize WeatherKit forecast")
                     completion(0, nil, false)
                 }
             } catch {
@@ -106,6 +116,8 @@ final class WeatherKitBridge {
     private func performValidatedFallback(url: URL, bundleID: UUID, completion: @escaping (Int, String?, Bool) -> Void) {
         let settings = AppSettingsStore.shared.loadPerformanceSettings()
         let policy = NetworkPolicy(bundleID: bundleID, allowLANAccess: settings.allowLANAccess)
+
+        Logger.app.info("ÆtherDesk WeatherKitBridge: starting validated Open-Meteo fallback")
 
         switch policy.validate(url: url) {
         case .success(let validatedURL):
@@ -133,6 +145,7 @@ final class WeatherKitBridge {
                             guard let data = try? Data(contentsOf: tempURL) else { return nil }
                             return String(data: data, encoding: .utf8)
                         }()
+                        Logger.app.info("ÆtherDesk WeatherKitBridge: Open-Meteo fallback completed status=\(status, privacy: .public) hasBody=\((body != nil), privacy: .public)")
                         completion(status, body, false)
                     }.resume()
                 case .failure(let reason):

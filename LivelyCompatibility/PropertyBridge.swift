@@ -176,10 +176,16 @@ final class PropertyBridge: NSObject {
         } else {
             isLowPower = false
         }
+        // NOTE: do NOT include "fpsCap" here. It is defined once at bootstrap as
+        // a non-writable, non-configurable property (so wallpaper JS can't raise
+        // the native cap). _setEnvironment merges this dict with Object.assign,
+        // and assigning to that read-only property throws "Attempted to assign to
+        // readonly property", aborting the environment update. The cap is already
+        // correct from the bootstrap (and a reload rebuilds the webview with the
+        // current cap), so re-sending it here is both unnecessary and harmful.
         let systemDict: [String: Any] = [
             "isLowPowerMode": isLowPower,
             "isOnline":       true,
-            "fpsCap":         fpsCap,
             "qualityMode":    "balanced"
         ]
         let env: [String: Any] = ["display": displayDict, "system": systemDict]
@@ -304,7 +310,7 @@ final class PropertyBridge: NSObject {
         if Thread.isMainThread {
             webView.evaluateJavaScript(js) { _, error in
                 if let error = error {
-                    Logger.app.error("ÆtherDesk: \(tag)iled: \(String(describing: error))")
+                    Logger.app.error("ÆtherDesk: \(tag) failed: \(String(describing: error))")
                 }
             }
         } else {
@@ -312,7 +318,7 @@ final class PropertyBridge: NSObject {
                 guard let wv = webView else { return }
                 wv.evaluateJavaScript(js) { _, error in
                     if let error = error {
-                        Logger.app.error("ÆtherDesk: \(tag)iled: \(String(describing: error))")
+                        Logger.app.error("ÆtherDesk: \(tag) failed: \(String(describing: error))")
                     }
                 }
             }
