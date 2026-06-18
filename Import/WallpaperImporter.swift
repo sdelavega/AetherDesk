@@ -241,7 +241,7 @@ final class WallpaperImporter {
         guard let enumerator = fileManager.enumerator(
             at: rootURL,
             includingPropertiesForKeys: keys,
-            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]) else { return }
+            options: [.skipsHiddenFiles]) else { return }
 
         var violations: [URL] = []
 

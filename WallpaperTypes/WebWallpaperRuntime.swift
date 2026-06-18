@@ -1014,8 +1014,11 @@ private final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
         if relative.hasPrefix("/") { relative = String(relative.dropFirst()) }
         if relative.isEmpty       { relative = "index.html" }
 
-        let fileURL = bundleBaseURL.appendingPathComponent(relative).standardizedFileURL
-        let basePath = bundleBaseURL.path
+        let fileURL = bundleBaseURL.appendingPathComponent(relative)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let basePath = bundleBaseURL.resolvingSymlinksInPath().path
         let filePath = fileURL.path
         guard filePath == basePath || filePath.hasPrefix(basePath + "/") else {
             Logger.app.warning("ÆtherDesk: blocked path-traversal request from wallpaper: \(url.path)")
