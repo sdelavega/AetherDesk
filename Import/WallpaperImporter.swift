@@ -211,6 +211,18 @@ final class WallpaperImporter {
     }
 
     private func extractArchive(_ archiveURL: URL, to destinationURL: URL) throws {
+        // Pre-extraction zip-bomb guard: reject archives whose on-disk size
+        // already exceeds the max bundle size. This doesn't catch high-ratio
+        // compression bombs, but sanitizeExtractedContent accumulates the
+        // expanded size and aborts once maxBundleBytes is exceeded.
+        let archiveAttrs = try fileManager.attributesOfItem(atPath: archiveURL.path)
+        if let archiveSize = archiveAttrs[.size] as? Int64,
+           archiveSize > Constants.Defaults.maxBundleBytes {
+            throw ImportError.archiveExtractionFailed(
+                underlying: NSError(domain: "ÆtherDesk.Import", code: 1,
+                                    userInfo: [NSLocalizedDescriptionKey: "Archive exceeds maximum bundle size"]))
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         process.arguments = ["-x", "-k", archiveURL.path, destinationURL.path]
@@ -244,6 +256,7 @@ final class WallpaperImporter {
             options: [.skipsHiddenFiles]) else { return }
 
         var violations: [URL] = []
+        var cumulativeSize: Int64 = 0
 
         for case let itemURL as URL in enumerator {
             let resolved = itemURL.resolvingSymlinksInPath().standardizedFileURL
@@ -252,6 +265,18 @@ final class WallpaperImporter {
                 Logger.app.info("ÆtherDesk: zip-slip detected — removing entry that resolves to \(resolvedPath)")
                 violations.append(itemURL)
                 continue
+            }
+
+            // Accumulate file sizes and abort if the extracted content
+            // exceeds the bundle size limit (zip-bomb defense).
+            if let attrs = try? fileManager.attributesOfItem(atPath: itemURL.path),
+               let fileSize = attrs[.size] as? Int64 {
+                cumulativeSize += fileSize
+                if cumulativeSize > Constants.Defaults.maxBundleBytes {
+                    throw ImportError.archiveExtractionFailed(
+                        underlying: NSError(domain: "ÆtherDesk.Import", code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "Extracted content exceeds maximum bundle size"]))
+                }
             }
 
             let resourceValues = try? itemURL.resourceValues(forKeys: Set(keys))

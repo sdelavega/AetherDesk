@@ -271,6 +271,9 @@ final class UpdateManager {
     // MARK: - Download + install
 
     func downloadAndInstall(_ release: GitHubRelease) {
+        // Re-entrancy guard: a quiet auto-install can race with a user-triggered
+        // install. Only proceed from idle or available states.
+        guard case .idle = currentState else { return }
         guard let asset = release.assets.first(where: { $0.name == Self.assetName }),
               let downloadURL = URL(string: asset.browser_download_url) else {
             DispatchQueue.main.async {
