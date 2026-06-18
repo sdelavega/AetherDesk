@@ -497,6 +497,11 @@ private final class PreferencesViewController: NSViewController {
     // MARK: Editor swap-in
 
     private func installEditor(for bundle: WallpaperBundle) {
+        // Remove any previous editor to avoid leaking child view controllers.
+        if let previous = currentEditor {
+            previous.view.removeFromSuperview()
+            previous.removeFromParent()
+        }
         wallpaperEditorContainer.subviews.forEach { $0.removeFromSuperview() }
 
         let editor = PropertyEditorViewController(bundle: bundle)
