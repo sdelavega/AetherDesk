@@ -384,7 +384,7 @@ final class UpdateManager {
     private func verifyCodeSignature(ofAppAtPath appPath: String) throws {
         let verify = Process()
         verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        verify.arguments = ["--verify", "--deep", "--strict", appPath]
+        verify.arguments = ["--verify", "--strict", appPath]
         verify.standardOutput = FileHandle.nullDevice
         let errPipe = Pipe()
         verify.standardError = errPipe
@@ -414,6 +414,17 @@ final class UpdateManager {
         guard currentTeamID == newTeamID else {
             throw UpdateError.signatureVerificationFailed(
                 "Signing identity mismatch: update was signed by a different developer (team \(newTeamID), expected \(currentTeamID))")
+        }
+
+        // Adhoc-signed builds accept any adhoc-signed update. Log a warning
+        // for dev builds; reject in App Store / release builds.
+        if currentTeamID == "adhoc" {
+            #if AETHERDESK_STORE
+            throw UpdateError.signatureVerificationFailed(
+                "Adhoc-signed updates are not allowed in release builds")
+            #else
+            Logger.app.warning("ÆtherDesk: accepting adhoc-signed update in dev build")
+            #endif
         }
     }
 
@@ -544,7 +555,15 @@ final class UpdateManager {
         updater.executableURL = URL(fileURLWithPath: currentExecutable)
         updater.arguments = ["--aetherdesk-updater", String(pid), currentAppPath, newAppPath, tempDir.path]
         updater.standardOutput = FileHandle.nullDevice
-        updater.standardError  = FileHandle.nullDevice
+        // Redirect stderr to a log file so swap failure diagnostics survive.
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AetherDesk-updater-\(pid).log")
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        if let logHandle = try? FileHandle(forWritingTo: logURL) {
+            updater.standardError = logHandle
+        } else {
+            updater.standardError = FileHandle.nullDevice
+        }
         do {
             try updater.run()
         } catch {

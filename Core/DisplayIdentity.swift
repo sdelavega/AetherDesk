@@ -27,8 +27,15 @@ struct DisplayIdentity: Hashable, Codable, CustomStringConvertible {
         let model = CGDisplayModelNumber(displayID)
         let serial = CGDisplaySerialNumber(displayID)
 
-        if vendor != 0 || model != 0 || serial != 0 {
-            return DisplayIdentity(key: "display:\(vendor):\(model):\(serial)")
+        // When the display reports real hardware identifiers, use them.
+        // But if serial is 0 (common with identical external displays),
+        // append the CGDirectDisplayID to prevent identity collisions.
+        if vendor != 0 || model != 0 {
+            if serial != 0 {
+                return DisplayIdentity(key: "display:\(vendor):\(model):\(serial)")
+            } else {
+                return DisplayIdentity(key: "display:\(vendor):\(model):cgd:\(displayID)")
+            }
         }
         return legacy(displayID)
     }

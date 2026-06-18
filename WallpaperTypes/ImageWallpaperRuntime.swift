@@ -46,6 +46,7 @@ final class ImageWallpaperRuntime: NSObject, WallpaperRuntime {
     }
 
     func start() throws {
+        isPaused = false
         guard let imageURL = bundle.imageURL else {
             throw WallpaperRuntimeError.contentNotFound
         }
@@ -86,6 +87,7 @@ final class ImageWallpaperRuntime: NSObject, WallpaperRuntime {
     func resume() { isPaused = false }
 
     func stop() {
+        isPaused = true
         imageView.image = nil
     }
 

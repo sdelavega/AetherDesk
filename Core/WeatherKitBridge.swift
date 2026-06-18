@@ -59,9 +59,11 @@ final class WeatherKitBridge {
             let latStr = components.queryItems?.first(where: { $0.name == "latitude" })?.value,
             let lonStr = components.queryItems?.first(where: { $0.name == "longitude" })?.value,
             let lat = Double(latStr),
-            let lon = Double(lonStr)
+            let lon = Double(lonStr),
+            lat >= -90, lat <= 90,
+            lon >= -180, lon <= 180
         else {
-            Logger.app.warning("ÆtherDesk WeatherKitBridge: could not parse lat/lon from URL")
+            Logger.app.warning("ÆtherDesk WeatherKitBridge: invalid or out-of-range lat/lon in URL")
             completion(0, nil, false)
             return
         }

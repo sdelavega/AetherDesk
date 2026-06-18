@@ -202,7 +202,7 @@ final class ContentRuleListManager {
         store.lookUpContentRuleList(forIdentifier: identifier) { list, _ in
             if let list {
                 // Cache hit — ready immediately.
-                Logger.app.info("ÆtherDesk: \(label)rom cache")
+                Logger.app.info("ÆtherDesk: \(label) loaded from cache")
                 completion(list)
                 return
             }
@@ -214,9 +214,9 @@ final class ContentRuleListManager {
                 encodedContentRuleList: encodedRuleList
             ) { compiled, error in
                 if let error {
-                    Logger.app.error("ÆtherDesk: \(label)mpilation failed: \(error.localizedDescription)")
+                    Logger.app.error("ÆtherDesk: \(label) compilation failed: \(error.localizedDescription)")
                 } else {
-                    Logger.app.info("ÆtherDesk: \(label)mpiled and cached")
+                    Logger.app.info("ÆtherDesk: \(label) compiled and cached")
                 }
                 completion(compiled)
             }

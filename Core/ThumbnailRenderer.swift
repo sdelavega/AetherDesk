@@ -230,8 +230,14 @@ final class ThumbnailRenderer {
                 let target = CMTime(seconds: min(1.0, max(0.0, duration / 2.0)),
                                     preferredTimescale: 600)
                 generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: target)]) {
-                    _, cgImage, _, _, _ in
-                    guard let cgImage = cgImage else { completion(nil); return }
+                    _, cgImage, _, result, _ in
+                    // Ignore non-succeeded results; macOS may deliver a final
+                    // .completed callback with cgImage == nil that would
+                    // clobber a valid thumbnail.
+                    guard result == .succeeded, let cgImage = cgImage else {
+                        if result != .succeeded { completion(nil) }
+                        return
+                    }
                     let nsImage = NSImage(cgImage: cgImage, size: size)
                     completion(nsImage.resized(to: size))
                 }

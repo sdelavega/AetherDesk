@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import Foundation
+import os.log
 
 struct LivelyProperty: Codable {
     let name: String
@@ -71,6 +72,12 @@ class LivelyPropertiesParser {
     private static var cache: [URL: (mtime: Date, properties: [LivelyProperty])] = [:]
     private static let lock = NSLock()
 
+    static func clearCache() {
+        lock.lock()
+        cache.removeAll()
+        lock.unlock()
+    }
+
     func parse(from url: URL) -> [LivelyProperty]? {
         let propertiesURL = url.appendingPathComponent(Constants.Keys.livelyProperties)
 
@@ -97,7 +104,7 @@ class LivelyPropertiesParser {
             Self.lock.unlock()
             return properties
         } catch {
-            print("ÆtherDesk: Failed to parse LivelyProperties.json: \(error)")
+            Logger.app.error("ÆtherDesk: Failed to parse LivelyProperties.json: \(error)")
             return nil
         }
     }

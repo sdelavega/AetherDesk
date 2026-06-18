@@ -14,7 +14,7 @@ This pass surfaced **1 critical**, **3 high**, **12 medium**, and **15 low** new
 
 ## Critical
 
-### C1 — URLSession retain cycle leaks every fetch-capable WebWallpaperRuntime
+### C1 — URLSession retain cycle leaks every fetch-capable WebWallpaperRuntime  ✅ FIXED
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:83-88` (session creation), `448` (task creation), `327-334` (`stop()`)
 - **Issue:** `nativeFetchSession` is a `lazy var` created with `delegate: self`. `URLSession` retains its delegate until the session is explicitly invalidated. `stop()` never calls `invalidateAndCancel()` or `finishTasksAndInvalidate()`, and `deinit` never runs because of the cycle. Every wallpaper replacement leaks the old runtime — its URLSession, in-flight download tasks, containerView, pausedSnapshotView, watchdog closure, and LocationProxy — permanently for the process lifetime.
@@ -24,19 +24,19 @@ This pass surfaced **1 critical**, **3 high**, **12 medium**, and **15 low** new
 
 ## High
 
-### H1 — Performance/network settings changes do not take effect on running wallpapers
+### H1 — Performance/network settings changes do not take effect on running wallpapers  ✅ FIXED
 
 - **Files/lines:** `Core/WallpaperManager.swift:489-493`, `WallpaperTypes/WebWallpaperRuntime.swift:56-57, 97-121, 170-176`
 - **Issue:** When performance settings change, `reloadAll()` calls `runtime.reload()` → `stop()` + `start()`. But `start()` recreates the WKWebView using `self.settings` and `self.policy` — both immutable `let` properties captured at init time. The recreated webview gets stale `blockExternalNetwork`, `allowLANAccess`, and `fpsCap`. Additionally, `allowLANAccess` changes don't trigger a reload at all.
 - **Fix:** Either fully recreate runtimes via `setWallpaper(currentBundle, for:)` when these settings change, or have the runtime re-read `AppSettingsStore` / `RuntimePolicyStore` inside `start()` / `createWebView()` instead of caching in `let` properties. Add `allowLANAccess` to the reload trigger.
 
-### H2 — Path traversal via `LivelyInfo.Preview` field
+### H2 — Path traversal via `LivelyInfo.Preview` field  ✅ FIXED
 
 - **Files/lines:** `Import/WallpaperBundle.swift:147-157`
 - **Issue:** `previewImageURL` resolves `livelyInfo?.Preview` via `baseURL.appendingPathComponent(preview)` without `standardizedFileURL` or containment validation. A malicious `LivelyInfo.json` with `"Preview": "../../../../.ssh/id_rsa"` resolves outside the bundle. `declaredResourceURL` (for `FileName`) does this correctly — `Preview` was missed.
 - **Fix:** Route `Preview` through the same containment check as `declaredResourceURL`: resolve, `standardizedFileURL`, verify `hasPrefix(basePath + "/")`.
 
-### H3 — SSRF/budget bypass via WebKit-initiated subresource loads
+### H3 — SSRF/budget bypass via WebKit-initiated subresource loads  ✅ FIXED
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:1057-1078`
 - **Issue:** `decidePolicyFor` only covers main-frame and subframe navigations, not subresource loads (`<img>`, `<script>`, `<link>`, `<video>`, etc.). Those go through WebKit's own networking and bypass `NetworkPolicy`, the network budget, and DNS-rebinding checks. A wallpaper can probe `http://169.254.169.254/` via `<img src>` or exfiltrate data via `<script src>`.
@@ -46,73 +46,73 @@ This pass surfaced **1 critical**, **3 high**, **12 medium**, and **15 low** new
 
 ## Medium
 
-### M1 — Web content process termination during pause silently resumes the wallpaper
+### M1 — Web content process termination during pause silently resumes the wallpaper  ✅ FIXED
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:1015-1055`
 - **Issue:** If the web content process terminates while `isPaused == true`, the handler schedules `DispatchQueue.main.asyncAfter { try self.start() }`. `start()` does not check `isPaused`, so it recreates the WKWebView and starts the watchdog — the wallpaper resumes despite the user having paused it.
 - **Fix:** Guard the recovery path with `guard !self.isPaused else { return }`.
 
-### M2 — In-flight native fetch tasks not cancelled on `stop()`
+### M2 — In-flight native fetch tasks not cancelled on `stop()`  ✅ FIXED (by C1)
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:327-334, 396-489`
 - **Issue:** `stop()` tears down the WKWebView but does not cancel in-flight `nativeFetchSession` download tasks. Each can download up to 5 MB and continues to completion after the wallpaper is gone.
 - **Fix:** Call `nativeFetchSession.invalidateAndCancel()` in `stop()` (this also resolves C1).
 
-### M3 — No bound on concurrent native fetches
+### M3 — No bound on concurrent native fetches  ✅ FIXED
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:396-489`
 - **Issue:** `performNativeFetch` creates a `URLSessionDownloadTask` for every bridge call with no cap on concurrency. Each can buffer up to 5 MB. `activeFetchCompletions` grows without limit.
 - **Fix:** Enforce a concurrent-task cap (e.g. 8) using a semaphore or pending-queue pattern.
 
-### M4 — `NetworkPolicy` does not block IPv4-mapped IPv6 addresses
+### M4 — `NetworkPolicy` does not block IPv4-mapped IPv6 addresses  ✅ FIXED
 
 - **Files/lines:** `Core/NetworkPolicy.swift:167-186`
 - **Issue:** `isPrivateIPv6` does not detect `::ffff:a.b.c.d` (IPv4-mapped IPv6). `::ffff:10.0.0.1` or `::ffff:169.254.169.254` bypass the LAN/localhost/metadata block.
 - **Fix:** In `isPrivateIPv6`, detect the `::ffff:` prefix (bytes[0…9] == 0, bytes[10] == 0xFF, bytes[11] == 0xFF) and re-run the IPv4 check on the trailing 4 bytes.
 
-### M5 — WallpaperStore / settings-store caches are not thread-safe
+### M5 — WallpaperStore / settings-store caches are not thread-safe  ✅ FIXED
 
 - **Files/lines:** `Persistence/WallpaperStore.swift:105-128`, `Persistence/PropertyStore.swift:24-67`, `Persistence/AppSettingsStore.swift`, `Persistence/RuntimePolicyStore.swift`
 - **Issue:** All stores keep in-memory `cache` properties read and written without locks. Several call sites access them off the main thread (e.g. `displayConfigurationDidChange` reads `WallpaperStore` from a background queue while the main thread may concurrently call `setAssignment`).
 - **Fix:** Guard each `cache` with an `NSLock`, or route all access through the main thread.
 
-### M6 — `LocationProxy` does not stop `CLLocationManager` on teardown
+### M6 — `LocationProxy` does not stop `CLLocationManager` on teardown  ✅ FIXED
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:1133-1207`
 - **Issue:** `LocationProxy` has no `deinit` and `stop()` is not called when the runtime is torn down. `CLLocationManager` should be explicitly stopped to prevent battery drain and privacy concerns.
 - **Fix:** Add `deinit { manager.stopUpdatingLocation() }` to `LocationProxy`, and call it from `WebWallpaperRuntime.stop()`.
 
-### M7 — `UpdateManager.downloadAndInstall` is not re-entrant
+### M7 — `UpdateManager.downloadAndInstall` is not re-entrant  ✅ FIXED
 
 - **Files/lines:** `Core/UpdateManager.swift:273-364, 593-614`
 - **Issue:** `downloadAndInstall` performs no state guard. A quiet auto-install racing with a user-triggered install can run two concurrent downloads + extractions.
 - **Fix:** Guard with `guard case .idle = currentState else { return }` (or `.available`) and transition to `.downloading` atomically.
 
-### M8 — Zip bomb: no size check before archive extraction
+### M8 — Zip bomb: no size check before archive extraction  ✅ FIXED
 
 - **Files/lines:** `Import/WallpaperImporter.swift:185-234`
 - **Issue:** `ditto -xk` extracts the archive to a temp directory before `WallpaperValidator.bundleSize` runs. A high-ratio zip bomb expands to disk before the 50 MB limit is evaluated.
 - **Fix:** Stat the archive file size before extraction and reject above a threshold (e.g. 2× `maxBundleBytes`). During `sanitizeExtractedContent`, accumulate sizes and abort once `maxBundleBytes` is exceeded.
 
-### M9 — `WallpaperValidator` only inspects `index.html`, not linked JS files
+### M9 — `WallpaperValidator` only inspects `index.html`, not linked JS files  ✅ FIXED
 
 - **Files/lines:** `Import/WallpaperValidator.swift:78-84`
 - **Issue:** All heuristic checks run against `index.html` only. A wallpaper with `<script src="main.js">` is never inspected — every heuristic (setInterval storm, tracker domains, `while(true)`, etc.) is bypassed.
 - **Fix:** Walk the bundle directory, concatenate all `.js`/`.html`/`.htm` file contents (up to a per-file cap), and run `inspectJavaScript` against the concatenation.
 
-### M10 — `SemanticVersion.compare` mishandles pre-release and build metadata
+### M10 — `SemanticVersion.compare` mishandles pre-release and build metadata  ✅ FIXED
 
 - **Files/lines:** `Core/SemanticVersion.swift:24-40`
 - **Issue:** Version strings like `1.0.0-beta` produce components (`"0-beta"`) that fail `Int(_:)` and fall through to lexicographic comparison. `"1.0.0-beta" > "1.0.0"` returns `true`, so the updater treats a pre-release as newer than the final.
 - **Fix:** Strip build metadata (`+...`), split on `-` to separate pre-release. Compare numeric core first; if equal, a release with no pre-release is greater than one with a pre-release.
 
-### M11 — `SandboxSupport.migrateIfNeeded` cannot locate the pre-sandbox library
+### M11 — `SandboxSupport.migrateIfNeeded` cannot locate the pre-sandbox library  ✅ FIXED
 
 - **Files/lines:** `Core/SandboxSupport.swift:41-98`
 - **Issue:** Both `oldBase` and `newBase` are derived from `FileManager.urls(for: .applicationSupportDirectory, ...)` — which, when sandboxed, returns the container path for both. The migration is a no-op.
 - **Fix:** Access the pre-sandbox path via a security-scoped bookmark captured before sandboxing, or prompt the user via `NSOpenPanel` on first sandboxed launch.
 
-### M12 — Update hash sidecar errors (non-404) silently skip verification
+### M12 — Update hash sidecar errors (non-404) silently skip verification  ✅ FIXED
 
 - **Files/lines:** `Core/UpdateManager.swift:313-322`
 - **Issue:** A network error (timeout, DNS failure) on the hash sidecar leaves `hashTempURL` as `nil`, so `verifySHA256` is skipped entirely. The intent was to skip only on 404, but any error has the same effect.

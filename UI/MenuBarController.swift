@@ -42,7 +42,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private weak var wallpaperManager: WallpaperManager?
     private var importer: WallpaperImporter { WallpaperImporter.shared }
     private var cachedWallpapers: [WallpaperBundle]?
-    private var menuNeedsFullRebuild = true
 
     // Submenu + items that need dynamic updates.
     private let wallpapersItem = NSMenuItem(title: "Wallpapers", action: nil, keyEquivalent: "")
@@ -317,7 +316,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             self.isImporting = false
             switch result {
             case .success((_, let classification)):
-                self.menuNeedsFullRebuild = true
+                importer.invalidateCache()
                 let (title, body) = Self.importReport(for: classification)
                 if case .allowedWithLimits = classification {
                     self.showAlert(style: .informational, title: title, body: body)
@@ -378,10 +377,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: Notifications
 
     private func requestNotificationAuthIfPossible() {
-        // UNUserNotificationCenter requires authorization in a bundled app;
-        // fail silently for unsigned/dev builds.
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert]) { _, _ in }
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .notDetermined else { return }
+            center.requestAuthorization(options: [.alert]) { _, _ in }
+        }
     }
 
     private func showAlert(style: NSAlert.Style, title: String, body: String) {

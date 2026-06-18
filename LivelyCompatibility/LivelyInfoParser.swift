@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import Foundation
+import os.log
 
 struct LivelyInfo: Decodable {
     let AppVersion: String?
@@ -130,6 +131,12 @@ class LivelyInfoParser {
     private static var cache: [URL: (mtime: Date, info: LivelyInfo)] = [:]
     private static let lock = NSLock()
 
+    static func clearCache() {
+        lock.lock()
+        cache.removeAll()
+        lock.unlock()
+    }
+
     func parse(from url: URL) -> LivelyInfo? {
         let livelyInfoURL = url.appendingPathComponent(Constants.Keys.livelyInfo)
 
@@ -157,7 +164,7 @@ class LivelyInfoParser {
             Self.lock.unlock()
             return info
         } catch {
-            print("ÆtherDesk: Failed to parse LivelyInfo.json: \(error)")
+            Logger.app.error("ÆtherDesk: Failed to parse LivelyInfo.json: \(error)")
             return nil
         }
     }
@@ -167,7 +174,7 @@ class LivelyInfoParser {
             let decoder = JSONDecoder()
             return try decoder.decode(LivelyInfo.self, from: data)
         } catch {
-            print("ÆtherDesk: Failed to parse LivelyInfo: \(error)")
+            Logger.app.error("ÆtherDesk: Failed to parse LivelyInfo: \(error)")
             return nil
         }
     }

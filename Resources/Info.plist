@@ -37,6 +37,8 @@
 	<string>Copyright 2026 Stephen de la Vega</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ÆtherDesk uses your location to show local weather on your wallpaper.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>ÆtherDesk uses your location to show local weather on your wallpaper.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

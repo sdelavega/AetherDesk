@@ -132,6 +132,8 @@ final class WallpaperImporter {
 
     func invalidateCache() {
         cachedWallpapers = nil
+        LivelyInfoParser.clearCache()
+        LivelyPropertiesParser.clearCache()
     }
 
     /// User-imported wallpapers from Application Support.
@@ -171,6 +173,7 @@ final class WallpaperImporter {
         runtimePolicyStore.delete(for: bundle.id)
         GeolocationPermissionStore.shared.delete(for: bundle.id)
         propertyStore.delete(for: bundle.id)
+        NetworkPolicy.clearDomainLog(for: bundle.id)
         invalidateCache()
         // Notify WallpaperManager so it can tear down any live runtime that is
         // currently showing this bundle, rather than waiting until next launch.
