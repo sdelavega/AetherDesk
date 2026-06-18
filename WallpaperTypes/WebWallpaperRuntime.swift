@@ -80,12 +80,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private let pausedSnapshotView: NSImageView
     private var pendingPauseSnapshotID: UUID?
 
-    private lazy var nativeFetchSession: URLSession = {
+    private var _nativeFetchSession: URLSession?
+    private var nativeFetchSession: URLSession {
+        if let session = _nativeFetchSession { return session }
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.timeoutIntervalForRequest = 30
-        return URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
-    }()
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
+        _nativeFetchSession = session
+        return session
+    }
     private var activeFetchCompletions: [Int: (Result<(URL?, URLResponse?, Error?), Error>) -> Void] = [:]
     private let activeFetchLock = NSLock()
 
@@ -331,6 +335,11 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         removePausedSnapshot()
         propertyBridge.flushNow()
         tearDownWebView()
+        _nativeFetchSession?.invalidateAndCancel()
+        _nativeFetchSession = nil
+        activeFetchLock.lock()
+        activeFetchCompletions.removeAll()
+        activeFetchLock.unlock()
     }
 
     func reload() throws {
