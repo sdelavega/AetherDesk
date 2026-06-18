@@ -147,13 +147,14 @@ final class WallpaperBundle {
     var previewImageURL: URL? {
         if _didResolvePreviewImageURL { return _cachedPreviewImageURL }
         _didResolvePreviewImageURL = true
-        // LivelyInfo.Preview takes precedence if present.
-        if let preview = livelyInfo?.Preview {
-            let url = baseURL.appendingPathComponent(preview)
-            if FileManager.default.fileExists(atPath: url.path) {
-                _cachedPreviewImageURL = url
-                return url
-            }
+        // LivelyInfo.Preview takes precedence if present, routed through the
+        // same traversal-safe resolver as FileName so a malicious Preview
+        // field can't escape the bundle directory.
+        if let preview = livelyInfo?.Preview,
+           let url = Self.declaredResourceURL(from: preview, in: baseURL),
+           Self.imageExtensions.contains(url.pathExtension.lowercased()) {
+            _cachedPreviewImageURL = url
+            return url
         }
         // Otherwise look for an image file whose name contains "preview".
         let contents = (try? FileManager.default.contentsOfDirectory(at: baseURL,
