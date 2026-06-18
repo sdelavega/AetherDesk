@@ -74,7 +74,7 @@ None.
   - Re-run `NetworkPolicy` validation on every redirect URL, or
   - Reject all redirects by calling `completionHandler(nil)`.
 
-#### H7: FQDN WebSockets bypass network policy and budget
+#### ~~H7: FQDN WebSockets bypass network policy and budget~~ **FIXED**
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:723–745`
 - **Issue:** The JS `WebSocket` wrapper only rejects raw IP and bracketed IPv6 forms. A wallpaper can open a WebSocket to an arbitrary FQDN, exfiltrate data, or maintain a persistent command channel. This bypasses the per-minute network budget, DNS rebinding checks, and the `blockExternalNetwork` content rule list.
@@ -88,19 +88,19 @@ None.
 
 ### Medium
 
-#### M1: Preferences wallpaper editor leaks child view controllers
+#### ~~M1: Preferences wallpaper editor leaks child view controllers~~ **FIXED**
 
 - **Files/lines:** `UI/PreferencesWindowController.swift:499–521`
 - **Issue:** `installEditor(for:)` calls `addChild(editor)` each time a new wallpaper is selected, but it never calls `removeFromParent()` on the previous editor. The parent strongly retains every child controller, leaking view controllers, their views, and any observers they hold.
 - **Fix:** Store `currentEditor` as a strong reference, then call `currentEditor?.removeFromParent()` and `currentEditor?.view.removeFromSuperview()` before creating and adding the new editor.
 
-#### M2: Pop-up property editor sends a string instead of the underlying value
+#### ~~M2: Pop-up property editor sends a string instead of the underlying value~~ **FIXED**
 
 - **Files/lines:** `UI/PropertyEditorViewController.swift:227–230`
 - **Issue:** `popupChanged` dispatches `titleOfSelectedItem ?? indexOfSelectedItem` as the new property value. If `LivelyProperties.json` declared a `Bool` or `Int` for the option, the running wallpaper receives a `String`, which can break type-sensitive JS logic.
 - **Fix:** Persist the original `prop.items` values in `ControlTarget` and dispatch the actual underlying value (`items[index].value.value`) instead of the displayed title.
 
-#### M3: WeatherKit fallback bypasses size and policy controls
+#### ~~M3: WeatherKit fallback bypasses size and policy controls~~ **FIXED**
 
 - **Files/lines:** `Core/WeatherKitBridge.swift:96–106`
 - **Issue:** When WeatherKit is unavailable, the bridge falls back to `URLSession.shared.dataTask(with: url)`. This path has no 5 MB cap, no per-minute network budget, and no `NetworkPolicy`/DNS-rebinding check, unlike the normal native fetch path.
@@ -112,7 +112,7 @@ None.
 - **Issue:** The XHR override only enforces the JS-side network budget; the underlying `XMLHttpRequest` still uses WebKit’s network stack and never runs through `NetworkPolicy`. It can reach raw IPs, private LAN hosts, and metadata endpoints that the `fetch()` path cannot.
 - **Fix:** Either route `XMLHttpRequest` through `performNativeFetch` (mirroring the `fetch()` override) or call `networkPolicy.validate(url:)` inside the `open` override before allowing the request to proceed.
 
-#### M5: Update archive size is not bounded before extraction
+#### ~~M5: Update archive size is not bounded before extraction~~ **FIXED** (H1)
 
 - **Files/lines:** `Core/UpdateManager.swift:51`, `273–299`
 - **Issue:** The GitHub asset `size` is available but ignored. A huge zip can fill the temp volume before `verifySHA256` or signature checks run, even if the final extraction is bounded later.
@@ -126,31 +126,31 @@ None.
 
 ### Low
 
-#### L1: `memoryWarningThresholdMB` is unused
+#### ~~L1: `memoryWarningThresholdMB` is unused~~ **FIXED**
 
 - **Files/lines:** `App/Constants.swift:42`
 - **Issue:** A memory-warning threshold is defined but never referenced. It is dead configuration unless wired up.
 - **Fix:** Either implement a `didReceiveMemoryPressureNotification` handler in `WallpaperManager` that pauses runtimes when memory pressure is reported, or remove the constant.
 
-#### L2: Crash-recovery loop can run indefinitely
+#### ~~L2: Crash-recovery loop can run indefinitely~~ **FIXED**
 
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:812–827`
 - **Issue:** A web content process that crashes every 11 seconds resets `rapidTerminationCount` and is retried forever, wasting CPU in a crash/relaunch loop.
 - **Fix:** Track the total number of crashes per `start()` and demote to safe mode after a fixed crash count (e.g., 5), regardless of timing.
 
-#### L3: Weather-source UI is keyed by folder name
+#### ~~L3: Weather-source UI is keyed by folder name~~ **FIXED**
 
 - **Files/lines:** `UI/PreferencesWindowController.swift:551`
 - **Issue:** The weather-source picker only appears when `bundle.baseURL.lastPathComponent == "WeatherAether"`. Renaming the bundle folder hides the control.
 - **Fix:** Use a stable bundle ID or a manifest flag in `LivelyInfo.json` instead of the folder name.
 
-#### L4: `DisplayManager` can use a stale display count
+#### ~~L4: `DisplayManager` can use a stale display count~~ **FIXED**
 
 - **Files/lines:** `Core/DisplayManager.swift:29–35`
 - **Issue:** `CGGetActiveDisplayList` is called twice. If the display set changes between the two calls, the second call may write past the allocated buffer or miss displays.
 - **Fix:** Loop until the count returned by the first call matches the second, or use a single `CGGetActiveDisplayList` call with retry logic.
 
-#### L5: `PropertyStore` sanitize has no recursion-depth limit
+#### ~~L5: `PropertyStore` sanitize has no recursion-depth limit~~ **FIXED**
 
 - **Files/lines:** `Persistence/PropertyStore.swift:69–94`
 - **Issue:** Nested collection sizes are capped at 100, but there is no depth limit. A deliberately nested dictionary can still exhaust the stack or fail to serialize into `UserDefaults`.
