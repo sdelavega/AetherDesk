@@ -65,6 +65,7 @@ final class RuntimePolicyStore {
     private let userDefaults: UserDefaults
     private let key = "AetherDesk.runtimePolicyStore.v1"
     private var cache: [String: WallpaperRuntimePolicy]?
+    private let cacheLock = NSLock()
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -87,10 +88,14 @@ final class RuntimePolicyStore {
     }
 
     func invalidateCache() {
+        cacheLock.lock()
         cache = nil
+        cacheLock.unlock()
     }
 
     private func loadAll() -> [String: WallpaperRuntimePolicy] {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         if let cache { return cache }
         guard let data = userDefaults.data(forKey: key),
               let policies = try? JSONDecoder().decode([String: WallpaperRuntimePolicy].self, from: data) else {
@@ -102,7 +107,9 @@ final class RuntimePolicyStore {
     }
 
     private func saveAll(_ policies: [String: WallpaperRuntimePolicy]) {
+        cacheLock.lock()
         cache = policies
+        cacheLock.unlock()
         guard let data = try? JSONEncoder().encode(policies) else { return }
         userDefaults.set(data, forKey: key)
     }

@@ -68,12 +68,15 @@ final class AppSettingsStore {
     private let userDefaults: UserDefaults
     private let key = "AetherDesk.performanceSettings.v1"
     private var cache: PerformanceSettings?
+    private let cacheLock = NSLock()
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
     }
 
     func loadPerformanceSettings() -> PerformanceSettings {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         if let cache { return cache }
         guard let data = userDefaults.data(forKey: key),
               let settings = try? JSONDecoder().decode(PerformanceSettings.self, from: data) else {
@@ -101,7 +104,9 @@ final class AppSettingsStore {
             blockExternalNetwork: settings.blockExternalNetwork,
             allowLANAccess: settings.allowLANAccess
         )
+        cacheLock.lock()
         cache = normalized
+        cacheLock.unlock()
         guard let data = try? JSONEncoder().encode(normalized) else { return }
         userDefaults.set(data, forKey: key)
         NotificationCenter.default.post(
@@ -111,6 +116,8 @@ final class AppSettingsStore {
     }
 
     func invalidateCache() {
+        cacheLock.lock()
         cache = nil
+        cacheLock.unlock()
     }
 }

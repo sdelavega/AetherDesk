@@ -22,6 +22,7 @@ class PropertyStore {
     private let userDefaults: UserDefaults
     private let key = "AetherDesk.propertyStore"
     private var cache: [String: [String: Any]]?
+    private let cacheLock = NSLock()
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -45,10 +46,14 @@ class PropertyStore {
     }
 
     func invalidateCache() {
+        cacheLock.lock()
         cache = nil
+        cacheLock.unlock()
     }
 
     private func loadAll() -> [String: [String: Any]] {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         if let cached = cache { return cached }
         guard let data = userDefaults.data(forKey: key),
               let properties = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Any]] else {
@@ -60,7 +65,9 @@ class PropertyStore {
     }
 
     private func saveAll(_ properties: [String: [String: Any]]) {
+        cacheLock.lock()
         cache = properties
+        cacheLock.unlock()
         if let data = try? JSONSerialization.data(withJSONObject: properties) {
             userDefaults.set(data, forKey: key)
         }

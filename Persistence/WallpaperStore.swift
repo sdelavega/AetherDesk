@@ -32,6 +32,7 @@ final class WallpaperStore {
 
     private let userDefaults: UserDefaults
     private let key = "AetherDesk.wallpaperStore.v2"
+    private let cacheLock = NSLock()
 
     private struct Payload: Codable {
         var displayAssignments: [String: String]
@@ -105,10 +106,14 @@ final class WallpaperStore {
     private var cachedPayload: Payload?
 
     func invalidateCache() {
+        cacheLock.lock()
         cachedPayload = nil
+        cacheLock.unlock()
     }
 
     private func loadPayload() -> Payload {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         if let cached = cachedPayload { return cached }
         guard let data = userDefaults.data(forKey: key),
               let payload = try? JSONDecoder().decode(Payload.self, from: data)
@@ -122,7 +127,9 @@ final class WallpaperStore {
     }
 
     private func save(_ payload: Payload) {
+        cacheLock.lock()
         cachedPayload = payload
+        cacheLock.unlock()
         guard let data = try? JSONEncoder().encode(payload) else { return }
         userDefaults.set(data, forKey: key)
     }
