@@ -1029,7 +1029,7 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
         }
         lastTerminationUptime = now
 
-        if rapidTerminationCount >= 2 {
+        if rapidTerminationCount >= 5 {
             Logger.app.error("ÆtherDesk: web content crashed repeatedly on display \(self.displayID) — demoting to safe mode")
             NotificationCenter.default.post(
                 name: Constants.Notifications.runtimeDidFail,
