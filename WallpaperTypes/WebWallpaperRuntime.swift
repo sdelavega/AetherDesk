@@ -80,6 +80,15 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private let pausedSnapshotView: NSImageView
     private var pendingPauseSnapshotID: UUID?
 
+    private lazy var nativeFetchSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.timeoutIntervalForRequest = 30
+        return URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
+    }()
+    private var activeFetchCompletions: [Int: (Result<(URL?, URLResponse?, Error?), Error>) -> Void] = [:]
+    private let activeFetchLock = NSLock()
+
     var contentView: NSView { containerView }
 
     init(bundle: WallpaperBundle, displayID: CGDirectDisplayID) {
@@ -418,28 +427,39 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                     var request = URLRequest(url: safeURL, timeoutInterval: 30)
                     request.httpMethod = method
                     request.cachePolicy = .reloadIgnoringLocalCacheData
-                    URLSession.shared.downloadTask(with: request) { [weak self] tempURL, response, error in
-                        let status: Int
-                        if error != nil {
-                            status = 0
-                        } else {
-                            status = (response as? HTTPURLResponse)?.statusCode ?? 200
-                        }
-                        let body: String? = {
-                            guard let tempURL = tempURL else { return nil }
-                            let fm = FileManager.default
-                            guard let attrs = try? fm.attributesOfItem(atPath: tempURL.path),
-                                  let fileSize = attrs[.size] as? Int64,
-                                  fileSize <= Constants.Defaults.maxNativeFetchResponseBytes else {
-                                let actualSize = (try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int64 ?? -1
-                                Logger.app.warning("ÆtherDesk: rejected oversized fetch response (\(actualSize)ytes)")
-                                return nil
+
+                    let task = self.nativeFetchSession.downloadTask(with: request)
+                    self.activeFetchLock.lock()
+                    self.activeFetchCompletions[task.taskIdentifier] = { [weak self] result in
+                        switch result {
+                        case .success(let (tempURL, response, _)):
+                            let status: Int
+                            if let httpResponse = response as? HTTPURLResponse {
+                                status = httpResponse.statusCode
+                            } else {
+                                status = 200
                             }
-                            guard let data = try? Data(contentsOf: tempURL) else { return nil }
-                            return String(data: data, encoding: .utf8)
-                        }()
-                        self?.deliverFetchResult(id: id, status: status, body: body)
-                    }.resume()
+                            let body: String? = {
+                                guard let tempURL = tempURL else { return nil }
+                                let fm = FileManager.default
+                                guard let attrs = try? fm.attributesOfItem(atPath: tempURL.path),
+                                      let fileSize = attrs[.size] as? Int64,
+                                      fileSize <= Constants.Defaults.maxNativeFetchResponseBytes else {
+                                    let actualSize = (try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int64 ?? -1
+                                    Logger.app.warning("ÆtherDesk: rejected oversized fetch response (\(actualSize)ytes)")
+                                    return nil
+                                }
+                                guard let data = try? Data(contentsOf: tempURL) else { return nil }
+                                return String(data: data, encoding: .utf8)
+                            }()
+                            self?.deliverFetchResult(id: id, status: status, body: body)
+                        case .failure(let error):
+                            Logger.app.warning("ÆtherDesk: wallpaper fetch failed: \(error.localizedDescription)")
+                            self?.deliverFetchResult(id: id, status: 0, body: nil)
+                        }
+                    }
+                    self.activeFetchLock.unlock()
+                    task.resume()
                 case .failure(let reason):
                     Logger.app.warning("ÆtherDesk: blocked wallpaper fetch — \(reason.description)")
                     self.deliverFetchResult(id: id, status: 0, body: nil)
@@ -1178,5 +1198,67 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
             return
         }
         bridge?.handleJSMessages(action: action, data: body)
+    }
+}
+
+// MARK: - URLSession redirect validation
+
+extension WebWallpaperRuntime: URLSessionDownloadDelegate {
+
+    func urlSession(_ session: URLSession,
+                    task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let url = request.url else {
+            completionHandler(nil)
+            return
+        }
+        // Re-run the same policy + DNS-rebinding checks on every redirect.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else {
+                completionHandler(nil)
+                return
+            }
+            let allowed: Bool
+            switch self.networkPolicy.validate(url: url) {
+            case .success(let validatedURL):
+                switch self.networkPolicy.validateResolvedAddresses(for: validatedURL) {
+                case .success:
+                    allowed = true
+                case .failure(let reason):
+                    Logger.app.warning("ÆtherDesk: blocked wallpaper fetch redirect — \(reason.description)")
+                    allowed = false
+                }
+            case .failure(let reason):
+                Logger.app.warning("ÆtherDesk: blocked wallpaper fetch redirect — \(reason.description)")
+                allowed = false
+            }
+            DispatchQueue.main.async {
+                completionHandler(allowed ? request : nil)
+            }
+        }
+    }
+
+    func urlSession(_ session: URLSession,
+                    downloadTask: URLSessionDownloadTask,
+                    didFinishDownloadingTo location: URL) {
+        finishFetch(task: downloadTask, result: .success((location, downloadTask.response, nil)))
+    }
+
+    func urlSession(_ session: URLSession,
+                    task: URLSessionTask,
+                    didCompleteWithError error: Error?) {
+        if let error {
+            finishFetch(task: task, result: .failure(error))
+        }
+    }
+
+    private func finishFetch(task: URLSessionTask,
+                             result: Result<(URL?, URLResponse?, Error?), Error>) {
+        activeFetchLock.lock()
+        let completion = activeFetchCompletions.removeValue(forKey: task.taskIdentifier)
+        activeFetchLock.unlock()
+        completion?(result)
     }
 }
