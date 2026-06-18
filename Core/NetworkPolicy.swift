@@ -182,6 +182,30 @@ final class NetworkPolicy {
         if bytes.allSatisfy({ $0 == 0 }) { return true }
         if bytes[0] == 0xFF { return true }
 
+        // IPv4-mapped IPv6: ::ffff:a.b.c.d — bytes[0..9] == 0, bytes[10..11] == 0xFF.
+        // Re-run the IPv4 private-range check on the embedded address.
+        if bytes[0...9].allSatisfy({ $0 == 0 }) && bytes[10] == 0xFF && bytes[11] == 0xFF {
+            let ip: UInt32 =
+                (UInt32(bytes[12]) << 24) |
+                (UInt32(bytes[13]) << 16) |
+                (UInt32(bytes[14]) << 8) |
+                 UInt32(bytes[15])
+            let mask10:  UInt32 = 0xFF000000
+            let mask172:  UInt32 = 0xFFF00000
+            let mask192:  UInt32 = 0xFFFF0000
+            let mask169:  UInt32 = 0xFFFF0000
+            let mask127:  UInt32 = 0xFF000000
+            let mask224:  UInt32 = 0xF0000000
+            if ip & mask10  == 0x0A000000 { return true }
+            if ip & mask172 == 0xAC100000 { return true }
+            if ip & mask192 == 0xC0A80000 { return true }
+            if ip & mask169 == 0xA9FE0000 { return true }
+            if ip & mask127 == 0x7F000000 { return true }
+            if ip & mask224 == 0xE0000000 { return true }
+            if ip == 0 { return true }
+            if ip == 0xFFFFFFFF { return true }
+        }
+
         return false
     }
 
