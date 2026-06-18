@@ -33,7 +33,7 @@ import WebKit
 final class PropertyBridge: NSObject {
 
     private let displayID: CGDirectDisplayID
-    private let fpsCap: Int
+    private var fpsCap: Int
     private var properties: [String: Any] = [:]
     private weak var webView: WKWebView?
 
@@ -48,6 +48,13 @@ final class PropertyBridge: NSObject {
         self.fpsCap = min(Constants.Defaults.maxFPS,
                           max(Constants.Defaults.minFPS, fpsCap))
         super.init()
+    }
+
+    /// Re-clamps and stores a new fps cap. Call before injectEnvironment
+    /// so the runtime picks up changed performance settings on reload.
+    func updateFPSCap(_ newValue: Int) {
+        fpsCap = min(Constants.Defaults.maxFPS,
+                     max(Constants.Defaults.minFPS, newValue))
     }
 
     // MARK: Setup

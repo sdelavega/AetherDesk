@@ -52,9 +52,9 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private(set) var isPaused: Bool = false
 
     private let bundle: WallpaperBundle
-    private let policy: WallpaperRuntimePolicy
-    private let settings: PerformanceSettings
-    private let fpsCap: Int
+    private var policy: WallpaperRuntimePolicy
+    private var settings: PerformanceSettings
+    private var fpsCap: Int
     private var webView: WKWebView?
     private let propertyBridge: PropertyBridge
     private let messageHandler: ScriptMessageHandler
@@ -74,7 +74,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     private var nativeFetchWindowStart = Date()
     private var nativeFetchRequestsInWindow = 0
     private let locationProxy: LocationProxy
-    private let networkPolicy: NetworkPolicy
+    private var networkPolicy: NetworkPolicy
     private var isStopped = false
     private var initialOverrides: [String: Any] = [:]
     private let pausedSnapshotView: NSImageView
@@ -161,6 +161,19 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     // MARK: WebView lifecycle
 
+    /// Re-reads performance settings and runtime policy so that changes
+    /// made in Preferences take effect on the next start()/reload() without
+    /// requiring the runtime to be torn down and rebuilt by the manager.
+    private func refreshSettings() {
+        policy = RuntimePolicyStore.shared.load(for: bundle.id)
+        settings = AppSettingsStore.shared.loadPerformanceSettings()
+        fpsCap = policy.effectiveFPSCap(with: settings)
+        propertyBridge.updateFPSCap(fpsCap)
+        networkPolicy = NetworkPolicy(
+            bundleID: bundle.id,
+            allowLANAccess: settings.allowLANAccess)
+    }
+
     private func createWebView() -> WKWebView {
         let userContent = WKUserContentController()
         userContent.add(messageHandler, name: "aetherDesk")
@@ -239,6 +252,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     func start() throws {
         isStopped = false
+        refreshSettings()
         guard let indexURL = bundle.indexURL else {
             throw WallpaperRuntimeError.contentNotFound
         }
