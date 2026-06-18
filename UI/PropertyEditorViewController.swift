@@ -152,15 +152,15 @@ final class PropertyEditorViewController: NSViewController {
             popup.target = target
             popup.action = #selector(ControlTarget.popupChanged(_:))
             if let items = prop.items {
+                var values: [Any] = []
                 for item in items {
                     popup.addItem(withTitle: String(describing: item.value))
+                    values.append(item.value)
                 }
-            }
-            if let currentValue = prop.value.stringValue {
-                popup.selectItem(withTitle: currentValue)
-            } else if let currentInt = prop.value.intValue,
-                      currentInt >= 0 && currentInt < popup.numberOfItems {
-                popup.selectItem(at: currentInt)
+                target.optionValues = values
+                if let index = items.firstIndex(where: { valuesEqual($0.value, prop.value.value) }) {
+                    popup.selectItem(at: index)
+                }
             }
             target.retain(in: popup)
             return popup
@@ -207,6 +207,7 @@ final class PropertyEditorViewController: NSViewController {
 private final class ControlTarget: NSObject {
     let key: String
     weak var editor: PropertyEditorViewController?
+    var optionValues: [Any]?
 
     init(key: String, editor: PropertyEditorViewController) {
         self.key = key
@@ -225,8 +226,12 @@ private final class ControlTarget: NSObject {
     @objc func sliderChanged(_ sender: NSSlider)   { editor?.notifyPropertyChange(for: key, value: sender.doubleValue) }
     @objc func checkboxChanged(_ sender: NSButton) { editor?.notifyPropertyChange(for: key, value: sender.state == .on) }
     @objc func popupChanged(_ sender: NSPopUpButton) {
-        let value: Any = sender.titleOfSelectedItem ?? sender.indexOfSelectedItem
-        editor?.notifyPropertyChange(for: key, value: value)
+        let index = sender.indexOfSelectedItem
+        if let values = optionValues, index >= 0 && index < values.count {
+            editor?.notifyPropertyChange(for: key, value: values[index])
+        } else {
+            editor?.notifyPropertyChange(for: key, value: sender.indexOfSelectedItem)
+        }
     }
     @objc func colorChanged(_ sender: NSColorWell) {
         editor?.notifyPropertyChange(for: key, value: sender.color.hexString)
@@ -236,6 +241,14 @@ private final class ControlTarget: NSObject {
 
 private enum AssociatedKeys {
     static var controlTarget: UInt8 = 0
+}
+
+private func valuesEqual(_ lhs: Any, _ rhs: Any) -> Bool {
+    if let a = lhs as? Bool, let b = rhs as? Bool { return a == b }
+    if let a = lhs as? Int, let b = rhs as? Int { return a == b }
+    if let a = lhs as? Double, let b = rhs as? Double { return a == b }
+    if let a = lhs as? String, let b = rhs as? String { return a == b }
+    return false
 }
 
 // MARK: - NSColor hex helpers
