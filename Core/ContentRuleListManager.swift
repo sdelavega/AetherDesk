@@ -124,7 +124,9 @@ final class ContentRuleListManager {
                               identifier: Self.blocklistStoreIdentifier,
                               encodedRuleList: Self.blocklistJSON,
                               label: "content blocklist") { [weak self] list in
-            self?.ruleList = list
+            DispatchQueue.main.async {
+                self?.ruleList = list
+            }
             group.leave()
         }
 
@@ -133,7 +135,9 @@ final class ContentRuleListManager {
                               identifier: Self.externalNetworkStoreIdentifier,
                               encodedRuleList: Self.externalNetworkBlockJSON,
                               label: "external network blocklist") { [weak self] list in
-            self?.externalNetworkBlockRuleList = list
+            DispatchQueue.main.async {
+                self?.externalNetworkBlockRuleList = list
+            }
             group.leave()
         }
 
@@ -142,7 +146,9 @@ final class ContentRuleListManager {
                               identifier: Self.rawIPWebSocketStoreIdentifier,
                               encodedRuleList: Self.rawIPWebSocketBlockJSON,
                               label: "raw-IP WebSocket blocklist") { [weak self] list in
-            self?.rawIPWebSocketRuleList = list
+            DispatchQueue.main.async {
+                self?.rawIPWebSocketRuleList = list
+            }
             group.leave()
         }
 
