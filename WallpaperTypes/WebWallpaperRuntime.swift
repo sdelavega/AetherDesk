@@ -437,6 +437,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             return
         }
 
+        // Cap concurrent in-flight fetches to bound memory and network use.
+        activeFetchLock.lock()
+        let inFlight = activeFetchCompletions.count
+        activeFetchLock.unlock()
+        if inFlight >= Constants.Defaults.maxConcurrentNativeFetches {
+            Logger.app.warning("ÆtherDesk: blocked wallpaper fetch — concurrent fetch cap reached on display \(self.displayID)")
+            deliverFetchResult(id: id, status: 0, body: nil)
+            return
+        }
+
         // In App Store builds, intercept weather API calls and fulfil them via
         // WeatherKit instead of forwarding to open-meteo over URLSession.
         #if AETHERDESK_STORE
@@ -1067,7 +1077,7 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
         } else {
             Logger.app.info("ÆtherDesk: attempting to recover web content on display \(self.displayID)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self = self, !self.isStopped else { return }
+                guard let self = self, !self.isStopped, !self.isPaused else { return }
                 do {
                     try self.start()
                 } catch {
