@@ -122,71 +122,71 @@ This pass surfaced **1 critical**, **3 high**, **12 medium**, and **15 low** new
 
 ## Low
 
-### L1 — Updater subprocess stderr is redirected to `/dev/null`
+### L1 — Updater subprocess stderr is redirected to `/dev/null`  ✅ FIXED
 - **Files/lines:** `Core/UpdateManager.swift:533-534`
 - **Issue:** Swap failure diagnostics from `main.swift` are lost because the parent nulls both stdout and stderr.
 - **Fix:** Redirect stderr to a log file or `os_log`.
 
-### L2 — `ContentRuleListManager` log messages are garbled
+### L2 — `ContentRuleListManager` log messages are garbled  ✅ FIXED
 - **Files/lines:** `Core/ContentRuleListManager.swift:166, 178, 180`
 - **Issue:** `"ÆtherDesk: \(label)rom cache"` produces `"content blocklistrom cache"`. Refactor consumed leading characters of suffix words.
 - **Fix:** Use complete words: `"\(label) loaded from cache"`, etc.
 
-### L3 — `NetworkPolicy.contactedDomains` not cleared on wallpaper delete
+### L3 — `NetworkPolicy.contactedDomains` not cleared on wallpaper delete  ✅ FIXED
 - **Files/lines:** `Import/WallpaperImporter.swift:164-181`
 - **Issue:** `deleteWallpaper` clears `RuntimePolicyStore`, `GeolocationPermissionStore`, and `PropertyStore` but not `NetworkPolicy.clearDomainLog(for:)`.
 - **Fix:** Add `NetworkPolicy.clearDomainLog(for: bundle.id)` to `deleteWallpaper`.
 
-### L4 — `DisplayIdentity` collisions for identical displays reporting serial 0
+### L4 — `DisplayIdentity` collisions for identical displays reporting serial 0  ✅ FIXED
 - **Files/lines:** `Core/DisplayIdentity.swift:25-34`
 - **Issue:** Identical external displays (same vendor/model, serial 0) produce the same identity key, causing `WallpaperStore` assignments to collide.
 - **Fix:** Disambiguate by appending `CGDirectDisplayID` when two connected displays produce the same identity.
 
-### L5 — `ImageWallpaperRuntime.stop()` does not set `isPaused`
+### L5 — `ImageWallpaperRuntime.stop()` does not set `isPaused`  ✅ FIXED
 - **Files/lines:** `WallpaperTypes/ImageWallpaperRuntime.swift:48-90`
 - **Issue:** If `stop()` is called while image decode is in flight, the completion re-installs the image because `isPaused` is still false.
 - **Fix:** Set `isPaused = true` in `stop()`.
 
-### L6 — `MenuBarController.menuNeedsFullRebuild` is dead code
+### L6 — `MenuBarController.menuNeedsFullRebuild` is dead code  ✅ FIXED
 - **Files/lines:** `UI/MenuBarController.swift:45`
 - **Issue:** Property is declared and assigned but never read.
 - **Fix:** Remove it or wire it into `menuWillOpen`.
 
-### L7 — `VideoWallpaperRuntime` AVAssetImageGenerator callback may fire twice
+### L7 — `VideoWallpaperRuntime` AVAssetImageGenerator callback may fire twice  ✅ FIXED
 - **Files/lines:** `Core/ThumbnailRenderer.swift:226-242`
 - **Issue:** macOS may deliver a final `.completed` callback with `cgImage == nil`, clearing the just-rendered thumbnail.
 - **Fix:** Guard with a `hasCompleted` flag, or ignore invocations where `result != .succeeded`.
 
-### L8 — `LivelyInfoParser` / `LivelyPropertiesParser` use `print` instead of `Logger`
+### L8 — `LivelyInfoParser` / `LivelyPropertiesParser` use `print` instead of `Logger`  ✅ FIXED
 - **Files/lines:** `LivelyCompatibility/LivelyInfoParser.swift:160`, `LivelyCompatibility/LivelyPropertiesParser.swift:100`
 - **Fix:** Replace with `Logger.app.error(...)`.
 
-### L9 — Parser static caches never pruned
+### L9 — Parser static caches never pruned  ✅ FIXED
 - **Files/lines:** `LivelyCompatibility/LivelyInfoParser.swift:130`, `LivelyCompatibility/LivelyPropertiesParser.swift:71`
 - **Fix:** Add `clearCache()` and call from `WallpaperImporter.invalidateCache()`, or cap dict size.
 
-### L10 — `codesign --verify --deep` is deprecated
+### L10 — `codesign --verify --deep` is deprecated  ✅ FIXED
 - **Files/lines:** `Core/UpdateManager.swift:374`
 - **Fix:** Drop `--deep`; verify the main bundle and helpers individually.
 
-### L11 — Adhoc-signed running app accepts any adhoc-signed update
+### L11 — Adhoc-signed running app accepts any adhoc-signed update  ✅ FIXED
 - **Files/lines:** `Core/UpdateManager.swift:433-440`
 - **Fix:** For dev builds, log a warning. For release builds, require a non-adhoc authority.
 
-### L12 — `Info.plist` lacks `NSLocationAlwaysAndWhenInUseUsageDescription`
+### L12 — `Info.plist` lacks `NSLocationAlwaysAndWhenInUseUsageDescription`  ✅ FIXED
 - **Files/lines:** `Resources/Info.plist:38-39`
 - **Issue:** App Store reviewers may flag `whenInUse` as insufficient for always-on background location.
 - **Fix:** Add `NSLocationAlwaysAndWhenInUseUsageDescription` and use `requestAlwaysAuthorization`.
 
-### L13 — `WeatherKitBridge` lat/lon not range-validated
+### L13 — `WeatherKitBridge` lat/lon not range-validated  ✅ FIXED
 - **Files/lines:** `Core/WeatherKitBridge.swift:56-67`
 - **Fix:** Validate `[-90, 90]` / `[-180, 180]` and return failure on out-of-range.
 
-### L14 — Notification auth requested unconditionally every launch
+### L14 — Notification auth requested unconditionally every launch  ✅ FIXED
 - **Files/lines:** `UI/MenuBarController.swift:380-385`
 - **Fix:** Check `authorizationStatus() == .notDetermined` before requesting.
 
-### L15 — `BundleSchemeHandler` TOCTOU on file size
+### L15 — `BundleSchemeHandler` TOCTOU on file size  ✅ NO ACTION (theoretical)
 - **Files/lines:** `WallpaperTypes/WebWallpaperRuntime.swift:1253-1300`
 - **Issue:** Theoretical; bundle contents are immutable post-import.
 - **Fix:** No action needed for current threat model.
