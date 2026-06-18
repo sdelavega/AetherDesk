@@ -77,7 +77,7 @@ final class WallpaperValidator {
 
         let indexURL = bundle?.indexURL
             ?? url.appendingPathComponent(Constants.Keys.indexFile)
-        let js = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? ""
+        let js = collectAllScriptSource(in: url, indexURL: indexURL)
 
         if !js.isEmpty {
             inspectJavaScript(js, warnings: &warnings, issues: &issues)
@@ -209,6 +209,47 @@ final class WallpaperValidator {
         if js.contains("window.open(") || js.contains("window.open (") {
             issues.append("Attempts to open browser windows")
         }
+    }
+
+    /// Walks the bundle directory and concatenates the contents of all
+    /// `.js`, `.html`, and `.htm` files (up to a per-file cap) so the
+    /// heuristic checks run against linked scripts, not just index.html.
+    private static let perFileCap = 1_000_000 // 1 MB per file
+
+    private func collectAllScriptSource(in bundleURL: URL, indexURL: URL?) -> String {
+        guard let enumerator = FileManager.default.enumerator(
+            at: bundleURL, includingPropertiesForKeys: [.fileSizeKey]) else {
+            if let indexURL = indexURL {
+                return (try? String(contentsOf: indexURL, encoding: .utf8)) ?? ""
+            }
+            return ""
+        }
+
+        var collected: [String] = []
+        var seen = Set<String>()
+        while let fileURL = enumerator.nextObject() as? URL {
+            let ext = fileURL.pathExtension.lowercased()
+            guard ["js", "html", "htm"].contains(ext) else { continue }
+            let path = fileURL.standardizedFileURL.path
+            guard !seen.contains(path) else { continue }
+            seen.insert(path)
+
+            // Per-file size cap to bound memory.
+            if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+               size > Self.perFileCap {
+                // Read only the first perFileCap bytes.
+                if let handle = try? FileHandle(forReadingFrom: fileURL) {
+                    let data = handle.readData(ofLength: Self.perFileCap)
+                    try? handle.close()
+                    if let str = String(data: data, encoding: .utf8) {
+                        collected.append(str)
+                    }
+                }
+            } else if let str = try? String(contentsOf: fileURL, encoding: .utf8) {
+                collected.append(str)
+            }
+        }
+        return collected.joined(separator: "\n")
     }
 
     private func bundleSize(at url: URL) -> Int64 {

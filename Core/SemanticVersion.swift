@@ -21,9 +21,27 @@ import Foundation
 enum SemanticVersion {
 
     /// Returns true if `lhs` represents a strictly newer version than `rhs`.
+    /// Handles pre-release suffixes per semver: a pre-release version is
+    /// always lower than the corresponding release (1.0.0-beta < 1.0.0).
     static func compare(_ lhs: String, isGreaterThan rhs: String) -> Bool {
-        let lhsParts = lhs.split(separator: ".").map(String.init)
-        let rhsParts = rhs.split(separator: ".").map(String.init)
+        // Strip build metadata (everything after '+').
+        let lhsClean = lhs.split(separator: "+").first.map(String.init) ?? lhs
+        let rhsClean = rhs.split(separator: "+").first.map(String.init) ?? rhs
+
+        // Split into numeric core and pre-release suffix.
+        func splitCore(_ v: String) -> (core: String, preRelease: String?) {
+            if let dash = v.firstIndex(of: "-") {
+                return (String(v[..<dash]), String(v[v.index(after: dash)...]))
+            }
+            return (v, nil)
+        }
+
+        let (lhsCore, lhsPre) = splitCore(lhsClean)
+        let (rhsCore, rhsPre) = splitCore(rhsClean)
+
+        // Compare numeric core components.
+        let lhsParts = lhsCore.split(separator: ".").map(String.init)
+        let rhsParts = rhsCore.split(separator: ".").map(String.init)
         let count = max(lhsParts.count, rhsParts.count)
 
         for i in 0..<count {
@@ -36,6 +54,18 @@ enum SemanticVersion {
                 if left != right { return left > right }
             }
         }
-        return false // equal
+
+        // Cores are equal. A version with no pre-release is greater than
+        // one with a pre-release. Both having pre-releases → lexicographic.
+        switch (lhsPre, rhsPre) {
+        case (nil, nil):
+            return false // equal
+        case (nil, _):
+            return true   // lhs is release, rhs is pre-release → lhs > rhs
+        case (_?, nil):
+            return false  // lhs is pre-release, rhs is release → lhs < rhs
+        case (let lhs?, let rhs?):
+            return lhs > rhs
+        }
     }
 }
