@@ -191,6 +191,11 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         if let ruleList = ContentRuleListManager.shared.rawIPWebSocketRuleList {
             userContent.add(ruleList)
         }
+        // Always-on SSRF defense: blocks raw-IP / localhost / mDNS /
+        // cloud-metadata subresource loads that bypass our JS bridge.
+        if let ruleList = ContentRuleListManager.shared.ssrfBlockRuleList {
+            userContent.add(ruleList)
+        }
 
         let config = WKWebViewConfiguration()
         config.userContentController = userContent

@@ -38,10 +38,12 @@ final class ContentRuleListManager {
     private(set) var ruleList: WKContentRuleList?
     private(set) var externalNetworkBlockRuleList: WKContentRuleList?
     private(set) var rawIPWebSocketRuleList: WKContentRuleList?
+    private(set) var ssrfBlockRuleList: WKContentRuleList?
 
     private static let blocklistStoreIdentifier = "com.sdelavega.WallpaperBlocklist.v1"
     private static let externalNetworkStoreIdentifier = "com.sdelavega.ExternalNetworkBlock.v1"
     private static let rawIPWebSocketStoreIdentifier = "com.sdelavega.RawIPWebSocketBlock.v1"
+    private static let ssrfBlockStoreIdentifier = "com.sdelavega.SSRFBlock.v1"
 
     // MARK: - Blocklist
 
@@ -102,6 +104,32 @@ final class ContentRuleListManager {
     ]
     """#
 
+    /// Always-on SSRF defense for page-initiated subresource loads (img,
+    /// script, stylesheet, XHR/fetch from the page itself). The native
+    /// NetworkPolicy covers fetch/navigation/WebSocket that flow through our
+    /// JS bridge, but subresources loaded directly by the page bypass it.
+    ///
+    /// Blocks:
+    ///   - Raw IPv4 and IPv6 in http(s):// URLs (covers private ranges,
+    ///     loopback, link-local, and cloud metadata IPs like 169.254.169.254)
+    ///   - `localhost` and `*.localhost`
+    ///   - `*.local` (mDNS — can resolve to arbitrary LAN devices)
+    ///   - Cloud metadata hostnames (metadata.google.internal,
+    ///     metadata.azure.com, 169.254.169.254.nip.io, etc.)
+    private static let ssrfBlockJSON = #"""
+    [
+      { "trigger": { "url-filter": "^https?://\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://\\[" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://[^/]*localhost([/:]|$)" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://[^/]*\\.localhost([/:]|$)" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://[^/]*\\.local([/:]|$)" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://metadata\\.google\\.internal" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://metadata\\.azure\\.com" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://[^/]*\\.nip\\.io" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://[^/]*\\.sslip\\.io" }, "action": { "type": "block" } }
+    ]
+    """#
+
     // MARK: - Lifecycle
 
     private init() {}
@@ -148,6 +176,17 @@ final class ContentRuleListManager {
                               label: "raw-IP WebSocket blocklist") { [weak self] list in
             DispatchQueue.main.async {
                 self?.rawIPWebSocketRuleList = list
+            }
+            group.leave()
+        }
+
+        group.enter()
+        compileOrLoadRuleList(store: store,
+                              identifier: Self.ssrfBlockStoreIdentifier,
+                              encodedRuleList: Self.ssrfBlockJSON,
+                              label: "SSRF subresource blocklist") { [weak self] list in
+            DispatchQueue.main.async {
+                self?.ssrfBlockRuleList = list
             }
             group.leave()
         }
