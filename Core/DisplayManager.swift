@@ -27,8 +27,17 @@ class DisplayManager {
     }
 
     func updateDisplayList() {
+        // Use a single CGGetActiveDisplayList call, looping until the returned
+        // count is stable so we don't race with display topology changes.
         var displayCount: UInt32 = 0
-        CGGetActiveDisplayList(0, nil, &displayCount)
+        var stable = false
+        var attempts = 0
+        while !stable && attempts < 5 {
+            var previousCount = displayCount
+            CGGetActiveDisplayList(0, nil, &displayCount)
+            stable = (displayCount == previousCount && displayCount > 0)
+            attempts += 1
+        }
 
         var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
         CGGetActiveDisplayList(displayCount, &displays, &displayCount)
