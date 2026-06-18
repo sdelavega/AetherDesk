@@ -137,6 +137,9 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         handler.onNativeFetch = { [weak self] id, urlStr, method in
             self?.performNativeFetch(id: id, urlStr: urlStr, method: method)
         }
+        handler.onWebSocketValidate = { [weak self] id, urlStr, protocols in
+            self?.validateWebSocket(id: id, urlStr: urlStr, protocols: protocols)
+        }
         handler.onGeolocationRequest = { [weak self] id in
             self?.locationProxy.request(id: id)
         }
@@ -503,6 +506,53 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         }
     }
 
+    private func validateWebSocket(id: Int, urlStr: String, protocols: [String]?) {
+        guard let url = URL(string: urlStr) else {
+            deliverWebSocketValidation(id: id, allowed: false)
+            return
+        }
+
+        // Enforce the same per-minute network budget as fetch().
+        guard consumeNetworkBudget() else {
+            Logger.app.warning("ÆtherDesk: blocked WebSocket — network budget exceeded on display \(self.displayID)")
+            deliverWebSocketValidation(id: id, allowed: false)
+            return
+        }
+
+        switch networkPolicy.validate(url: url) {
+        case .success(let validatedURL):
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else {
+                    DispatchQueue.main.async { self?.deliverWebSocketValidation(id: id, allowed: false) }
+                    return
+                }
+                let allowed: Bool
+                switch self.networkPolicy.validateResolvedAddresses(for: validatedURL) {
+                case .success:
+                    allowed = true
+                case .failure(let reason):
+                    Logger.app.warning("ÆtherDesk: blocked WebSocket — \(reason.description)")
+                    allowed = false
+                }
+                DispatchQueue.main.async {
+                    self.deliverWebSocketValidation(id: id, allowed: allowed)
+                }
+            }
+        case .failure(let reason):
+            Logger.app.warning("ÆtherDesk: blocked WebSocket — \(reason.description)")
+            deliverWebSocketValidation(id: id, allowed: false)
+        }
+    }
+
+    private func deliverWebSocketValidation(id: Int, allowed: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript(
+                "window.aetherDesk && window.aetherDesk._webSocketValidated(\(id), \(allowed))",
+                completionHandler: nil
+            )
+        }
+    }
+
     // MARK: Bridge bootstrap
 
     private static func bridgeBootstrapScript(displayID: CGDirectDisplayID,
@@ -741,28 +791,99 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                 });
             } catch(e) {}
 
-            // WebSocket restriction: block connections to raw IP addresses.
-            // Only FQDN WebSocket connections are allowed; raw IPs are rejected
-            // for the same reason as HTTP fetch — they bypass DNS-based filtering.
+            // WebSocket bridge: every connection is validated by native policy,
+            // including DNS-rebinding checks, before the real socket is created.
             if (typeof window.WebSocket === 'function') {
                 var _OrigWebSocket = window.WebSocket;
-                var _rawIPPattern = /^(wss?:\\/\\/)?\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}/i;
-                var _ipv6Pattern = /^(wss?:\\/\\/)?\\[/i;
-                window.WebSocket = function(url, protocols) {
-                    if (_rawIPPattern.test(url) || _ipv6Pattern.test(url)) {
-                        var err = new Error('ÆtherDesk: WebSocket to raw IP addresses is not allowed');
-                        throw err;
+                var _pendingWebSockets = {};
+                var _wsIdCounter = 0;
+                var _wsRawIP = /^(wss?:\\/\\/)?\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}/i;
+                var _wsIPv6 = /^(wss?:\\/\\/)?\\[/i;
+
+                function _failWebSocket(ws, msg) {
+                    ws.readyState = BridgeWebSocket.CLOSED;
+                    try {
+                        var ev = { message: msg, type: 'error' };
+                        if (ws.onerror) ws.onerror(ev);
+                    } catch(e) {}
+                }
+
+                function BridgeWebSocket(url, protocols) {
+                    var id = ++_wsIdCounter;
+                    this._id = id;
+                    this._url = url;
+                    this._protocols = protocols;
+                    this._real = null;
+                    this._sendQueue = [];
+                    this.url = url;
+                    this.readyState = BridgeWebSocket.CONNECTING;
+                    this.bufferedAmount = 0;
+                    this.extensions = '';
+                    this.protocol = '';
+                    this.onopen = null;
+                    this.onmessage = null;
+                    this.onclose = null;
+                    this.onerror = null;
+                    _pendingWebSockets[id] = this;
+
+                    if (_wsRawIP.test(url) || _wsIPv6.test(url)) {
+                        setTimeout(function() { _failWebSocket(this, 'ÆtherDesk: WebSocket to raw IP addresses is not allowed'); }.bind(this), 0);
+                        return;
                     }
-                    if (protocols !== undefined) {
-                        return new _OrigWebSocket(url, protocols);
+
+                    try {
+                        window.webkit.messageHandlers.aetherDesk.postMessage({ action: 'webSocketValidate', id: id, url: url, protocols: protocols });
+                    } catch(e) {
+                        setTimeout(function() { _failWebSocket(this, 'ÆtherDesk bridge unavailable'); }.bind(this), 0);
                     }
-                    return new _OrigWebSocket(url);
+                }
+
+                BridgeWebSocket.CONNECTING = 0;
+                BridgeWebSocket.OPEN = 1;
+                BridgeWebSocket.CLOSING = 2;
+                BridgeWebSocket.CLOSED = 3;
+
+                BridgeWebSocket.prototype.send = function(data) {
+                    if (this._real) {
+                        this._real.send(data);
+                    } else if (this.readyState === BridgeWebSocket.CONNECTING) {
+                        this._sendQueue.push(data);
+                    } else {
+                        throw new Error('InvalidStateError: WebSocket is not open');
+                    }
                 };
-                window.WebSocket.prototype = _OrigWebSocket.prototype;
-                window.WebSocket.CONNECTING = _OrigWebSocket.CONNECTING;
-                window.WebSocket.OPEN = _OrigWebSocket.OPEN;
-                window.WebSocket.CLOSING = _OrigWebSocket.CLOSING;
-                window.WebSocket.CLOSED = _OrigWebSocket.CLOSED;
+
+                BridgeWebSocket.prototype.close = function(code, reason) {
+                    if (this._real) this._real.close(code, reason);
+                    this.readyState = BridgeWebSocket.CLOSING;
+                };
+
+                window.aetherDesk._webSocketValidated = function(id, allowed) {
+                    var ws = _pendingWebSockets[id];
+                    if (!ws) return;
+                    delete _pendingWebSockets[id];
+                    if (!allowed) {
+                        _failWebSocket(ws, 'ÆtherDesk: WebSocket rejected by policy');
+                        return;
+                    }
+                    var real;
+                    try {
+                        real = (ws._protocols !== undefined) ? new _OrigWebSocket(ws._url, ws._protocols) : new _OrigWebSocket(ws._url);
+                    } catch(e) {
+                        _failWebSocket(ws, e.message);
+                        return;
+                    }
+                    ws._real = real;
+                    real.onopen = function(e) { ws.readyState = BridgeWebSocket.OPEN; ws.protocol = real.protocol; if (ws.onopen) ws.onopen(e); };
+                    real.onmessage = function(e) { if (ws.onmessage) ws.onmessage(e); };
+                    real.onclose = function(e) { ws.readyState = BridgeWebSocket.CLOSED; if (ws.onclose) ws.onclose(e); };
+                    real.onerror = function(e) { ws.readyState = BridgeWebSocket.CLOSED; if (ws.onerror) ws.onerror(e); };
+                    for (var i = 0; i < ws._sendQueue.length; i++) real.send(ws._sendQueue[i]);
+                    ws._sendQueue.length = 0;
+                };
+
+                window.WebSocket = BridgeWebSocket;
+                window.WebSocket.prototype = BridgeWebSocket.prototype;
             }
 
             // Watchdog heartbeat: pure setInterval, no dependency on rAF so a
@@ -1162,6 +1283,7 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
 
     /// Fired on every `{action:"heartbeat"}` message from the page.
     var onHeartbeat: (() -> Void)?
+    var onWebSocketValidate: ((_ id: Int, _ url: String, _ protocols: [String]?) -> Void)?
     var onNetworkBudgetExceeded: (() -> Void)?
     var onNativeFetch: ((_ id: Int, _ url: String, _ method: String) -> Void)?
     var onGeolocationRequest: ((_ id: Int) -> Void)?
@@ -1190,6 +1312,13 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
            let urlStr = body["url"] as? String {
             let method = body["method"] as? String ?? "GET"
             onNativeFetch?(id, urlStr, method)
+            return
+        }
+        if action == "webSocketValidate",
+           let id = body["id"] as? Int,
+           let urlStr = body["url"] as? String {
+            let protocols = body["protocols"] as? [String]
+            onWebSocketValidate?(id, urlStr, protocols)
             return
         }
         if action == "geolocationRequest",
