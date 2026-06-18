@@ -505,6 +505,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             var networkRequestsInWindow = 0;
             var _pendingFetches = {};
             var _fetchIdCounter = 0;
+            var _lastWeatherSourceFetchId = -1;
             window._aetherDeskProperties = window._aetherDeskProperties || {};
             window.aetherDesk = {
                 display: { id: \(displayID), width: 0, height: 0, scaleFactor: 1, isPrimary: false },
@@ -550,10 +551,24 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                     // .then() handler (e.g. applyWeather -> setupAttribution)
                     // sees the correct, per-fetch value rather than a stale
                     // build-time guess.
-                    if (resp.weatherSource === 'weatherkit') {
-                        window.__weatherKitActive = true;
-                    } else if (resp.weatherSource === 'open-meteo') {
-                        window.__weatherKitActive = false;
+                    //
+                    // Wallpapers can have multiple weather fetches in flight at
+                    // once (e.g. WeatherAether fires one immediately from a
+                    // cached location and another after geolocation resolves,
+                    // which can land a few seconds later). Responses aren't
+                    // guaranteed to arrive in the order they were issued, so a
+                    // slower, older fetch landing after a newer one must not be
+                    // allowed to stomp on the flag. `id` is assigned when the
+                    // fetch is issued (see window.fetch override below) and is
+                    // monotonically increasing, so it's a reliable "is this
+                    // newer than what I've already applied" check.
+                    if (resp.weatherSource !== undefined && resp.id > _lastWeatherSourceFetchId) {
+                        _lastWeatherSourceFetchId = resp.id;
+                        if (resp.weatherSource === 'weatherkit') {
+                            window.__weatherKitActive = true;
+                        } else if (resp.weatherSource === 'open-meteo') {
+                            window.__weatherKitActive = false;
+                        }
                     }
                     var pending = _pendingFetches[resp.id];
                     if (!pending) return;

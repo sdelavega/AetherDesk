@@ -393,18 +393,23 @@ private final class PreferencesViewController: NSViewController {
 
         let title = NSTextField(labelWithString: "ÆtherDesk")
         title.font = NSFont.boldSystemFont(ofSize: 24)
+        title.alignment = .center
         title.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(title)
 
         let versionString = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
-        let version = NSTextField(labelWithString: "Version \(versionString)")
+        let buildString = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let versionText = buildString.map { "Version \(versionString) (\($0))" } ?? "Version \(versionString)"
+        let version = NSTextField(labelWithString: versionText)
         version.textColor = .secondaryLabelColor
+        version.alignment = .center
         version.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(version)
 
         let desc = NSTextField(wrappingLabelWithString:
             "A native macOS live wallpaper host for a curated subset of Lively wallpapers.")
         desc.textColor = .secondaryLabelColor
+        desc.alignment = .center
         desc.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(desc)
 
@@ -419,7 +424,7 @@ private final class PreferencesViewController: NSViewController {
         // WebWallpaperRuntime), so this is gated out of the OSS build, which
         // is Open-Meteo-only and has nothing to attribute here.
         let weatherAttributionButton = NSButton(
-            title: "Weather Data Attribution…",
+            title: " Weather Data Attribution…",
             target: self,
             action: #selector(openWeatherKitAttribution))
         weatherAttributionButton.bezelStyle = .inline
@@ -429,6 +434,33 @@ private final class PreferencesViewController: NSViewController {
         weatherAttributionButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(weatherAttributionButton)
         #endif
+
+        // Open-Meteo's terms (CC BY 4.0) require visible attribution wherever
+        // their data is used. The OSS build is Open-Meteo-only, and the App
+        // Store build silently falls back to it when WeatherKit is
+        // unavailable, so this credit belongs in both builds, unlike the
+        // WeatherKit-specific button above.
+        let openMeteoAttributionButton = NSButton(
+            title: "Weather Data by Open-Meteo.com…",
+            target: self,
+            action: #selector(openOpenMeteoAttribution))
+        openMeteoAttributionButton.bezelStyle = .inline
+        openMeteoAttributionButton.isBordered = false
+        openMeteoAttributionButton.contentTintColor = .linkColor
+        openMeteoAttributionButton.font = NSFont.systemFont(ofSize: 11)
+        openMeteoAttributionButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(openMeteoAttributionButton)
+
+        let privacyPolicyButton = NSButton(
+            title: "Privacy Policy…",
+            target: self,
+            action: #selector(openPrivacyPolicy))
+        privacyPolicyButton.bezelStyle = .inline
+        privacyPolicyButton.isBordered = false
+        privacyPolicyButton.contentTintColor = .linkColor
+        privacyPolicyButton.font = NSFont.systemFont(ofSize: 11)
+        privacyPolicyButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(privacyPolicyButton)
 
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: view.topAnchor, constant: 30),
@@ -444,9 +476,21 @@ private final class PreferencesViewController: NSViewController {
         #if AETHERDESK_STORE
         NSLayoutConstraint.activate([
             weatherAttributionButton.topAnchor.constraint(equalTo: desc.bottomAnchor, constant: 14),
-            weatherAttributionButton.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+            weatherAttributionButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+
+            openMeteoAttributionButton.topAnchor.constraint(equalTo: weatherAttributionButton.bottomAnchor, constant: 6),
+            openMeteoAttributionButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+        ])
+        #else
+        NSLayoutConstraint.activate([
+            openMeteoAttributionButton.topAnchor.constraint(equalTo: desc.bottomAnchor, constant: 14),
+            openMeteoAttributionButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
         ])
         #endif
+        NSLayoutConstraint.activate([
+            privacyPolicyButton.topAnchor.constraint(equalTo: openMeteoAttributionButton.bottomAnchor, constant: 6),
+            privacyPolicyButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+        ])
         return view
     }
 
@@ -510,10 +554,16 @@ private final class PreferencesViewController: NSViewController {
             sourceLabel.translatesAutoresizingMaskIntoConstraints = false
             wallpaperEditorContainer.addSubview(sourceLabel)
 
+            // Keep these item titles short — NSPopUpButton sizes itself to its
+            // widest item with no wrapping, so a long title pushes the control
+            // past the editor container's edge instead of clipping. The full
+            // "falls back to Open-Meteo" explanation lives in the caption below
+            // and in the tooltip instead.
             let popup = NSPopUpButton()
             popup.translatesAutoresizingMaskIntoConstraints = false
-            popup.addItem(withTitle: "Automatic — Apple Weather, falls back to Open-Meteo")
-            popup.addItem(withTitle: "Always use Open-Meteo")
+            popup.addItem(withTitle: "Automatic (Apple Weather)")
+            popup.addItem(withTitle: "Open-Meteo Only")
+            popup.toolTip = "Automatic tries Apple Weather first and silently falls back to Open-Meteo if it's unavailable."
             let preference = WeatherSourceSettingsStore.shared.load()
             popup.selectItem(at: preference == .automatic ? 0 : 1)
             popup.target = self
@@ -536,6 +586,7 @@ private final class PreferencesViewController: NSViewController {
                 sourceLabel.bottomAnchor.constraint(equalTo: popup.topAnchor, constant: -4),
 
                 popup.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
+                popup.trailingAnchor.constraint(lessThanOrEqualTo: wallpaperEditorContainer.trailingAnchor, constant: -10),
                 popup.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -4),
 
                 caption.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
@@ -608,6 +659,16 @@ private final class PreferencesViewController: NSViewController {
         WeatherSourceSettingsStore.shared.save(preference)
     }
     #endif
+
+    @objc private func openOpenMeteoAttribution() {
+        guard let url = URL(string: "https://open-meteo.com/") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func openPrivacyPolicy() {
+        guard let url = URL(string: "https://sdelavega.github.io/AetherDesk/privacy.html") else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     @objc private func geoPermissionChanged(_ sender: NSButton) {
         guard let bundleID = objc_getAssociatedObject(sender, &AssociatedKeys.bundleID) as? UUID else { return }
