@@ -283,6 +283,17 @@ final class UpdateManager {
             return
         }
 
+        // Hard cap before we ever read a response body or disk bytes.
+        guard asset.size <= Constants.Defaults.maxUpdateArchiveBytes else {
+            DispatchQueue.main.async {
+                let reason = "Update archive exceeds the maximum allowed size."
+                self.setState(.failed(UpdateError.hashVerificationFailed(reason)))
+                self.presentAlert(style: .warning, title: "Update failed", body: reason)
+                self.setState(.idle)
+            }
+            return
+        }
+
         DispatchQueue.main.async { self.setState(.downloading) }
 
         // Download both the zip and the .sha256 sidecar (if present).
@@ -545,14 +556,25 @@ final class UpdateManager {
             throw UpdateError.hashVerificationFailed("Could not read expected hash from sidecar file")
         }
 
-        guard let data = try? Data(contentsOf: fileURL) else {
+        guard let computed = try? computeSHA256(ofFileAt: fileURL) else {
             throw UpdateError.hashVerificationFailed("Could not read downloaded archive")
         }
 
-        let computed = data.sha256HexString()
         guard computed.compare(expectedHash, options: .caseInsensitive) == .orderedSame else {
             throw UpdateError.hashVerificationFailed("Hash mismatch: expected \(expectedHash), got \(computed)")
         }
+    }
+
+    @available(macOS 12.0, *)
+    private func computeSHA256(ofFileAt fileURL: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+        var hasher = CryptoKit.SHA256()
+        while true {
+            guard let chunk = try? handle.read(upToCount: 1024 * 1024), !chunk.isEmpty else { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private func reportInstallError(_ error: UpdateError) {
@@ -604,11 +626,15 @@ final class UpdateManager {
 
 // MARK: - SHA-256 helper
 
-extension Data {
-    func sha256HexString() -> String {
-        let digest = SHA256.hash(data: self)
-        return digest.map { String(format: "%02x", $0) }.joined()
+private func computeSHA256(ofFileAt fileURL: URL) throws -> String {
+    let handle = try FileHandle(forReadingFrom: fileURL)
+    defer { try? handle.close() }
+    var hasher = CryptoKit.SHA256()
+    while true {
+        guard let chunk = try? handle.read(upToCount: 1024 * 1024), !chunk.isEmpty else { break }
+        hasher.update(data: chunk)
     }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
 }
 
 #endif // !AETHERDESK_STORE

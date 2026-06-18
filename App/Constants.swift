@@ -49,6 +49,9 @@ enum Constants {
 
         /// Maximum response body size (bytes) for wallpaper native fetch proxy.
         static let maxNativeFetchResponseBytes: Int64 = 5_000_000 // 5 MB
+
+        /// Maximum allowed size (bytes) for an update archive downloaded from GitHub.
+        static let maxUpdateArchiveBytes: Int64 = 200 * 1024 * 1024 // 200 MB
     }
 
     enum Directories {
