@@ -553,7 +553,9 @@ private final class PreferencesViewController: NSViewController {
         var editorBottomConstant: CGFloat = -12
 
         #if AETHERDESK_STORE
-        if bundle.baseURL.lastPathComponent == "WeatherAether" {
+        let hasWeatherSourceFlag = bundle.livelyInfo?.AetherDesk?["weatherSourceProvider"] != nil
+        let isWeatherAetherFolder = bundle.baseURL.lastPathComponent == "WeatherAether"
+        if hasWeatherSourceFlag || isWeatherAetherFolder {
             let sourceLabel = NSTextField(labelWithString: "Weather data source")
             sourceLabel.font = NSFont.boldSystemFont(ofSize: 12)
             sourceLabel.translatesAutoresizingMaskIntoConstraints = false

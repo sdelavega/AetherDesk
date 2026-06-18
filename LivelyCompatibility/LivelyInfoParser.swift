@@ -37,6 +37,7 @@ struct LivelyInfo: Decodable {
     let Manifest: [String]?
     let Tags: [String]?
     let ReleaseDate: String?
+    let AetherDesk: [String: String]?
     let EmbededResources: [String]?
 
     private enum CodingKeys: String, CodingKey {
@@ -60,6 +61,7 @@ struct LivelyInfo: Decodable {
         case Manifest
         case Tags
         case ReleaseDate
+        case AetherDesk
         case EmbededResources
         case Desc
     }
@@ -83,6 +85,7 @@ struct LivelyInfo: Decodable {
         Manifest = try container.decodeIfPresent([String].self, forKey: .Manifest)
         Tags = try container.decodeIfPresent([String].self, forKey: .Tags)
         ReleaseDate = try container.decodeIfPresent(String.self, forKey: .ReleaseDate)
+        AetherDesk = try container.decodeIfPresent([String: String].self, forKey: .AetherDesk)
         EmbededResources = try container.decodeIfPresent([String].self, forKey: .EmbededResources)
 
         // Handle Description vs Desc (both used by Lively wallpapers)
