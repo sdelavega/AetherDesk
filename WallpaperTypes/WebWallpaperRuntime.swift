@@ -240,15 +240,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             ])
             self.webView = wv
         }
-        // Load the HTML as a string with aetherwall:// as the base URL.
+        // Load the HTML as a string with a unique aetherwall://<bundleID>/ base URL.
         // loadHTMLString renders exactly like loadFileURL (no scheme-handler
         // round-trip for the main frame, so no display regression), but the
-        // page's origin becomes aetherwall://wallpaper instead of null/file://,
+        // page's origin becomes aetherwall://<bundleID> instead of null/file://,
         // which lets cross-origin HTTPS fetch() calls pass WebKit's CORS check.
+        // The unique host per bundle isolates localStorage/cookies/IndexedDB.
         // Sub-resources with relative paths are served by BundleSchemeHandler.
         // Fall back to loadFileURL if the HTML can't be read as a string.
         if let html = try? String(contentsOf: indexURL, encoding: .utf8) {
-            let baseURL = URL(string: "\(Self.bundleScheme)://wallpaper/")!
+            let baseURL = URL(string: "\(Self.bundleScheme)://\(bundle.id.uuidString)/")!
             webView?.loadHTMLString(html, baseURL: baseURL)
         } else {
             webView?.loadFileURL(indexURL, allowingReadAccessTo: bundle.baseURL)
