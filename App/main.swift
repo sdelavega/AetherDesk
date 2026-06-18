@@ -31,11 +31,34 @@ import Foundation
 #if !AETHERDESK_STORE
 if CommandLine.arguments.count == 6,
    CommandLine.arguments[1] == "--aetherdesk-updater",
-   let pid = Int32(CommandLine.arguments[2]) {
+   let pid = Int32(CommandLine.arguments[2]), pid > 0 {
     let oldAppPath = CommandLine.arguments[3]
     let newAppPath = CommandLine.arguments[4]
     let tempDir    = CommandLine.arguments[5]
     let fm = FileManager.default
+
+    // Validate paths so a malicious or accidental invocation cannot delete
+    // or move arbitrary files. oldAppPath must be the running bundle,
+    // tempDir must live inside NSTemporaryDirectory(), and newAppPath must
+    // be contained within tempDir.
+    let currentBundle = URL(fileURLWithPath: Bundle.main.bundlePath).standardizedFileURL.resolvingSymlinksInPath()
+    let resolvedOld   = URL(fileURLWithPath: oldAppPath).standardizedFileURL.resolvingSymlinksInPath()
+    let resolvedNew   = URL(fileURLWithPath: newAppPath).standardizedFileURL.resolvingSymlinksInPath()
+    let resolvedTemp  = URL(fileURLWithPath: tempDir).standardizedFileURL.resolvingSymlinksInPath()
+    let tmpRoot       = URL(fileURLWithPath: NSTemporaryDirectory()).standardizedFileURL.resolvingSymlinksInPath()
+
+    guard resolvedOld == currentBundle else {
+        FileHandle.standardError.write(Data("AetherDesk updater rejected: oldAppPath does not match current bundle\n".utf8))
+        exit(1)
+    }
+    guard resolvedTemp.path.hasPrefix(tmpRoot.path) else {
+        FileHandle.standardError.write(Data("AetherDesk updater rejected: tempDir is not inside NSTemporaryDirectory()\n".utf8))
+        exit(1)
+    }
+    guard resolvedNew.path.hasPrefix(resolvedTemp.path + "/") else {
+        FileHandle.standardError.write(Data("AetherDesk updater rejected: newAppPath is not inside tempDir\n".utf8))
+        exit(1)
+    }
 
     // Wait for the parent process to die.
     while kill(pid, 0) == 0 {
