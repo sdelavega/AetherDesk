@@ -1242,6 +1242,10 @@ private final class LocationProxy: NSObject, CLLocationManagerDelegate {
             onResult?(id, lat, lon)
         }
     }
+
+    deinit {
+        manager.stopUpdatingLocation()
+    }
 }
 
 // MARK: - Bundle URL scheme handler
