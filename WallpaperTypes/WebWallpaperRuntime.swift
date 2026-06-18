@@ -134,8 +134,8 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         pausedSnapshotView.isHidden = true
 
         handler.onHeartbeat = { [weak self] in self?.watchdog.heartbeat() }
-        handler.onNativeFetch = { [weak self] id, urlStr, method in
-            self?.performNativeFetch(id: id, urlStr: urlStr, method: method)
+        handler.onNativeFetch = { [weak self] id, urlStr, method, body, headers in
+            self?.performNativeFetch(id: id, urlStr: urlStr, method: method, body: body, headers: headers)
         }
         handler.onWebSocketValidate = { [weak self] id, urlStr, protocols in
             self?.validateWebSocket(id: id, urlStr: urlStr, protocols: protocols)
@@ -393,7 +393,11 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
     /// Executes an HTTP request via URLSession on behalf of the wallpaper page,
     /// completely bypassing WebKit's cross-origin restrictions so wallpapers
     /// can reach external APIs (weather data, geolocation, etc.).
-    private func performNativeFetch(id: Int, urlStr: String, method: String) {
+    private func performNativeFetch(id: Int,
+                                    urlStr: String,
+                                    method: String,
+                                    body: String? = nil,
+                                    headers: [String: String]? = nil) {
         guard let url = URL(string: urlStr) else {
             deliverFetchResult(id: id, status: 0, body: nil)
             return
@@ -430,6 +434,16 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                     var request = URLRequest(url: safeURL, timeoutInterval: 30)
                     request.httpMethod = method
                     request.cachePolicy = .reloadIgnoringLocalCacheData
+
+                    if let bodyStr = body {
+                        request.httpBody = Data(bodyStr.utf8)
+                        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                    }
+                    if let headers = headers {
+                        for (name, value) in headers where !name.lowercased().hasPrefix("content-length") {
+                            request.setValue(value, forHTTPHeaderField: name)
+                        }
+                    }
 
                     let task = self.nativeFetchSession.downloadTask(with: request)
                     self.activeFetchLock.lock()
@@ -673,6 +687,62 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                 return new Error('ÆtherDesk network budget exceeded');
             }
 
+            function makeNativeXHR(global) {
+                function NativeXHR() {
+                    this.readyState = 0;
+                    this.status = 0;
+                    this.statusText = '';
+                    this.responseText = '';
+                    this.response = '';
+                    this.responseURL = '';
+                    this._method = 'GET';
+                    this._url = '';
+                    this._headers = {};
+                    this._body = null;
+                    this._responseHeaders = {};
+                }
+                NativeXHR.UNSENT = 0; NativeXHR.OPENED = 1; NativeXHR.HEADERS_RECEIVED = 2;
+                NativeXHR.LOADING = 3; NativeXHR.DONE = 4;
+                NativeXHR.prototype.open = function(method, url, async) {
+                    this._method = method;
+                    this._url = url;
+                    this.readyState = NativeXHR.OPENED;
+                    if (this.onreadystatechange) { try { this.onreadystatechange(); } catch(e) {} }
+                };
+                NativeXHR.prototype.setRequestHeader = function(header, value) { this._headers[header] = value; };
+                NativeXHR.prototype.send = function(body) {
+                    var self = this;
+                    if (!window.aetherDesk._consumeNetworkBudget()) {
+                        this.readyState = NativeXHR.DONE;
+                        if (this.onerror) { try { this.onerror(networkBlockedError()); } catch(e) {} }
+                        if (this.onreadystatechange) { try { this.onreadystatechange(); } catch(e) {} }
+                        return;
+                    }
+                    fetch(this._url, { method: this._method, body: body, headers: this._headers })
+                        .then(function(resp) { return resp.text().then(function(text) { return { resp: resp, text: text }; }); })
+                        .then(function(result) {
+                            self.status = result.resp.status;
+                            self.statusText = result.resp.statusText;
+                            self.responseText = result.text;
+                            self.response = result.text;
+                            self.responseURL = result.resp.url;
+                            self.readyState = NativeXHR.DONE;
+                            if (self.onload) { try { self.onload(); } catch(e) {} }
+                            if (self.onreadystatechange) { try { self.onreadystatechange(); } catch(e) {} }
+                        })
+                        .catch(function(err) {
+                            self.readyState = NativeXHR.DONE;
+                            if (self.onerror) { try { self.onerror(err); } catch(e) {} }
+                            if (self.onreadystatechange) { try { self.onreadystatechange(); } catch(e) {} }
+                        });
+                };
+                NativeXHR.prototype.abort = function() {};
+                NativeXHR.prototype.getResponseHeader = function(name) { return this._responseHeaders[name]; };
+                NativeXHR.prototype.getAllResponseHeaders = function() { return ''; };
+                NativeXHR.prototype.overrideMimeType = function() {};
+                return NativeXHR;
+            }
+
             if (typeof window.fetch === 'function') {
                 var _origFetch = window.fetch.bind(window);
                 window.fetch = function(resource, options) {
@@ -692,7 +762,9 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                                     action: 'nativeFetch',
                                     id: id,
                                     url: urlStr,
-                                    method: (options && options.method) || 'GET'
+                                    method: (options && options.method) || 'GET',
+                                    body: (options && options.body) || null,
+                                    headers: (options && options.headers) || null
                                 });
                             } catch (e) {
                                 delete _pendingFetches[id];
@@ -705,18 +777,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             }
 
             if (typeof window.XMLHttpRequest === 'function') {
-                var _OrigXHR = window.XMLHttpRequest;
-                window.XMLHttpRequest = function() {
-                    var xhr = new _OrigXHR();
-                    var _open = xhr.open;
-                    xhr.open = function() {
-                        if (!window.aetherDesk._consumeNetworkBudget()) {
-                            throw networkBlockedError();
-                        }
-                        return _open.apply(xhr, arguments);
-                    };
-                    return xhr;
-                };
+                window.XMLHttpRequest = makeNativeXHR(window);
             }
 
             // rAF throttle: enforce fpsCap from the native side.
@@ -1285,7 +1346,7 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
     var onHeartbeat: (() -> Void)?
     var onWebSocketValidate: ((_ id: Int, _ url: String, _ protocols: [String]?) -> Void)?
     var onNetworkBudgetExceeded: (() -> Void)?
-    var onNativeFetch: ((_ id: Int, _ url: String, _ method: String) -> Void)?
+    var onNativeFetch: ((_ id: Int, _ url: String, _ method: String, _ body: String?, _ headers: [String: String]?) -> Void)?
     var onGeolocationRequest: ((_ id: Int) -> Void)?
 
     init(bridge: PropertyBridge?) {
@@ -1311,7 +1372,9 @@ private final class ScriptMessageHandler: NSObject, WKScriptMessageHandler {
            let id = body["id"] as? Int,
            let urlStr = body["url"] as? String {
             let method = body["method"] as? String ?? "GET"
-            onNativeFetch?(id, urlStr, method)
+            let bodyStr = body["body"] as? String
+            let headers = body["headers"] as? [String: String]
+            onNativeFetch?(id, urlStr, method, bodyStr, headers)
             return
         }
         if action == "webSocketValidate",
