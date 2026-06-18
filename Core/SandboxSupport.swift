@@ -46,20 +46,27 @@ enum SandboxSupport {
         if defaults.bool(forKey: migrationKey) { return }
 
         let fm = FileManager.default
-        let oldBase = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
+
+        // When sandboxed, FileManager.urls(for: .applicationSupportDirectory)
+        // returns the container path for both old and new — making migration a
+        // no-op. Derive the pre-sandbox location from the real user home.
+        let realHome = URL(fileURLWithPath: "/Users/\(NSUserName())")
+        let oldBase = realHome
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
             .appendingPathComponent(Constants.appName, isDirectory: true)
 
-        guard let oldBase = oldBase, fm.fileExists(atPath: oldBase.path) else {
+        guard fm.fileExists(atPath: oldBase.path) else {
             defaults.set(true, forKey: migrationKey)
             return
         }
 
+        // newBase resolves to the sandbox container's Application Support.
         let newBase = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?
             .appendingPathComponent(Constants.appName, isDirectory: true)
 
-        guard let newBase = newBase else {
+        guard let newBase = newBase, newBase.path != oldBase.path else {
             Logger.app.info("ÆtherDesk SandboxSupport: could not locate sandbox container — skipping migration")
             return
         }

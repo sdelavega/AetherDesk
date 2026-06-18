@@ -317,9 +317,19 @@ final class UpdateManager {
         session.downloadTask(with: hashURL) { url, response, error in
             hashTempURL = url
             // 404 for the sidecar is fine — we'll skip hash verification.
-            if let httpResponse = response as? HTTPURLResponse,
-               httpResponse.statusCode == 404 {
-                hashTempURL = nil
+            // Any other error (timeout, DNS failure, 500) must fail the update.
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 404 {
+                    hashTempURL = nil
+                } else if httpResponse.statusCode >= 400 {
+                    downloadError = downloadError
+                        ?? UpdateError.hashVerificationFailed(
+                            "Hash sidecar returned HTTP \(httpResponse.statusCode)")
+                }
+            } else if error != nil {
+                downloadError = downloadError
+                    ?? UpdateError.hashVerificationFailed(
+                        "Hash sidecar download failed: \(error!.localizedDescription)")
             }
             group.leave()
         }.resume()
