@@ -855,15 +855,32 @@ extension WebWallpaperRuntime: WKNavigationDelegate {
     private func shouldAllowNavigation(to url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return true }
         switch scheme {
-        case Self.bundleScheme, "file", "data", "about", "blob":
+        case Self.bundleScheme, "data", "about", "blob":
             return true
+        case "file":
+            return shouldAllowFileNavigation(to: url)
         case "http", "https":
-            return consumeNetworkBudget()
+            guard consumeNetworkBudget() else { return false }
+            switch networkPolicy.validate(url: url) {
+            case .success:
+                return true
+            case .failure(let reason):
+                Logger.app.warning("ÆtherDesk: blocked wallpaper navigation to \(url.absoluteString): \(reason)")
+                return false
+            }
         case "javascript":
             return false
         default:
             return false
         }
+    }
+
+    private func shouldAllowFileNavigation(to url: URL) -> Bool {
+        // Restrict file:// navigation to files inside the current bundle.
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+        let bundlePath = bundle.baseURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let path = resolved.path
+        return path == bundlePath || path.hasPrefix(bundlePath + "/")
     }
 
     private func resetNetworkWindow() {
