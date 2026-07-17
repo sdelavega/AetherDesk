@@ -4,6 +4,7 @@
 // Constructs the particle pool for the current weather type. Called when
 // weatherBucket changes (rain → clear, etc.) or on resize. Particle types:
 //   rain/thunder  — fast diagonal lines
+//   hail          — very fast, hard ice pellets in a wind-driven 3D field
 //   snow          — slow drifting circles with sinusoidal horizontal wobble
 //   sleet         — mixed: fast lines (rain) + slower circles (ice pellets)
 //   clear night   — stationary twinkling stars
@@ -139,6 +140,15 @@ function rebuildParticles(){
         {x:Math.random()*w,y:Math.random()*h,depth:depth,speed:75+depth*230,sz:0.6+depth*2.5,op:0.10+depth*0.42,ice:true}:
         {x:Math.random()*w,y:Math.random()*h,depth:depth,speed:155+depth*440,len:4+depth*13,width:0.4+depth*0.8,op:0.06+depth*0.30,ice:false});
     }
+  }else if(bk==='hail'){
+    if(!S.useThreeRenderer||!S.threeHail){
+      var hailCount=Math.round(85+atmosphere.precipitation*170);
+      for(var i=0;i<hailCount;i++){
+        var depth=Math.pow(Math.random(),0.72);
+        S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
+          speed:340+depth*720,sz:0.85+depth*3.2,op:0.18+depth*0.60});
+      }
+    }
   }
   if((bk==='clear'||bk==='partly')&&!S.isDay){
     S.stars=[];
@@ -247,11 +257,20 @@ function updateParticles(dt){
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
     }
+  }else if(bk==='hail'&&!rendersThreeHail()){
+    for(var i=0;i<S.particles.length;i++){
+      var p=S.particles[i];
+      p.y+=p.speed*spd*dt;
+      p.x+=windDrift*(0.78+p.depth*1.05)*spd*dt;
+      if(p.y>h){p.y=-p.sz;p.x=Math.random()*w;}
+      if(p.x<-12)p.x=w+12;
+      if(p.x>w+12)p.x=-12;
+    }
   }
   for(var i=0;i<S.stars.length;i++){
     S.stars[i].tw+=S.stars[i].tws*spd*dt;
   }
-  if(bk==='thunder'){
+  if(bk==='thunder'||bk==='hail'){
     S.lightningCooldown-=dt;
     if(S.lightningCooldown<=0&&Math.random()<0.012*spd){
       var showBolt=Math.random()<0.68;
@@ -274,7 +293,7 @@ function updateParticles(dt){
 // ── drawParticles() ──────────────────────────────────────────────────────────
 // Renders all particles, stars, lightning flash, and fog overlay for the
 // current frame. Each weather type uses a different drawing primitive:
-// rain=strokeLine, snow=arc, sleet=mixed, stars=arc+twinkle.
+// rain=strokeLine, snow=arc, sleet=mixed, hail=hard fast pellets, stars=arc+twinkle.
 // Lightning: restrained blue-white ambient flash plus an optional branching bolt.
 // Fog: full-canvas grey fillRect at fogAlpha opacity.
 function drawClouds(ctx){
@@ -354,6 +373,13 @@ function drawParticles(ctx){
         ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+windDrift*(0.55+p.depth*0.55)*(p.len/p.speed),p.y+p.len);
         ctx.strokeStyle=rgba(light.sleet,p.op);ctx.lineWidth=p.width;ctx.stroke();
       }
+    }
+  }else if(bk==='hail'&&!rendersThreeHail()){
+    for(var i=0;i<S.particles.length;i++){
+      var p=S.particles[i];
+      ctx.beginPath();ctx.arc(p.x,p.y,Math.max(0.7,p.sz),0,Math.PI*2);
+      ctx.fillStyle=rgba(light.hail,p.op);ctx.fill();
+      ctx.strokeStyle=rgba([105,135,170],p.op*0.72);ctx.lineWidth=Math.max(0.5,p.sz*0.18);ctx.stroke();
     }
   }
   if(S.lightningAlpha>0.005){

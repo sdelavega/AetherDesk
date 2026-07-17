@@ -59,6 +59,16 @@ function drawSnowflakes(ctx,x,y,r){
   }
 }
 
+function drawHailPellets(ctx,x,y,r){
+  r=Math.max(1,r);
+  ctx.fillStyle='#DCEBFA';
+  ctx.strokeStyle='rgba(105,135,170,0.85)';
+  ctx.lineWidth=Math.max(0.75,r*0.08);
+  for(var i=-1;i<=1;i++){
+    ctx.beginPath();ctx.arc(x+i*r*0.68,y+i*r*0.24,Math.max(1.2,r*0.16),0,Math.PI*2);ctx.fill();ctx.stroke();
+  }
+}
+
 function drawBolt(ctx,x,y,r){
   r=Math.max(1,r);
   ctx.fillStyle='#FFD93D';
@@ -110,6 +120,8 @@ function drawWeatherIcon(ctx,code,isDay,sz){
     drawCloud(ctx,cx,cy-r*0.3,r*1.1);drawRainDrops(ctx,cx-r*0.5,cy+r*0.5,r*0.8);drawSnowflakes(ctx,cx+r*0.5,cy+r*0.5,r*0.8);
   }else if(bk==='thunder'){
     drawCloud(ctx,cx,cy-r*0.3,r*1.2);drawBolt(ctx,cx,cy+r*0.6,r);
+  }else if(bk==='hail'){
+    drawCloud(ctx,cx,cy-r*0.35,r*1.2);drawBolt(ctx,cx-r*0.35,cy+r*0.35,r*0.72);drawHailPellets(ctx,cx+r*0.28,cy+r*0.68,r*0.82);
   }
   ctx.restore();
 }
