@@ -253,7 +253,7 @@ final class WeatherKitBridge {
         case .drizzle:                                 return 51  // light drizzle
         case .freezingDrizzle:                         return 56  // light freezing drizzle
         case .rain:                                    return 61  // slight rain
-        case .heavyRain:                               return 63  // moderate rain
+        case .heavyRain:                               return 65  // heavy rain
         case .freezingRain:                            return 66  // light freezing rain
         case .wintryMix, .sleet:                       return 66  // shared freezing-precipitation treatment
         case .flurries, .blowingSnow, .sunFlurries:   return 71  // slight snow fall

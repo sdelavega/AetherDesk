@@ -310,8 +310,10 @@ function applyWeather(d){
   var nb=wmoBucket(cur.weather_code);
   S.atmosphere=deriveAtmosphericState(d);
   S.skyPaintCache=null;
-  if(nb!==S.weatherBucket||S.particleType===null){
+  var particleProfileKey=String(cur.weather_code);
+  if(nb!==S.weatherBucket||S.particleType===null||S.particleProfileKey!==particleProfileKey){
     S.weatherBucket=nb;
+    S.particleProfileKey=particleProfileKey;
     rebuildParticles();
   }
   setupAttribution();

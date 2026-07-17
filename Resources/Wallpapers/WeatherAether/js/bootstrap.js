@@ -1,6 +1,10 @@
 'use strict';
 
-var PREVIEW_CODES={clear:0,partly:2,overcast:3,fog:45,rain:63,freezing:66,snow:73,thunder:95,hail:99};
+var PREVIEW_CODES={
+  clear:0,partly:2,overcast:3,fog:45,
+  drizzle:51,rain:63,'heavy-rain':65,'violent-showers':82,
+  freezing:66,snow:73,thunder:95,hail:99
+};
 
 function readPreviewConfig(){
   var params=new URLSearchParams(window.location.search);
@@ -16,13 +20,14 @@ function readPreviewConfig(){
 function buildPreviewWeather(){
   var now=wallpaperNow();
   var code=PREVIEW_CODES[S.previewCondition];
+  var visualState=wmoBucket(code);
   var isDay=S.previewHour>=6&&S.previewHour<18;
   var date=now.toISOString().slice(0,10);
   var days=[],codes=[],highs=[],lows=[],precip=[];
   for(var i=0;i<5;i++){
     var day=new Date(now.getTime()+i*86400000);
     days.push(day.toISOString().slice(0,10));
-    codes.push(code);highs.push(72-i);lows.push(54-i);precip.push(Math.round((ATMOSPHERIC_PROFILES[S.previewCondition].precipitation||0)*100));
+    codes.push(code);highs.push(72-i);lows.push(54-i);precip.push(Math.round((derivePrecipitationTraits(code,visualState,ATMOSPHERIC_PROFILES[visualState]).intensity||0)*100));
   }
   return{
     _units:'imperial',_src:'open-meteo',
@@ -63,7 +68,7 @@ function init(){
   setupAttribution();
   setupVisibility();
   if(preview){
-    S.label='Preview — '+S.previewCondition.charAt(0).toUpperCase()+S.previewCondition.slice(1);
+    S.label='Preview — '+S.previewCondition.replace(/-/g,' ').replace(/\b\w/g,function(letter){return letter.toUpperCase();});
     applyWeather(buildPreviewWeather());
     S.animationFrameId=requestAnimationFrame(render);
     return;

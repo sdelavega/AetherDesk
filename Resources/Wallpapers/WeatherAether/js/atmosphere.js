@@ -71,22 +71,79 @@ var ATMOSPHERIC_PROFILES={
   hail:    {cloudCover:1.00,cloudDensity:0.98,precipitation:1.00,horizonHaze:0.64,lightDiffusion:0.90,airClarity:0.24,motionEnergy:1.00,celestialVisibility:0.00}
 };
 
+// Converts provider-normalized WMO codes into continuous renderer parameters.
+// Conditions choose the visual system; these traits describe how that system
+// behaves. This keeps drizzle, rain, and showers in one renderer without making
+// them visually interchangeable.
+function derivePrecipitationTraits(code,bucket,base){
+  var traits={
+    intensity:base.precipitation||0,
+    intermittency:0,
+    dropletScale:1,
+    iceFraction:bucket==='freezing'?0.12:bucket==='snow'||bucket==='hail'?1:0,
+    stormEnergy:bucket==='thunder'||bucket==='hail'?0.72:0
+  };
+  var intensityByCode={
+    51:0.16,53:0.28,55:0.42,56:0.22,57:0.48,
+    61:0.38,63:0.66,65:1.00,66:0.52,67:0.92,
+    71:0.32,73:0.60,75:1.00,77:0.28,
+    80:0.44,81:0.70,82:1.00,85:0.40,86:0.88,
+    95:0.82,96:0.62,99:1.00
+  };
+  if(intensityByCode[code]!=null)traits.intensity=intensityByCode[code];
+  if(code>=51&&code<=55)traits.dropletScale=0.52+traits.intensity*0.34;
+  if(code>=80&&code<=82)traits.intermittency=0.52+traits.intensity*0.34;
+  if(code===85||code===86)traits.intermittency=0.48+traits.intensity*0.28;
+  if(code>=95)traits.intermittency=0.30+traits.intensity*0.20;
+  if(bucket==='freezing')traits.iceFraction=code===56||code===57?0.05:0.10;
+  if(bucket==='thunder'||bucket==='hail')traits.stormEnergy=traits.intensity;
+  return traits;
+}
+
+function getPrecipitationActivity(atmosphere,time){
+  var intermittency=atmosphere.precipitationIntermittency||0;
+  if(intermittency<=0)return 1;
+  var broad=0.5+0.5*Math.sin(time*0.23+0.8);
+  var detail=0.5+0.5*Math.sin(time*0.67+2.4);
+  var pulse=0.28+broad*0.50+detail*0.22;
+  return lerp(1,pulse,intermittency);
+}
+
 function deriveAtmosphericState(weather){
   var cur=weather&&weather.current?weather.current:{};
-  var bucket=wmoBucket(cur.weather_code==null?0:cur.weather_code);
+  var code=cur.weather_code==null?0:Number(cur.weather_code);
+  var bucket=wmoBucket(code);
   var base=ATMOSPHERIC_PROFILES[bucket]||ATMOSPHERIC_PROFILES.clear;
+  var precipitation=derivePrecipitationTraits(code,bucket,base);
   var wind=Number(cur.wind_speed_10m)||0;
   var sourceUnits=(weather&&weather._units)||S.props.units;
   var windScale=sourceUnits==='imperial'?35:56;
+  var horizonHaze=base.horizonHaze;
+  var lightDiffusion=base.lightDiffusion;
+  var airClarity=base.airClarity;
+  var cloudCover=base.cloudCover;
+  var cloudDensity=base.cloudDensity;
+  if(bucket==='rain'){
+    cloudCover=lerp(0.86,1.00,precipitation.intensity);
+    cloudDensity=lerp(0.72,0.94,precipitation.intensity);
+    horizonHaze=lerp(0.38,0.70,precipitation.intensity)+(code<=55?0.06:0);
+    lightDiffusion=lerp(0.68,0.91,precipitation.intensity);
+    airClarity=lerp(0.62,0.25,precipitation.intensity)-(code<=55?0.04:0);
+  }
   return{
     condition:bucket,
-    cloudCover:base.cloudCover,
-    cloudDensity:base.cloudDensity,
-    precipitation:base.precipitation,
-    horizonHaze:base.horizonHaze,
-    lightDiffusion:base.lightDiffusion,
-    airClarity:base.airClarity,
-    motionEnergy:Math.min(1,base.motionEnergy+(wind/windScale)*0.22),
+    cloudCover:Math.max(0,Math.min(1,cloudCover)),
+    cloudDensity:Math.max(0,Math.min(1,cloudDensity)),
+    precipitation:precipitation.intensity,
+    precipitationIntensity:precipitation.intensity,
+    precipitationIntermittency:precipitation.intermittency,
+    precipitationScale:precipitation.dropletScale,
+    iceFraction:precipitation.iceFraction,
+    stormEnergy:precipitation.stormEnergy,
+    horizonHaze:Math.max(0,Math.min(1,horizonHaze)),
+    lightDiffusion:Math.max(0,Math.min(1,lightDiffusion)),
+    airClarity:Math.max(0,Math.min(1,airClarity)),
+    motionEnergy:Math.min(1,base.motionEnergy+(wind/windScale)*0.22+precipitation.intensity*0.08),
     celestialVisibility:base.celestialVisibility,
     windDirection:Number(cur.wind_direction_10m)||0,
     isDay:cur.is_day===undefined?S.isDay:cur.is_day===1

@@ -51,7 +51,20 @@ figcaption{position:absolute;left:12px;bottom:10px;padding:5px 9px;border-radius
 <main id="gallery"></main>
 <script>
 'use strict';
-var states=['clear','partly','overcast','fog','rain','freezing','snow','thunder','hail'];
+var states=[
+  {key:'clear',label:'Clear'},
+  {key:'partly',label:'Partly cloudy'},
+  {key:'overcast',label:'Overcast'},
+  {key:'fog',label:'Fog'},
+  {key:'drizzle',label:'Light drizzle · 16%'},
+  {key:'rain',label:'Moderate rain · 66%'},
+  {key:'heavy-rain',label:'Heavy rain · 100%'},
+  {key:'violent-showers',label:'Violent showers · intermittent'},
+  {key:'freezing',label:'Freezing precipitation'},
+  {key:'snow',label:'Snow'},
+  {key:'thunder',label:'Thunderstorm'},
+  {key:'hail',label:'Hail'}
+];
 var gallery=document.getElementById('gallery');
 var time=document.getElementById('time');
 var renderer=document.getElementById('renderer');
@@ -62,10 +75,10 @@ function draw(){
     var state=states[i];
     var figure=document.createElement('figure');
     var frame=document.createElement('iframe');
-    frame.src='../Resources/Wallpapers/WeatherAether/index.html?preview='+state+'&hour='+time.value+'&minimal=1&renderer='+renderer.value+'&quality='+quality.value;
-    frame.setAttribute('aria-label',state+' weather preview');
+    frame.src='../Resources/Wallpapers/WeatherAether/index.html?preview='+state.key+'&hour='+time.value+'&minimal=1&renderer='+renderer.value+'&quality='+quality.value;
+    frame.setAttribute('aria-label',state.label+' weather preview');
     var label=document.createElement('figcaption');
-    label.textContent=state;
+    label.textContent=state.label;
     var status=document.createElement('span');
     status.className='renderer-status';status.textContent='checking renderer…';
     figure.appendChild(frame);figure.appendChild(label);figure.appendChild(status);gallery.appendChild(figure);
@@ -86,6 +99,7 @@ window.addEventListener('message',function(event){
       status.textContent='THREE · '+data.quality+' · '+data.metrics.fps.toFixed(1)+'/'+data.targetFps+' fps · '+data.steps+' steps · '+
         data.metrics.p95.toFixed(1)+' ms p95 · '+data.metrics.submitAverage.toFixed(2)+' ms submit · '+
         data.metrics.width+'×'+data.metrics.height+' · '+data.metrics.drawCalls+' draw · volume '+(data.volume?'on':'off')+
+        (data.rain?' · intensity '+Math.round(data.precipitationIntensity*100)+'% · activity '+Math.round(data.precipitationActivity*100)+'%':'')+
         ((data.rain||data.snow||data.hail)&&data.motionMetrics?' · motion '+data.motionMetrics.fps.toFixed(1)+'/'+data.motionTargetFps+' fps · '+data.motionMetrics.p95.toFixed(1)+' ms p95 · '+data.motionMetrics.drawCalls+' draw · '+(data.rain?'rain 3D':data.snow?'snow 3D':'hail 3D'):'');
     }else{
       status.textContent=data.renderer.toUpperCase()+' · '+data.revision+
