@@ -6,7 +6,7 @@
 //   rain/thunder  — fast diagonal lines
 //   hail          — very fast, hard ice pellets in a wind-driven 3D field
 //   snow          — slow drifting circles with sinusoidal horizontal wobble
-//   sleet         — mixed: fast lines (rain) + slower circles (ice pellets)
+//   freezing      — mixed liquid/ice treatment shared by both data providers
 //   clear night   — stationary twinkling stars
 // showParticles:false clears precipitation and stars; atmospheric cloud forms
 // remain because they communicate the condition rather than decorate it.
@@ -131,9 +131,9 @@ function rebuildParticles(){
           wbs:0.55+Math.random()*1.8,wobble:7+depth*19,op:0.10+depth*0.58});
       }
     }
-  }else if(bk==='sleet'){
-    var sleetCount=Math.round(65+atmosphere.precipitation*135);
-    for(var i=0;i<sleetCount;i++){
+  }else if(bk==='freezing'){
+    var freezingCount=Math.round(65+atmosphere.precipitation*135);
+    for(var i=0;i<freezingCount;i++){
       var depth=Math.pow(Math.random(),0.78);
       var ice=Math.random()<0.38;
       S.particles.push(ice?
@@ -247,7 +247,7 @@ function updateParticles(dt){
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
     }
-  }else if(bk==='sleet'){
+  }else if(bk==='freezing'){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       p.y+=p.speed*spd*dt;
@@ -293,7 +293,7 @@ function updateParticles(dt){
 // ── drawParticles() ──────────────────────────────────────────────────────────
 // Renders all particles, stars, lightning flash, and fog overlay for the
 // current frame. Each weather type uses a different drawing primitive:
-// rain=strokeLine, snow=arc, sleet=mixed, hail=hard fast pellets, stars=arc+twinkle.
+// rain=strokeLine, snow=arc, freezing=mixed, hail=hard fast pellets, stars=arc+twinkle.
 // Lightning: restrained blue-white ambient flash plus an optional branching bolt.
 // Fog: full-canvas grey fillRect at fogAlpha opacity.
 function drawClouds(ctx){
@@ -363,15 +363,15 @@ function drawParticles(ctx){
       ctx.fillStyle=rgba(light.snow,Math.min(0.9,p.op*lowerLight));
       ctx.fill();
     }
-  }else if(bk==='sleet'){
+  }else if(bk==='freezing'){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       if(p.ice){
         ctx.beginPath();ctx.arc(p.x,p.y,Math.max(0.5,p.sz),0,Math.PI*2);
-        ctx.fillStyle=rgba(light.sleet,p.op);ctx.fill();
+        ctx.fillStyle=rgba(light.freezing,p.op);ctx.fill();
       }else{
         ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+windDrift*(0.55+p.depth*0.55)*(p.len/p.speed),p.y+p.len);
-        ctx.strokeStyle=rgba(light.sleet,p.op);ctx.lineWidth=p.width;ctx.stroke();
+        ctx.strokeStyle=rgba(light.freezing,p.op);ctx.lineWidth=p.width;ctx.stroke();
       }
     }
   }else if(bk==='hail'&&!rendersThreeHail()){
