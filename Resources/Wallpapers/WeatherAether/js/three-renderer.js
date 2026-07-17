@@ -1,10 +1,10 @@
 'use strict';
 
-var THREE_ATMOSPHERE_REVISION='world-volume-6';
+var THREE_ATMOSPHERE_REVISION='world-volume-7';
 var THREE_QUALITY_PROFILES={
-  eco:{name:'eco',pixelRatio:0.55,fps:15,motionFps:30,steps:4,rainCount:80},
-  balanced:{name:'balanced',pixelRatio:0.85,fps:24,motionFps:60,steps:7,rainCount:160},
-  showcase:{name:'showcase',pixelRatio:1.15,fps:30,motionFps:60,steps:9,rainCount:240}
+  eco:{name:'eco',pixelRatio:0.55,fps:15,motionFps:30,steps:4,rainCount:80,snowCount:70},
+  balanced:{name:'balanced',pixelRatio:0.85,fps:24,motionFps:60,steps:7,rainCount:160,snowCount:130},
+  showcase:{name:'showcase',pixelRatio:1.15,fps:30,motionFps:60,steps:9,rainCount:240,snowCount:200}
 };
 
 function getThreeQualityProfile(){
@@ -183,6 +183,52 @@ var THREE_RAIN_FRAGMENT=[
   '}'
 ].join('\n');
 
+var THREE_SNOW_VERTEX=[
+  'uniform float uTime;',
+  'uniform float uPixelRatio;',
+  'uniform float uAspect;',
+  'uniform float uWind;',
+  'uniform float uSpeed;',
+  'attribute float aSpeed;',
+  'attribute float aSize;',
+  'attribute float aOpacity;',
+  'attribute float aPhase;',
+  'attribute float aWobble;',
+  'varying float vOpacity;',
+  'varying float vSparkle;',
+  'void main(){',
+  '  float fall=4.0-mod(aPhase+uTime*aSpeed*uSpeed,8.0);',
+  '  vec3 p=position;',
+  '  p.y=fall;',
+  '  float halfWidth=0.46*(5.0-p.z)*uAspect;',
+  '  float flutter=sin(uTime*aWobble+aPhase*2.7)*(0.07+0.035*aWobble);',
+  '  p.x=p.x*halfWidth+flutter+uWind*(4.0-fall)*0.045;',
+  '  vec4 viewPosition=modelViewMatrix*vec4(p,1.0);',
+  '  float perspective=clamp(2.6/max(0.8,-viewPosition.z),0.38,1.65);',
+  '  gl_PointSize=clamp(aSize*uPixelRatio*perspective,1.2,18.0);',
+  '  gl_Position=projectionMatrix*viewPosition;',
+  '  vOpacity=aOpacity*clamp(perspective,0.42,1.0);',
+  '  vSparkle=0.82+0.18*sin(uTime*(0.7+aWobble*0.2)+aPhase);',
+  '}'
+].join('\n');
+
+var THREE_SNOW_FRAGMENT=[
+  'precision mediump float;',
+  'uniform vec3 uColor;',
+  'uniform float uOpacity;',
+  'varying float vOpacity;',
+  'varying float vSparkle;',
+  'void main(){',
+  '  vec2 flake=gl_PointCoord-vec2(0.5);',
+  '  float radius=length(flake);',
+  '  float body=1.0-smoothstep(0.24,0.50,radius);',
+  '  float core=1.0-smoothstep(0.0,0.20,radius);',
+  '  float alpha=(body*0.72+core*0.28)*vOpacity*uOpacity;',
+  '  if(alpha<0.01)discard;',
+  '  gl_FragColor=vec4(uColor*vSparkle,alpha);',
+  '}'
+].join('\n');
+
 var THREE_PRESENT_FRAGMENT=[
   'precision mediump float;',
   'varying vec2 vUv;',
@@ -213,6 +259,7 @@ function reportWeatherRendererStatus(){
     steps:S.threeAtmosphere?S.threeAtmosphere.quality.steps:getThreeQualityProfile().steps,
     volume:volume,
     rain:!!(S.threeRain&&S.threeRain.active),
+    snow:!!(S.threeSnow&&S.threeSnow.active),
     metrics:S.threeAtmosphere?S.threeAtmosphere.latestMetrics||null:null,
     motionMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMotionMetrics||null:null,
     error:S.threeShaderError||null
@@ -277,6 +324,7 @@ function initializeThreeAtmosphere(){
       motionPerformance:{startedAt:0,lastRenderedAt:0,frames:0,submitTotal:0,submitMax:0,intervals:[]}
     };
     initializeThreeRain(api,S.threeAtmosphere);
+    initializeThreeSnow(api,S.threeAtmosphere);
     S.threeShaderError=null;
     S.useThreeRenderer=true;canvas.style.display='block';
     return true;
@@ -345,6 +393,63 @@ function updateThreeRain(timestamp,atmosphere){
   }
 }
 
+function initializeThreeSnow(api,state){
+  var maximum=THREE_QUALITY_PROFILES.showcase.snowCount;
+  var positions=[],speeds=[],sizes=[],opacities=[],phases=[],wobbles=[];
+  var random=seededRandom(51803);
+  for(var i=0;i<maximum;i++){
+    var nearness=Math.pow(random(),0.78);
+    positions.push(random()*2-1,(random()-0.5)*8,-2.2+nearness*5.7);
+    speeds.push(0.34+nearness*0.72+random()*0.24);
+    sizes.push(2.0+nearness*5.8+random()*1.8);
+    opacities.push(0.20+nearness*0.60);
+    phases.push(random()*8);
+    wobbles.push(0.65+random()*1.75);
+  }
+  var geometry=new api.BufferGeometry();
+  geometry.setAttribute('position',new api.Float32BufferAttribute(positions,3));
+  geometry.setAttribute('aSpeed',new api.Float32BufferAttribute(speeds,1));
+  geometry.setAttribute('aSize',new api.Float32BufferAttribute(sizes,1));
+  geometry.setAttribute('aOpacity',new api.Float32BufferAttribute(opacities,1));
+  geometry.setAttribute('aPhase',new api.Float32BufferAttribute(phases,1));
+  geometry.setAttribute('aWobble',new api.Float32BufferAttribute(wobbles,1));
+  geometry.setDrawRange(0,state.quality.snowCount);
+  var material=new api.ShaderMaterial({
+    vertexShader:THREE_SNOW_VERTEX,fragmentShader:THREE_SNOW_FRAGMENT,
+    transparent:true,depthTest:false,depthWrite:false,
+    uniforms:{
+      uTime:{value:0},uPixelRatio:{value:state.renderer.getPixelRatio()},uAspect:{value:1},uWind:{value:0},
+      uSpeed:{value:1},uColor:{value:new api.Color(0.86,0.90,0.97)},uOpacity:{value:0.78}
+    }
+  });
+  var points=new api.Points(geometry,material);
+  points.frustumCulled=false;points.renderOrder=55;points.visible=false;
+  state.presentationScene.add(points);
+  S.threeSnow={points:points,geometry:geometry,material:material,active:false};
+}
+
+function rendersThreeSnow(){
+  return!!(S.useThreeRenderer&&S.threeSnow&&S.threeSnow.active);
+}
+
+function updateThreeSnow(timestamp,atmosphere){
+  var snow=S.threeSnow;
+  if(!snow)return;
+  var active=S.props.showParticles&&atmosphere.condition==='snow';
+  snow.active=active;snow.points.visible=active;
+  if(!active)return;
+  var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
+  snow.material.uniforms.uTime.value=timestamp/1000;
+  snow.material.uniforms.uWind.value=Math.sin(toward)*(0.18+atmosphere.motionEnergy*0.46);
+  snow.material.uniforms.uSpeed.value=S.props.animationSpeed*(0.72+atmosphere.motionEnergy*0.42);
+  var lightKey=getCloudLightingKey(atmosphere,wallpaperNow());
+  if(snow.lastLightKey!==lightKey){
+    var lighting=getPrecipitationLighting(atmosphere,wallpaperNow());
+    snow.material.uniforms.uColor.value.copy(threeColor(lighting.snow));
+    snow.lastLightKey=lightKey;
+  }
+}
+
 function usesThreeCloudVolume(){
   return new URLSearchParams(window.location.search).get('cloudModel')!=='planes';
 }
@@ -381,6 +486,7 @@ function resizeThreeAtmosphere(w,h){
   var drawingSize=S.threeAtmosphere.renderer.getDrawingBufferSize(new WeatherAetherThree.Vector2());
   S.threeAtmosphere.atmosphereTarget.setSize(Math.max(1,drawingSize.x),Math.max(1,drawingSize.y));
   if(S.threeRain)S.threeRain.material.uniforms.uAspect.value=w/Math.max(1,h);
+  if(S.threeSnow)S.threeSnow.material.uniforms.uAspect.value=w/Math.max(1,h);
 }
 
 function makeThreeCloudTexture(canvas){
@@ -556,7 +662,8 @@ function renderThreePresentation(timestamp,atmosphereChanged){
   if(!S.useThreeRenderer||!state)return;
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   updateThreeRain(timestamp,atmosphere);
-  var targetFps=rendersThreeRain()?state.quality.motionFps:state.quality.fps;
+  updateThreeSnow(timestamp,atmosphere);
+  var targetFps=(rendersThreeRain()||rendersThreeSnow())?state.quality.motionFps:state.quality.fps;
   if(atmosphereChanged){
     state.nextPresentationFrame=timestamp+1000/targetFps;
   }else if(!claimThreeFrame(state,'nextPresentationFrame',timestamp,targetFps))return;
