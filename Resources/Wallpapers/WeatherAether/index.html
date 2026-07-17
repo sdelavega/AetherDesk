@@ -179,6 +179,42 @@ var WEATHER_TINT={
   fog:     {factor:0.25,c:[155,165,180]}
 };
 
+// Translates weather observations into renderer-independent visual meaning.
+// Values are normalized to 0...1 so future Canvas, WebGL, or remote renderers
+// can interpret the same atmosphere without owning weather policy themselves.
+var ATMOSPHERIC_PROFILES={
+  clear:   {cloudCover:0.03,cloudDensity:0.04,precipitation:0.00,horizonHaze:0.08,lightDiffusion:0.06,airClarity:0.96,motionEnergy:0.12,celestialVisibility:1.00},
+  partly:  {cloudCover:0.42,cloudDensity:0.32,precipitation:0.00,horizonHaze:0.18,lightDiffusion:0.28,airClarity:0.82,motionEnergy:0.30,celestialVisibility:0.58},
+  overcast:{cloudCover:0.94,cloudDensity:0.78,precipitation:0.00,horizonHaze:0.34,lightDiffusion:0.76,airClarity:0.58,motionEnergy:0.22,celestialVisibility:0.06},
+  fog:     {cloudCover:0.75,cloudDensity:0.86,precipitation:0.00,horizonHaze:0.92,lightDiffusion:0.96,airClarity:0.12,motionEnergy:0.06,celestialVisibility:0.04},
+  rain:    {cloudCover:0.96,cloudDensity:0.84,precipitation:0.68,horizonHaze:0.54,lightDiffusion:0.82,airClarity:0.42,motionEnergy:0.62,celestialVisibility:0.03},
+  sleet:   {cloudCover:0.98,cloudDensity:0.88,precipitation:0.72,horizonHaze:0.60,lightDiffusion:0.86,airClarity:0.36,motionEnergy:0.58,celestialVisibility:0.02},
+  snow:    {cloudCover:0.95,cloudDensity:0.76,precipitation:0.58,horizonHaze:0.66,lightDiffusion:0.90,airClarity:0.34,motionEnergy:0.28,celestialVisibility:0.04},
+  thunder: {cloudCover:1.00,cloudDensity:0.96,precipitation:0.92,horizonHaze:0.62,lightDiffusion:0.88,airClarity:0.28,motionEnergy:0.92,celestialVisibility:0.00}
+};
+
+function deriveAtmosphericState(weather){
+  var cur=weather&&weather.current?weather.current:{};
+  var bucket=wmoBucket(cur.weather_code==null?0:cur.weather_code);
+  var base=ATMOSPHERIC_PROFILES[bucket]||ATMOSPHERIC_PROFILES.clear;
+  var wind=Number(cur.wind_speed_10m)||0;
+  var sourceUnits=(weather&&weather._units)||S.props.units;
+  var windScale=sourceUnits==='imperial'?35:56;
+  return{
+    condition:bucket,
+    cloudCover:base.cloudCover,
+    cloudDensity:base.cloudDensity,
+    precipitation:base.precipitation,
+    horizonHaze:base.horizonHaze,
+    lightDiffusion:base.lightDiffusion,
+    airClarity:base.airClarity,
+    motionEnergy:Math.min(1,base.motionEnergy+(wind/windScale)*0.22),
+    celestialVisibility:base.celestialVisibility,
+    windDirection:Number(cur.wind_direction_10m)||0,
+    isDay:cur.is_day===undefined?S.isDay:cur.is_day===1
+  };
+}
+
 var COMPASS=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 var DAY_NAMES=['SUN','MON','TUE','WED','THU','FRI','SAT'];
 
@@ -216,6 +252,7 @@ var S={
     animationSpeed:1.0,showParticles:true,accentColor:'#6fb8ff'
   },
   particles:[],stars:[],particleType:null,weatherBucket:'clear',
+  atmosphere:null,
   animationFrameId:null,refreshTimeout:null,lastFrameTime:0,fetchSeq:0,
   lightningAlpha:0,lightningCooldown:5,fogAlpha:0,
   canvas:null,ctx:null,iconCache:{}
@@ -552,6 +589,7 @@ function applyWeather(d){
     S.sunset=new Date(daily.sunset[0]);
   }
   var nb=wmoBucket(cur.weather_code);
+  S.atmosphere=deriveAtmosphericState(d);
   if(nb!==S.weatherBucket||S.particleType===null){
     S.weatherBucket=nb;
     rebuildParticles();
@@ -616,7 +654,16 @@ function getPhaseColors(){
   var top=lerpC(a.t,b.t,t);
   var mid=lerpC(a.m,b.m,t);
   var bot=lerpC(a.b,b.b,t);
-  var tint=WEATHER_TINT[S.weatherBucket]||WEATHER_TINT.clear;
+  var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  var tint=WEATHER_TINT[atmosphere.condition]||WEATHER_TINT.clear;
+  // Diffused air compresses contrast across the sky before any objects are
+  // drawn, allowing conditions to change the light rather than merely adding
+  // particles over a clear gradient.
+  var diffusion=atmosphere.lightDiffusion*0.16;
+  var air=[145,155,170];
+  top=lerpC(top,air,diffusion);
+  mid=lerpC(mid,air,diffusion*0.72);
+  bot=lerpC(bot,[190,195,202],atmosphere.horizonHaze*0.18);
   if(tint.factor>0){
     top=lerpC(top,tint.c,tint.factor);
     mid=lerpC(mid,tint.c,tint.factor);
@@ -681,7 +728,8 @@ function rebuildParticles(){
 // Lightning alpha decays exponentially each frame; fog alpha ramps to target.
 function updateParticles(dt){
   if(!S.props.showParticles)return;
-  var w=cssW(),h=cssH(),spd=S.props.animationSpeed,bk=S.weatherBucket;
+  var w=cssW(),h=cssH(),atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  var spd=S.props.animationSpeed*(0.65+atmosphere.motionEnergy*0.7),bk=S.weatherBucket;
   if(bk==='rain'||bk==='thunder'){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
@@ -977,8 +1025,8 @@ function drawBgMoon(ctx,cx,cy,r){
 }
 
 function drawBgCelestial(ctx,w,h,t){
-  var bk=S.weatherBucket;
-  var op=bk==='clear'?1:bk==='partly'?0.42:0;
+  var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  var op=atmosphere.celestialVisibility;
   if(op===0)return;
   ctx.save();ctx.globalAlpha=op;
   var r=Math.min(w,h)*0.055;
