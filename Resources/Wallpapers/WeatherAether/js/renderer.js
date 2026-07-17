@@ -538,7 +538,8 @@ function render(timestamp){
   var w=cssW(),h=cssH(),ctx=S.ctx;
   if(S.useThreeRenderer){
     ctx.clearRect(0,0,w,h);
-    renderThreeAtmosphere(timestamp);
+    var atmosphereChanged=renderThreeAtmosphere(timestamp);
+    renderThreePresentation(timestamp,atmosphereChanged);
   }else{
     drawAtmosphericSky(ctx,w,h);
   }

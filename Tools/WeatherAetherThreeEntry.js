@@ -13,6 +13,7 @@ import {
   SRGBColorSpace,
   Vector2,
   Vector3,
+  WebGLRenderTarget,
   WebGLRenderer
 } from 'three';
 
@@ -31,5 +32,6 @@ globalThis.WeatherAetherThree={
   SRGBColorSpace,
   Vector2,
   Vector3,
+  WebGLRenderTarget,
   WebGLRenderer
 };
