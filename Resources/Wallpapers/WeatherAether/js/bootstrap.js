@@ -51,6 +51,7 @@ function buildPreviewWeather(){
 function init(){
   S.canvas=document.getElementById('wa-sky');
   S.ctx=S.canvas.getContext('2d');
+  initializeThreeAtmosphere();
   var preview=readPreviewConfig();
   var now=wallpaperNow();
   var hr=now.getHours();
