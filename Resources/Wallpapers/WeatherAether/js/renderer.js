@@ -175,6 +175,63 @@ function drawParticles(ctx){
 }
 
 
+// Paints the atmosphere as a set of inexpensive large-scale light fields.
+// The base timeline supplies time-of-day color; atmospheric state controls
+// diffusion and haze; the celestial track places a broad source of airlight.
+// This remains Canvas 2D so it is also the eventual low-power fallback.
+function drawAtmosphericSky(ctx,w,h){
+  var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  var paintKey=[w,h,Math.floor(Date.now()/15000),atmosphere.condition,S.isDay].join(':');
+  var paint=S.skyPaintCache;
+  if(!paint||paint.key!==paintKey){
+    var colors=getPhaseColors();
+    var track=getCelestialTrack(new Date(),S.isDay);
+
+    var sky=ctx.createLinearGradient(0,0,0,h);
+    sky.addColorStop(0,rgb(colors.top));
+    sky.addColorStop(0.46,rgb(colors.mid));
+    sky.addColorStop(0.82,rgb(lerpC(colors.mid,colors.bot,0.72)));
+    sky.addColorStop(1,rgb(colors.bot));
+
+    // A low sun warms illuminated air near the horizon. At midday the same
+    // field becomes broad white-blue airlight rather than an orange overlay.
+    var sourceX=track.x*w;
+    var sourceY=Math.max(h*0.34,track.y*h);
+    var radius=Math.max(w,h)*(0.48+atmosphere.lightDiffusion*0.20);
+    var warm=track.horizonWarmth;
+    var lightColor=lerpC([225,238,255],[255,155,72],warm);
+    var lightAlpha=(0.055+atmosphere.lightDiffusion*0.09)*(S.isDay?1:0.34);
+    var airlight=ctx.createRadialGradient(sourceX,sourceY,0,sourceX,sourceY,radius);
+    airlight.addColorStop(0,rgba(lightColor,lightAlpha));
+    airlight.addColorStop(0.42,rgba(lightColor,lightAlpha*0.48));
+    airlight.addColorStop(1,rgba(lightColor,0));
+
+    // Horizon extinction adds distance without introducing scenery or a hard
+    // horizon line. Dense air lifts and softens the bottom of the visual field.
+    var hazeAlpha=0.025+atmosphere.horizonHaze*0.16;
+    var haze=ctx.createLinearGradient(0,h*0.54,0,h);
+    haze.addColorStop(0,'rgba(220,225,232,0)');
+    haze.addColorStop(1,'rgba(220,225,232,'+hazeAlpha+')');
+
+    // Barely perceptible edge falloff focuses the scene and removes the flat,
+    // uniformly illuminated quality of a simple full-screen gradient.
+    var vignette=ctx.createRadialGradient(w*0.5,h*0.48,Math.min(w,h)*0.22,w*0.5,h*0.48,Math.max(w,h)*0.78);
+    vignette.addColorStop(0,'rgba(5,10,22,0)');
+    vignette.addColorStop(1,'rgba(5,10,22,'+(0.035+atmosphere.cloudDensity*0.035)+')');
+    paint=S.skyPaintCache={key:paintKey,sky:sky,airlight:airlight,haze:haze,vignette:vignette};
+  }
+
+  ctx.fillStyle=paint.sky;
+  ctx.fillRect(0,0,w,h);
+  ctx.fillStyle=paint.airlight;
+  ctx.fillRect(0,0,w,h);
+  ctx.fillStyle=paint.haze;
+  ctx.fillRect(0,h*0.54,w,h*0.46);
+  ctx.fillStyle=paint.vignette;
+  ctx.fillRect(0,0,w,h);
+}
+
+
 // ── getLunarPhase() ──────────────────────────────────────────────────────────
 // Returns the current lunar phase as a value 0–1 (0 = new moon, 0.5 = full
 // moon) using the Julian Day Number formula. Used by drawBgMoon() to render
@@ -204,14 +261,6 @@ function drawBgSun(ctx,cx,cy,r,t){
   og.addColorStop(0.55,'rgba(255,170,30,0.07)');
   og.addColorStop(1,'rgba(255,140,0,0)');
   ctx.fillStyle=og;ctx.beginPath();ctx.arc(cx,cy,r*4.5,0,Math.PI*2);ctx.fill();
-  // slowly rotating rays
-  ctx.save();ctx.translate(cx,cy);ctx.rotate(t*0.000055);
-  ctx.lineCap='round';
-  ctx.strokeStyle='rgba(255,220,80,0.30)';ctx.lineWidth=Math.max(1.5,r*0.14);
-  for(var i=0;i<8;i++){var a=i*Math.PI/4;ctx.beginPath();ctx.moveTo(Math.cos(a)*r*1.55,Math.sin(a)*r*1.55);ctx.lineTo(Math.cos(a)*r*2.5,Math.sin(a)*r*2.5);ctx.stroke();}
-  ctx.strokeStyle='rgba(255,210,70,0.14)';ctx.lineWidth=Math.max(1,r*0.09);
-  for(var i=0;i<8;i++){var a=i*Math.PI/4+Math.PI/8;ctx.beginPath();ctx.moveTo(Math.cos(a)*r*1.8,Math.sin(a)*r*1.8);ctx.lineTo(Math.cos(a)*r*2.7,Math.sin(a)*r*2.7);ctx.stroke();}
-  ctx.restore();
   // sun disk with radial gradient
   var sg=ctx.createRadialGradient(cx-r*0.25,cy-r*0.25,r*0.1,cx,cy,r);
   sg.addColorStop(0,'rgba(255,252,200,1)');
@@ -270,10 +319,11 @@ function drawBgCelestial(ctx,w,h,t){
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   var op=atmosphere.celestialVisibility;
   if(op===0)return;
+  var track=getCelestialTrack(new Date(),S.isDay);
   ctx.save();ctx.globalAlpha=op;
   var r=Math.min(w,h)*0.055;
-  if(S.isDay)drawBgSun(ctx,w*0.72,h*0.20,r,t);
-  else drawBgMoon(ctx,w*0.28,h*0.20,r*0.85);
+  if(S.isDay)drawBgSun(ctx,w*track.x,h*track.y,r,t);
+  else drawBgMoon(ctx,w*track.x,h*track.y,r*0.85);
   ctx.restore();
 }
 
@@ -299,6 +349,7 @@ function resizeCanvas(){
   S.canvas.width=w*dpr;S.canvas.height=h*dpr;
   S.canvas.style.width=w+'px';S.canvas.style.height=h+'px';
   S.ctx.setTransform(dpr,0,0,dpr,0,0);
+  S.skyPaintCache=null;
   rebuildParticles();
 }
 
@@ -314,13 +365,7 @@ function render(timestamp){
   var dt=S.lastFrameTime?Math.min((timestamp-S.lastFrameTime)/1000,0.1):0.016;
   S.lastFrameTime=timestamp;
   var w=cssW(),h=cssH(),ctx=S.ctx;
-  var colors=getPhaseColors();
-  var grad=ctx.createLinearGradient(0,0,0,h);
-  grad.addColorStop(0,rgb(colors.top));
-  grad.addColorStop(0.5,rgb(colors.mid));
-  grad.addColorStop(1,rgb(colors.bot));
-  ctx.fillStyle=grad;
-  ctx.fillRect(0,0,w,h);
+  drawAtmosphericSky(ctx,w,h);
   drawBgCelestial(ctx,w,h,timestamp);
   updateParticles(dt);
   drawParticles(ctx);

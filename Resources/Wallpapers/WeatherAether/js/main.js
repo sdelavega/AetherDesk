@@ -111,7 +111,7 @@ var S={
   atmosphere:null,
   animationFrameId:null,refreshTimeout:null,lastFrameTime:0,fetchSeq:0,
   lightningAlpha:0,lightningCooldown:5,fogAlpha:0,
-  canvas:null,ctx:null,iconCache:{}
+  canvas:null,ctx:null,iconCache:{},skyPaintCache:null
 };
 
 function lerp(a,b,t){return a+(b-a)*t}

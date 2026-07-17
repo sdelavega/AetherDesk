@@ -88,6 +88,36 @@ function deriveAtmosphericState(weather){
   };
 }
 
+// Returns a normalized path for the dominant celestial light. The sun follows
+// the actual local sunrise/sunset window supplied by the weather response.
+// Night uses the inverse arc as a deliberately quiet moon approximation until
+// a full astronomical position model earns its complexity.
+function getCelestialTrack(now,isDay){
+  now=now||new Date();
+  var hour=now.getHours()+now.getMinutes()/60+now.getSeconds()/3600;
+  var sunrise=6,sunset=18;
+  if(S.sunrise&&S.sunset&&!isNaN(S.sunrise.getTime())&&!isNaN(S.sunset.getTime())){
+    sunrise=S.sunrise.getHours()+S.sunrise.getMinutes()/60;
+    sunset=S.sunset.getHours()+S.sunset.getMinutes()/60;
+  }
+  var progress;
+  if(isDay){
+    progress=(hour-sunrise)/Math.max(1,sunset-sunrise);
+  }else{
+    var nightHour=hour>=sunset?hour-sunset:hour+24-sunset;
+    progress=nightHour/Math.max(1,24-sunset+sunrise);
+  }
+  progress=Math.max(0,Math.min(1,progress));
+  var elevation=Math.sin(progress*Math.PI);
+  return{
+    progress:progress,
+    elevation:elevation,
+    x:0.12+progress*0.76,
+    y:0.76-elevation*0.60,
+    horizonWarmth:isDay?Math.pow(1-elevation,2):0
+  };
+}
+
 // ── buildTimeline() ──────────────────────────────────────────────────────────
 // Builds the colour keyframe array for today's sky gradient, anchored to the
 // actual sunrise and sunset times from the API. Each keyframe has a clock hour
