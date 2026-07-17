@@ -72,9 +72,10 @@ function refreshCloudSprites(atmosphere,now){
 
 function rebuildClouds(w,h,atmosphere){
   S.clouds=[];S.cloudSprites=[];S.cloudLightingKey=null;
-  // Ground-level fog is represented by atmospheric extinction, not a row of
-  // discrete cloud bodies drifting overhead.
-  if(atmosphere.cloudCover<0.10||atmosphere.condition==='fog')return;
+  // Ground-level fog and snowfall read as continuous atmospheric extinction,
+  // not discrete cloud bodies. Snow keeps its dense overcast sky, but visible
+  // cloud forms would compete with the flakes and flatten the scene into layers.
+  if(atmosphere.cloudCover<0.10||atmosphere.condition==='fog'||atmosphere.condition==='snow')return;
   refreshCloudSprites(atmosphere,wallpaperNow());
   var count=Math.round(3+atmosphere.cloudCover*9);
   var rand=seededRandom(8137+Math.round(atmosphere.cloudCover*1000));
