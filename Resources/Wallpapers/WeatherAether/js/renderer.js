@@ -110,13 +110,15 @@ function rebuildParticles(){
   if(!S.props.showParticles)return;
   S.particleType=bk;
   if(bk==='rain'||bk==='thunder'){
-    var rainCount=Math.round(70+atmosphere.precipitation*160);
-    for(var i=0;i<rainCount;i++){
-      var depth=Math.pow(Math.random(),0.72);
-      var near=depth>0.92?1.35:1;
-      S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
-        speed:180+depth*620,len:(6+depth*23)*near,width:0.45+depth*1.05,
-        op:0.055+depth*0.36});
+    if(!S.useThreeRenderer||!S.threeRain){
+      var rainCount=Math.round(70+atmosphere.precipitation*160);
+      for(var i=0;i<rainCount;i++){
+        var depth=Math.pow(Math.random(),0.72);
+        var near=depth>0.92?1.35:1;
+        S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
+          speed:180+depth*620,len:(6+depth*23)*near,width:0.45+depth*1.05,
+          op:0.055+depth*0.36});
+      }
     }
   }else if(bk==='snow'){
     var snowCount=Math.round(60+atmosphere.precipitation*140);
@@ -189,7 +191,7 @@ function updateParticles(dt){
   if(!S.props.showParticles)return;
   var spd=S.props.animationSpeed*(0.65+atmosphere.motionEnergy*0.7),bk=S.weatherBucket;
   var windDrift=precipitationWindDrift(atmosphere)*S.windGust;
-  if(bk==='rain'||bk==='thunder'){
+  if((bk==='rain'||bk==='thunder')&&!rendersThreeRain()){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       p.y+=p.speed*spd*dt;
@@ -270,7 +272,7 @@ function drawParticles(ctx){
   }
   drawClouds(ctx);
   if(!S.props.showParticles)return;
-  if(bk==='rain'||bk==='thunder'){
+  if((bk==='rain'||bk==='thunder')&&!rendersThreeRain()){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       ctx.beginPath();
