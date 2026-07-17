@@ -116,7 +116,7 @@ function drawWeatherIcon(ctx,code,isDay,sz){
     drawCloud(ctx,cx,cy-r*0.3,r*1.1);drawRainDrops(ctx,cx,cy+r*0.5,r);
   }else if(bk==='snow'){
     drawCloud(ctx,cx,cy-r*0.3,r*1.1);drawSnowflakes(ctx,cx,cy+r*0.5,r);
-  }else if(bk==='sleet'){
+  }else if(bk==='freezing'){
     drawCloud(ctx,cx,cy-r*0.3,r*1.1);drawRainDrops(ctx,cx-r*0.5,cy+r*0.5,r*0.8);drawSnowflakes(ctx,cx+r*0.5,cy+r*0.5,r*0.8);
   }else if(bk==='thunder'){
     drawCloud(ctx,cx,cy-r*0.3,r*1.2);drawBolt(ctx,cx,cy+r*0.6,r);

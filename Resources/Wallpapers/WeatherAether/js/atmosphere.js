@@ -5,15 +5,17 @@ var WMO_DESC={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'
 
 // ── wmoBucket() ──────────────────────────────────────────────────────────────
 // Maps a WMO weather code to one of nine visual buckets used throughout the
-// renderer: 'clear', 'partly', 'overcast', 'fog', 'rain', 'sleet', 'snow',
+// renderer: 'clear', 'partly', 'overcast', 'fog', 'rain', 'freezing', 'snow',
 // 'thunder', 'hail'. The bucket drives the sky tint (WEATHER_TINT), the particle type
 // (rebuildParticles), and the canvas icon drawn in renderUI().
+// Every bucket is intentionally reachable from both Open-Meteo and WeatherKit.
+// Provider-only distinctions collapse into the nearest shared visual state.
 function wmoBucket(code){
   if(code<=1)return'clear';
   if(code===2)return'partly';
   if(code===3)return'overcast';
   if(code===45||code===48)return'fog';
-  if(code===56||code===57||code===66||code===67)return'sleet';
+  if(code===56||code===57||code===66||code===67)return'freezing';
   if(code>=51&&code<=57)return'rain';
   if(code>=61&&code<=67)return'rain';
   if(code>=71&&code<=77)return'snow';
@@ -47,7 +49,7 @@ var WEATHER_TINT={
   partly:  {factor:0.12,c:[140,150,170]},
   overcast:{factor:0.30,c:[110,120,140]},
   rain:    {factor:0.25,c:[35,45,75]},
-  sleet:   {factor:0.22,c:[90,110,140]},
+  freezing:{factor:0.22,c:[90,110,140]},
   snow:    {factor:0.20,c:[200,210,230]},
   thunder: {factor:0.35,c:[25,15,55]},
   hail:    {factor:0.37,c:[25,30,58]},
@@ -63,7 +65,7 @@ var ATMOSPHERIC_PROFILES={
   overcast:{cloudCover:0.94,cloudDensity:0.78,precipitation:0.00,horizonHaze:0.34,lightDiffusion:0.76,airClarity:0.58,motionEnergy:0.22,celestialVisibility:0.06},
   fog:     {cloudCover:0.75,cloudDensity:0.86,precipitation:0.00,horizonHaze:0.92,lightDiffusion:0.96,airClarity:0.12,motionEnergy:0.06,celestialVisibility:0.04},
   rain:    {cloudCover:0.96,cloudDensity:0.84,precipitation:0.68,horizonHaze:0.54,lightDiffusion:0.82,airClarity:0.42,motionEnergy:0.62,celestialVisibility:0.03},
-  sleet:   {cloudCover:0.98,cloudDensity:0.88,precipitation:0.72,horizonHaze:0.60,lightDiffusion:0.86,airClarity:0.36,motionEnergy:0.58,celestialVisibility:0.02},
+  freezing:{cloudCover:0.98,cloudDensity:0.88,precipitation:0.72,horizonHaze:0.60,lightDiffusion:0.86,airClarity:0.36,motionEnergy:0.58,celestialVisibility:0.02},
   snow:    {cloudCover:0.95,cloudDensity:0.76,precipitation:0.58,horizonHaze:0.66,lightDiffusion:0.90,airClarity:0.34,motionEnergy:0.28,celestialVisibility:0.04},
   thunder: {cloudCover:1.00,cloudDensity:0.96,precipitation:0.92,horizonHaze:0.62,lightDiffusion:0.88,airClarity:0.28,motionEnergy:0.92,celestialVisibility:0.00},
   hail:    {cloudCover:1.00,cloudDensity:0.98,precipitation:1.00,horizonHaze:0.64,lightDiffusion:0.90,airClarity:0.24,motionEnergy:1.00,celestialVisibility:0.00}
@@ -162,14 +164,14 @@ function getPrecipitationLighting(atmosphere,now){
   if(atmosphere.isDay){
     return{
       rain:lerpC(cloudLight.middle,[190,215,240],0.56),
-      sleet:lerpC(cloudLight.highlight,[210,226,242],0.62),
+      freezing:lerpC(cloudLight.highlight,[210,226,242],0.62),
       snow:lerpC(cloudLight.highlight,[238,242,248],0.76),
       hail:lerpC(cloudLight.highlight,[228,240,252],0.72)
     };
   }
   return{
     rain:lerpC(cloudLight.middle,[88,112,148],0.48),
-    sleet:lerpC(cloudLight.highlight,[118,139,170],0.52),
+    freezing:lerpC(cloudLight.highlight,[118,139,170],0.52),
     snow:lerpC(cloudLight.highlight,[155,169,194],0.62),
     hail:lerpC(cloudLight.highlight,[142,164,196],0.62)
   };

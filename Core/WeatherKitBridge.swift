@@ -239,8 +239,9 @@ final class WeatherKitBridge {
 
     // MARK: - WeatherCondition → WMO code
 
-    /// Maps WeatherKit's `WeatherCondition` to the WMO weather interpretation
-    /// codes that open-meteo uses and that WeatherAether's JS already parses.
+    /// Maps WeatherKit's `WeatherCondition` into the shared visual conditions
+    /// represented by Open-Meteo's WMO codes. Provider-only distinctions fold
+    /// into the nearest shared state; they never create a WeatherKit-only animation.
     private func wmoCode(for condition: WeatherCondition) -> Int {
         switch condition {
         case .clear:                                    return 0   // clear sky
@@ -248,25 +249,23 @@ final class WeatherKitBridge {
         case .partlyCloudy:                            return 2   // partly cloudy
         case .mostlyCloudy, .cloudy:                   return 3   // overcast
         case .foggy:                                   return 45  // fog
-        case .haze, .smoky:                            return 4   // smoke/haze
-        case .blowingDust:                             return 7   // dust
+        case .haze, .smoky, .blowingDust:              return 45  // shared low-visibility treatment
         case .drizzle:                                 return 51  // light drizzle
         case .freezingDrizzle:                         return 56  // light freezing drizzle
         case .rain:                                    return 61  // slight rain
         case .heavyRain:                               return 63  // moderate rain
         case .freezingRain:                            return 66  // light freezing rain
-        case .wintryMix:                               return 68  // slight sleet
+        case .wintryMix, .sleet:                       return 66  // shared freezing-precipitation treatment
         case .flurries, .blowingSnow, .sunFlurries:   return 71  // slight snow fall
         case .snow:                                    return 73  // moderate snow fall
         case .heavySnow, .blizzard:                    return 75  // heavy snow fall
-        case .sleet:                                   return 77  // snow grains
         case .sunShowers:                              return 80  // slight rain showers
         case .hail:                                    return 96  // thunderstorm + hail
         case .isolatedThunderstorms,
              .scatteredThunderstorms,
              .thunderstorms:                           return 95  // thunderstorm
-        case .strongStorms:                            return 99  // thunderstorm + heavy hail
-        case .tropicalStorm, .hurricane:               return 99
+        case .strongStorms,
+             .tropicalStorm, .hurricane:               return 95  // storm, without inventing hail
         case .breezy, .windy,
              .hot, .frigid:                            return 1   // no direct WMO equivalent
         @unknown default:                              return 0

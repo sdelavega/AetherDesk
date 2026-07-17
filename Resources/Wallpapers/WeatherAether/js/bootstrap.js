@@ -1,6 +1,6 @@
 'use strict';
 
-var PREVIEW_CODES={clear:0,partly:2,overcast:3,fog:45,rain:63,sleet:66,snow:73,thunder:95,hail:99};
+var PREVIEW_CODES={clear:0,partly:2,overcast:3,fog:45,rain:63,freezing:66,snow:73,thunder:95,hail:99};
 
 function readPreviewConfig(){
   var params=new URLSearchParams(window.location.search);
