@@ -509,6 +509,7 @@ function resizeCanvas(){
   S.canvas.width=w*dpr;S.canvas.height=h*dpr;
   S.canvas.style.width=w+'px';S.canvas.style.height=h+'px';
   S.ctx.setTransform(dpr,0,0,dpr,0,0);
+  resizeThreeAtmosphere(w,h);
   S.skyPaintCache=null;
   rebuildParticles();
 }
@@ -525,7 +526,12 @@ function render(timestamp){
   var dt=S.lastFrameTime?Math.min((timestamp-S.lastFrameTime)/1000,0.1):0.016;
   S.lastFrameTime=timestamp;
   var w=cssW(),h=cssH(),ctx=S.ctx;
-  drawAtmosphericSky(ctx,w,h);
+  if(S.useThreeRenderer){
+    ctx.clearRect(0,0,w,h);
+    renderThreeAtmosphere(timestamp);
+  }else{
+    drawAtmosphericSky(ctx,w,h);
+  }
   drawBgCelestial(ctx,w,h,timestamp);
   updateParticles(dt);
   drawParticles(ctx);
