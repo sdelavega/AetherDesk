@@ -1,6 +1,16 @@
 'use strict';
 
-var THREE_ATMOSPHERE_REVISION='world-volume-3';
+var THREE_ATMOSPHERE_REVISION='world-volume-4';
+var THREE_QUALITY_PROFILES={
+  eco:{name:'eco',pixelRatio:0.55,fps:15,steps:4},
+  balanced:{name:'balanced',pixelRatio:0.85,fps:24,steps:7},
+  showcase:{name:'showcase',pixelRatio:1.15,fps:30,steps:9}
+};
+
+function getThreeQualityProfile(){
+  var requested=new URLSearchParams(window.location.search).get('quality');
+  return THREE_QUALITY_PROFILES[requested]||THREE_QUALITY_PROFILES.balanced;
+}
 
 var THREE_SKY_VERTEX=[
   'varying vec2 vUv;',
@@ -36,6 +46,7 @@ var THREE_SKY_FRAGMENT=[
   'uniform float uCloudTopLight;',
   'uniform float uCloudDepthShadow;',
   'uniform float uCloudSkyBounce;',
+  'uniform float uCloudSteps;',
   'uniform float uTime;',
   'float hash(vec2 p){',
   '  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);',
@@ -87,8 +98,9 @@ var THREE_SKY_FRAGMENT=[
   '      float enter=max(0.15,(-0.14-origin.y)/ray.y);',
   '      float exit=min(6.5,(0.46-origin.y)/ray.y);',
   '      float span=max(0.0,exit-enter);',
-  '      for(int i=0;i<7;i++){',
-  '        float stepT=(float(i)+0.5)/7.0;',
+  '      for(int i=0;i<9;i++){',
+  '        if(float(i)>=uCloudSteps)break;',
+  '        float stepT=(float(i)+0.5)/uCloudSteps;',
   '        vec3 samplePos=origin+ray*(enter+span*stepT);',
   '        samplePos.xz+=uCloudWind*uTime*0.018;',
   '        samplePos.y+=sin(uTime*0.019+samplePos.x*0.34)*0.022;',
@@ -109,10 +121,10 @@ var THREE_SKY_FRAGMENT=[
   '        illumination=illumination*mix(0.44,1.0,transmission)+uCloudSkyBounce*(1.0-transmission);',
   '        illumination=clamp(illumination,0.04,1.0);',
   '        vec3 cloudColor=mix(uCloudShadow,uCloudHighlight,illumination);',
-  '        float alpha=(1.0-exp(-density*0.34))*(1.0-cloud.a);',
+  '        float alpha=(1.0-exp(-density*(2.38/uCloudSteps)))*(1.0-cloud.a);',
   '        cloud.rgb+=cloudColor*alpha;',
   '        cloud.a+=alpha;',
-  '        opticalDepth+=density*0.16;',
+  '        opticalDepth+=density*(1.12/uCloudSteps);',
   '      }',
   '    }',
   '    color=mix(color,cloud.rgb/max(cloud.a,0.001),cloud.a);',
@@ -141,7 +153,11 @@ function reportWeatherRendererStatus(){
     type:'weather-aether-renderer-status',
     renderer:S.useThreeRenderer?'three':'canvas',
     revision:THREE_ATMOSPHERE_REVISION,
+    quality:S.threeAtmosphere?S.threeAtmosphere.quality.name:getThreeQualityProfile().name,
+    targetFps:S.threeAtmosphere?S.threeAtmosphere.quality.fps:getThreeQualityProfile().fps,
+    steps:S.threeAtmosphere?S.threeAtmosphere.quality.steps:getThreeQualityProfile().steps,
     volume:volume,
+    metrics:S.threeAtmosphere?S.threeAtmosphere.latestMetrics||null:null,
     error:S.threeShaderError||null
   },'*');
 }
@@ -162,7 +178,8 @@ function initializeThreeAtmosphere(){
       console.error('Weather Aether: Three.js shader error.',S.threeShaderError);
       reportWeatherRendererStatus();
     };
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,0.85));
+    var quality=getThreeQualityProfile();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,quality.pixelRatio));
     var scene=new api.Scene();
     var camera=new api.PerspectiveCamera(45,1,0.1,20);
     camera.position.set(0,0,5);
@@ -178,14 +195,18 @@ function initializeThreeAtmosphere(){
         uCloudWind:{value:new api.Vector2(0,0)},uCloudHighlight:{value:new api.Color()},
         uCloudShadow:{value:new api.Color()},uCloudLightOffset:{value:new api.Vector3(-0.20,0.16,0.10)},
         uCloudLightBase:{value:0.34},uCloudLightStrength:{value:0.82},uCloudTopLight:{value:0.12},
-        uCloudDepthShadow:{value:0},uCloudSkyBounce:{value:0},uTime:{value:0}
+        uCloudDepthShadow:{value:0},uCloudSkyBounce:{value:0},uCloudSteps:{value:quality.steps},uTime:{value:0}
       }
     });
     var geometry=new api.PlaneGeometry(2,2);
     var skyMesh=new api.Mesh(geometry,material);
     skyMesh.frustumCulled=false;skyMesh.renderOrder=-100;
     scene.add(skyMesh);
-    S.threeAtmosphere={renderer:renderer,scene:scene,camera:camera,material:material,lastPaintKey:null,lastFrame:0};
+    S.threeAtmosphere={
+      renderer:renderer,scene:scene,camera:camera,material:material,quality:quality,
+      lastPaintKey:null,lastFrame:0,latestMetrics:null,
+      performance:{startedAt:0,lastRenderedAt:0,frames:0,submitTotal:0,submitMax:0,intervals:[]}
+    };
     S.threeShaderError=null;
     S.useThreeRenderer=true;canvas.style.display='block';
     return true;
@@ -350,12 +371,39 @@ function updateThreeAtmosphere(timestamp){
 function renderThreeAtmosphere(timestamp){
   var state=S.threeAtmosphere;
   if(!S.useThreeRenderer||!state)return;
-  // Atmospheric motion does not benefit from 60 fps. Canvas precipitation can
-  // remain responsive while the volumetric WebGL background stays at 24 fps.
-  if(timestamp-state.lastFrame<1000/24)return;
+  var frameBudget=1000/state.quality.fps;
+  if(timestamp-state.lastFrame<frameBudget)return;
   updateThreeAtmosphere(timestamp);
   updateThreeClouds(timestamp);
+  var submitStart=performance.now();
   state.renderer.render(state.scene,state.camera);
+  var submitTime=performance.now()-submitStart;
+  var stats=state.performance;
+  if(!stats.startedAt){
+    stats.startedAt=timestamp;stats.lastRenderedAt=timestamp;
+  }else{
+    stats.frames++;
+    stats.submitTotal+=submitTime;
+    stats.submitMax=Math.max(stats.submitMax,submitTime);
+    stats.intervals.push(timestamp-stats.lastRenderedAt);
+    stats.lastRenderedAt=timestamp;
+    var duration=timestamp-stats.startedAt;
+    if(duration>=2000){
+      var ordered=stats.intervals.slice().sort(function(a,b){return a-b;});
+      var p95=ordered[Math.max(0,Math.ceil(ordered.length*0.95)-1)]||0;
+      state.latestMetrics={
+        fps:stats.frames*1000/duration,
+        p95:p95,
+        submitAverage:stats.frames?stats.submitTotal/stats.frames:0,
+        submitMax:stats.submitMax,
+        width:state.renderer.domElement.width,
+        height:state.renderer.domElement.height,
+        drawCalls:state.renderer.info.render.calls
+      };
+      stats.startedAt=timestamp;stats.frames=0;stats.submitTotal=0;stats.submitMax=0;stats.intervals=[];
+      reportWeatherRendererStatus();
+    }
+  }
   if(!state.statusReported){
     state.statusReported=true;
     reportWeatherRendererStatus();
