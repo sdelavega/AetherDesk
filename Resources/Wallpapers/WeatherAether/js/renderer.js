@@ -6,16 +6,83 @@
 //   rain/thunder  — fast diagonal lines
 //   snow          — slow drifting circles with sinusoidal horizontal wobble
 //   sleet         — mixed: fast lines (rain) + slower circles (ice pellets)
-//   overcast/partly — slow drifting cloud puffs
 //   clear night   — stationary twinkling stars
 // showParticles:false short-circuits and clears all pools immediately.
+function seededRandom(seed){
+  return function(){
+    seed=(seed*1664525+1013904223)>>>0;
+    return seed/4294967296;
+  };
+}
+
+// Builds one reusable cloud image from a broad base and irregular illuminated
+// lobes. Four cached variants are shared by every cloud, keeping the animation
+// to cheap drawImage calls instead of rebuilding gradients each frame.
+function buildCloudSprite(seed,density){
+  var canvas=document.createElement('canvas');
+  canvas.width=420;canvas.height=180;
+  var ctx=canvas.getContext('2d');
+  var rand=seededRandom(seed);
+  var highlight=Math.round(246-density*66);
+  var middle=Math.round(226-density*86);
+  var shadow=Math.round(190-density*105);
+
+  var base=ctx.createRadialGradient(210,92,18,210,105,178);
+  base.addColorStop(0,'rgba('+middle+','+(middle+3)+','+(middle+8)+',0.94)');
+  base.addColorStop(0.62,'rgba('+middle+','+(middle+3)+','+(middle+8)+',0.88)');
+  base.addColorStop(1,'rgba('+shadow+','+(shadow+5)+','+(shadow+12)+',0)');
+  ctx.fillStyle=base;ctx.beginPath();ctx.ellipse(210,108,184,54,0,0,Math.PI*2);ctx.fill();
+
+  for(var i=0;i<14;i++){
+    var x=52+rand()*316;
+    var centerBias=1-Math.abs(x-210)/210;
+    var y=99-rand()*44-centerBias*22;
+    var radius=34+rand()*36+centerBias*12;
+    var lobe=ctx.createRadialGradient(x-radius*0.18,y-radius*0.24,radius*0.08,x,y,radius);
+    lobe.addColorStop(0,'rgba('+highlight+','+(highlight+2)+','+Math.min(255,highlight+7)+',0.98)');
+    lobe.addColorStop(0.56,'rgba('+middle+','+(middle+3)+','+(middle+9)+',0.90)');
+    lobe.addColorStop(1,'rgba('+shadow+','+(shadow+5)+','+(shadow+12)+',0)');
+    ctx.fillStyle=lobe;ctx.beginPath();ctx.arc(x,y,radius,0,Math.PI*2);ctx.fill();
+  }
+
+  var underside=ctx.createLinearGradient(0,78,0,156);
+  underside.addColorStop(0,'rgba('+shadow+','+(shadow+4)+','+(shadow+10)+',0)');
+  underside.addColorStop(1,'rgba('+Math.max(35,shadow-30)+','+Math.max(40,shadow-24)+','+Math.max(48,shadow-15)+','+(0.20+density*0.25)+')');
+  ctx.fillStyle=underside;ctx.beginPath();ctx.ellipse(210,118,166,42,0,0,Math.PI*2);ctx.fill();
+  return canvas;
+}
+
+function rebuildClouds(w,h,atmosphere){
+  S.clouds=[];S.cloudSprites=[];
+  // Ground-level fog is represented by atmospheric extinction, not a row of
+  // discrete cloud bodies drifting overhead.
+  if(atmosphere.cloudCover<0.10||atmosphere.condition==='fog')return;
+  for(var i=0;i<4;i++)S.cloudSprites.push(buildCloudSprite(1701+i*7919,atmosphere.cloudDensity));
+  var count=Math.round(3+atmosphere.cloudCover*9);
+  var rand=seededRandom(8137+Math.round(atmosphere.cloudCover*1000));
+  for(var i=0;i<count;i++){
+    var depth=0.28+rand()*0.72;
+    var width=w*(0.20+rand()*0.22)*(0.78+depth*0.34);
+    S.clouds.push({
+      x:-width+rand()*(w+width*2),
+      y:h*(0.03+rand()*0.40),
+      width:width,height:width*(180/420),depth:depth,
+      speed:3+depth*8+atmosphere.motionEnergy*7,
+      opacity:Math.min(0.88,0.24+atmosphere.cloudDensity*0.48+depth*0.10),
+      sprite:i%S.cloudSprites.length
+    });
+  }
+}
+
 function rebuildParticles(){
   S.particles=[];
   S.stars=[];
   S.particleType=null;
   S.fogAlpha=0;
-  if(!S.props.showParticles)return;
   var w=cssW(),h=cssH(),bk=S.weatherBucket;
+  var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  rebuildClouds(w,h,atmosphere);
+  if(!S.props.showParticles)return;
   S.particleType=bk;
   if(bk==='rain'||bk==='thunder'){
     for(var i=0;i<180;i++){
@@ -31,10 +98,6 @@ function rebuildParticles(){
       S.particles.push(ice?
         {x:Math.random()*w,y:Math.random()*h,speed:120+Math.random()*180,sz:1.2+Math.random()*2.2,op:0.25+Math.random()*0.35,ice:true}:
         {x:Math.random()*w,y:Math.random()*h,speed:250+Math.random()*320,len:6+Math.random()*10,op:0.15+Math.random()*0.28,ice:false});
-    }
-  }else if(bk==='overcast'||bk==='partly'){
-    for(var i=0;i<7;i++){
-      S.particles.push({x:Math.random()*w,y:Math.random()*h*0.5,speed:8+Math.random()*16,sz:60+Math.random()*80,op:0.06+Math.random()*0.1});
     }
   }
   if((bk==='clear'||bk==='partly')&&!S.isDay){
@@ -61,9 +124,23 @@ function precipitationWindDrift(atmosphere){
   return Math.sin(toward)*(24+atmosphere.motionEnergy*40);
 }
 
+function updateClouds(dt,atmosphere,w){
+  if(S.clouds.length===0)return;
+  var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
+  var direction=Math.sin(toward);
+  if(Math.abs(direction)<0.15)direction=0.15;
+  for(var i=0;i<S.clouds.length;i++){
+    var cloud=S.clouds[i];
+    cloud.x+=cloud.speed*direction*S.props.animationSpeed*dt;
+    if(direction>0&&cloud.x>w+cloud.width*0.5)cloud.x=-cloud.width*1.05;
+    if(direction<0&&cloud.x<-cloud.width*1.05)cloud.x=w+cloud.width*0.5;
+  }
+}
+
 function updateParticles(dt){
-  if(!S.props.showParticles)return;
   var w=cssW(),h=cssH(),atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  updateClouds(dt,atmosphere,w);
+  if(!S.props.showParticles)return;
   var spd=S.props.animationSpeed*(0.65+atmosphere.motionEnergy*0.7),bk=S.weatherBucket;
   var windDrift=precipitationWindDrift(atmosphere);
   if(bk==='rain'||bk==='thunder'){
@@ -95,12 +172,6 @@ function updateParticles(dt){
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
     }
-  }else if(bk==='overcast'||bk==='partly'){
-    for(var i=0;i<S.particles.length;i++){
-      var p=S.particles[i];
-      p.x+=p.speed*spd*dt;
-      if(p.x>w+p.sz*2)p.x=-p.sz*2;
-    }
   }
   for(var i=0;i<S.stars.length;i++){
     S.stars[i].tw+=S.stars[i].tws*spd*dt;
@@ -126,11 +197,29 @@ function updateParticles(dt){
 // rain=strokeLine, snow=arc, sleet=mixed, cloud puffs=arc, stars=arc+twinkle.
 // Lightning: full-canvas white fillRect at lightningAlpha opacity.
 // Fog: full-canvas grey fillRect at fogAlpha opacity.
+function drawClouds(ctx){
+  for(var i=0;i<S.clouds.length;i++){
+    var cloud=S.clouds[i],sprite=S.cloudSprites[cloud.sprite];
+    if(!sprite)continue;
+    ctx.save();ctx.globalAlpha=cloud.opacity;
+    ctx.drawImage(sprite,cloud.x,cloud.y,cloud.width,cloud.height);
+    ctx.restore();
+  }
+}
+
 function drawParticles(ctx){
-  if(!S.props.showParticles)return;
   var bk=S.weatherBucket;
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   var windDrift=precipitationWindDrift(atmosphere);
+  // Stars sit behind cloud cover; precipitation sits in front of it.
+  for(var i=0;i<S.stars.length;i++){
+    var s=S.stars[i];
+    var tw=0.25+0.75*Math.abs(Math.sin(s.tw));
+    ctx.beginPath();ctx.arc(s.x,s.y,Math.max(0.3,s.sz),0,Math.PI*2);
+    ctx.fillStyle=rgba([255,255,240],tw);ctx.fill();
+  }
+  drawClouds(ctx);
+  if(!S.props.showParticles)return;
   if(bk==='rain'||bk==='thunder'){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
@@ -160,22 +249,6 @@ function drawParticles(ctx){
         ctx.strokeStyle=rgba([180,205,228],p.op);ctx.lineWidth=1;ctx.stroke();
       }
     }
-  }else if(bk==='overcast'||bk==='partly'){
-    for(var i=0;i<S.particles.length;i++){
-      var p=S.particles[i];
-      ctx.beginPath();
-      ctx.arc(p.x,p.y,Math.max(1,p.sz),0,Math.PI*2);
-      ctx.fillStyle=rgba([200,210,220],p.op);
-      ctx.fill();
-    }
-  }
-  for(var i=0;i<S.stars.length;i++){
-    var s=S.stars[i];
-    var tw=0.25+0.75*Math.abs(Math.sin(s.tw));
-    ctx.beginPath();
-    ctx.arc(s.x,s.y,Math.max(0.3,s.sz),0,Math.PI*2);
-    ctx.fillStyle=rgba([255,255,240],tw);
-    ctx.fill();
   }
   if(S.lightningAlpha>0.005){
     ctx.fillStyle=rgba([255,255,255],S.lightningAlpha);

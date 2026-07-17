@@ -87,7 +87,8 @@ var DAY_NAMES=['SUN','MON','TUE','WED','THU','FRI','SAT'];
 //                  sky gradient phase transitions to actual solar times.
 //   isDay          Whether the current time is between sunrise and sunset.
 //   props          Live property values — updated by applyProps().
-//   particles      Active weather particle objects (rain drops, snowflakes…).
+//   particles      Active precipitation objects (rain drops, snowflakes…).
+//   clouds         Depth-separated cloud forms, independent of precipitation.
 //   stars          Star objects — visible on clear nights.
 //   particleType   The weatherBucket active when particles were last built.
 //                  Used to detect changes that require a full particle rebuild.
@@ -108,7 +109,7 @@ var S={
     units:'imperial',forecastOpacity:0.9,
     animationSpeed:1.0,showParticles:true,accentColor:'#6fb8ff'
   },
-  particles:[],stars:[],particleType:null,weatherBucket:'clear',
+  particles:[],stars:[],clouds:[],cloudSprites:[],particleType:null,weatherBucket:'clear',
   atmosphere:null,
   animationFrameId:null,refreshTimeout:null,lastFrameTime:0,fetchSeq:0,
   lightningAlpha:0,lightningCooldown:5,fogAlpha:0,
