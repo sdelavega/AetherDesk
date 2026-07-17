@@ -1,10 +1,10 @@
 'use strict';
 
-var THREE_ATMOSPHERE_REVISION='world-volume-4';
+var THREE_ATMOSPHERE_REVISION='world-volume-5';
 var THREE_QUALITY_PROFILES={
-  eco:{name:'eco',pixelRatio:0.55,fps:15,steps:4},
-  balanced:{name:'balanced',pixelRatio:0.85,fps:24,steps:7},
-  showcase:{name:'showcase',pixelRatio:1.15,fps:30,steps:9}
+  eco:{name:'eco',pixelRatio:0.55,fps:15,steps:4,rainCount:80},
+  balanced:{name:'balanced',pixelRatio:0.85,fps:24,steps:7,rainCount:160},
+  showcase:{name:'showcase',pixelRatio:1.15,fps:30,steps:9,rainCount:240}
 };
 
 function getThreeQualityProfile(){
@@ -138,6 +138,51 @@ var THREE_SKY_FRAGMENT=[
   '}'
 ].join('\n');
 
+var THREE_RAIN_VERTEX=[
+  'uniform float uTime;',
+  'uniform float uPixelRatio;',
+  'uniform float uAspect;',
+  'uniform float uWind;',
+  'uniform float uSpeed;',
+  'attribute float aSpeed;',
+  'attribute float aLength;',
+  'attribute float aOpacity;',
+  'attribute float aPhase;',
+  'varying float vOpacity;',
+  'varying float vWind;',
+  'void main(){',
+  '  float fall=4.0-mod(aPhase+uTime*aSpeed*uSpeed,8.0);',
+  '  vec3 p=position;',
+  '  p.y=fall;',
+  '  float halfWidth=0.46*(5.0-p.z)*uAspect;',
+  '  p.x=p.x*halfWidth+uWind*(4.0-fall)*0.11;',
+  '  vec4 viewPosition=modelViewMatrix*vec4(p,1.0);',
+  '  float perspective=clamp(2.6/max(0.8,-viewPosition.z),0.38,1.65);',
+  '  gl_PointSize=clamp(aLength*uPixelRatio*perspective,2.0,64.0);',
+  '  gl_Position=projectionMatrix*viewPosition;',
+  '  vOpacity=aOpacity*clamp(perspective,0.36,1.0);',
+  '  vWind=uWind;',
+  '}'
+].join('\n');
+
+var THREE_RAIN_FRAGMENT=[
+  'precision mediump float;',
+  'uniform vec3 uColor;',
+  'uniform float uOpacity;',
+  'varying float vOpacity;',
+  'varying float vWind;',
+  'void main(){',
+  '  vec2 drop=gl_PointCoord-vec2(0.5);',
+  '  drop.x-=drop.y*vWind*0.16;',
+  '  float core=1.0-smoothstep(0.025,0.075,abs(drop.x));',
+  '  float ends=1.0-smoothstep(0.39,0.50,abs(drop.y));',
+  '  float head=mix(0.72,1.0,smoothstep(-0.48,0.34,drop.y));',
+  '  float alpha=core*ends*head*vOpacity*uOpacity;',
+  '  if(alpha<0.01)discard;',
+  '  gl_FragColor=vec4(uColor,alpha);',
+  '}'
+].join('\n');
+
 function threeColor(c){
   return new WeatherAetherThree.Color(c[0]/255,c[1]/255,c[2]/255);
 }
@@ -157,6 +202,7 @@ function reportWeatherRendererStatus(){
     targetFps:S.threeAtmosphere?S.threeAtmosphere.quality.fps:getThreeQualityProfile().fps,
     steps:S.threeAtmosphere?S.threeAtmosphere.quality.steps:getThreeQualityProfile().steps,
     volume:volume,
+    rain:!!(S.threeRain&&S.threeRain.active),
     metrics:S.threeAtmosphere?S.threeAtmosphere.latestMetrics||null:null,
     error:S.threeShaderError||null
   },'*');
@@ -207,6 +253,7 @@ function initializeThreeAtmosphere(){
       lastPaintKey:null,lastFrame:0,latestMetrics:null,
       performance:{startedAt:0,lastRenderedAt:0,frames:0,submitTotal:0,submitMax:0,intervals:[]}
     };
+    initializeThreeRain(api,S.threeAtmosphere);
     S.threeShaderError=null;
     S.useThreeRenderer=true;canvas.style.display='block';
     return true;
@@ -217,6 +264,58 @@ function initializeThreeAtmosphere(){
     reportWeatherRendererStatus();
     return false;
   }
+}
+
+function initializeThreeRain(api,state){
+  var maximum=THREE_QUALITY_PROFILES.showcase.rainCount;
+  var positions=[],speeds=[],lengths=[],opacities=[],phases=[];
+  var random=seededRandom(29471);
+  for(var i=0;i<maximum;i++){
+    var nearness=Math.pow(random(),0.72);
+    positions.push(random()*2-1,(random()-0.5)*8,-2.2+nearness*5.7);
+    speeds.push(1.55+nearness*2.75+random()*0.55);
+    lengths.push(11+nearness*23+random()*5);
+    opacities.push(0.20+nearness*0.55);
+    phases.push(random()*8);
+  }
+  var geometry=new api.BufferGeometry();
+  geometry.setAttribute('position',new api.Float32BufferAttribute(positions,3));
+  geometry.setAttribute('aSpeed',new api.Float32BufferAttribute(speeds,1));
+  geometry.setAttribute('aLength',new api.Float32BufferAttribute(lengths,1));
+  geometry.setAttribute('aOpacity',new api.Float32BufferAttribute(opacities,1));
+  geometry.setAttribute('aPhase',new api.Float32BufferAttribute(phases,1));
+  geometry.setDrawRange(0,state.quality.rainCount);
+  var material=new api.ShaderMaterial({
+    vertexShader:THREE_RAIN_VERTEX,fragmentShader:THREE_RAIN_FRAGMENT,
+    transparent:true,depthTest:false,depthWrite:false,
+    uniforms:{
+      uTime:{value:0},uPixelRatio:{value:state.renderer.getPixelRatio()},uAspect:{value:1},uWind:{value:0},
+      uSpeed:{value:1},uColor:{value:new api.Color(0.65,0.76,0.90)},uOpacity:{value:0.62}
+    }
+  });
+  var points=new api.Points(geometry,material);
+  points.frustumCulled=false;points.renderOrder=50;points.visible=false;
+  state.scene.add(points);
+  S.threeRain={points:points,geometry:geometry,material:material,active:false};
+}
+
+function rendersThreeRain(){
+  return!!(S.useThreeRenderer&&S.threeRain&&S.threeRain.active);
+}
+
+function updateThreeRain(timestamp,atmosphere){
+  var rain=S.threeRain;
+  if(!rain)return;
+  var active=S.props.showParticles&&(atmosphere.condition==='rain'||atmosphere.condition==='thunder');
+  rain.active=active;rain.points.visible=active;
+  if(!active)return;
+  var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
+  var lighting=getPrecipitationLighting(atmosphere,wallpaperNow());
+  rain.material.uniforms.uTime.value=timestamp/1000;
+  rain.material.uniforms.uWind.value=Math.sin(toward)*(0.28+atmosphere.motionEnergy*0.72);
+  rain.material.uniforms.uSpeed.value=S.props.animationSpeed*(0.76+atmosphere.motionEnergy*0.54);
+  rain.material.uniforms.uColor.value.copy(threeColor(lighting.rain));
+  rain.material.uniforms.uOpacity.value=atmosphere.condition==='thunder'?0.78:0.64;
 }
 
 function usesThreeCloudVolume(){
@@ -252,6 +351,7 @@ function resizeThreeAtmosphere(w,h){
   var uniforms=S.threeAtmosphere.material.uniforms;
   uniforms.uViewportScale.value.set(w/maxDimension,h/maxDimension);
   uniforms.uMinRatio.value=Math.min(w,h)/maxDimension;
+  if(S.threeRain)S.threeRain.material.uniforms.uAspect.value=w/Math.max(1,h);
 }
 
 function makeThreeCloudTexture(canvas){
@@ -366,6 +466,7 @@ function updateThreeAtmosphere(timestamp){
   uniforms.uStarVisibility.value=!atmosphere.isDay&&S.props.showParticles?
     (atmosphere.condition==='clear'?1:atmosphere.condition==='partly'?0.38:0):0;
   uniforms.uTime.value=timestamp/1000;
+  updateThreeRain(timestamp,atmosphere);
 }
 
 function renderThreeAtmosphere(timestamp){

@@ -85,7 +85,8 @@ window.addEventListener('message',function(event){
     }else if(data.renderer==='three'&&data.metrics){
       status.textContent='THREE · '+data.quality+' · '+data.metrics.fps.toFixed(1)+'/'+data.targetFps+' fps · '+data.steps+' steps · '+
         data.metrics.p95.toFixed(1)+' ms p95 · '+data.metrics.submitAverage.toFixed(2)+' ms submit · '+
-        data.metrics.width+'×'+data.metrics.height+' · '+data.metrics.drawCalls+' draw · volume '+(data.volume?'on':'off');
+        data.metrics.width+'×'+data.metrics.height+' · '+data.metrics.drawCalls+' draw · volume '+(data.volume?'on':'off')+
+        (data.rain?' · rain 3D':'');
     }else{
       status.textContent=data.renderer.toUpperCase()+' · '+data.revision+
         (data.renderer==='three'?' · '+data.quality+' · volume '+(data.volume?'on':'off'):'');
