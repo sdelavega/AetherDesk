@@ -23,9 +23,28 @@ var THREE_SKY_FRAGMENT=[
   'uniform float uCloudDensity;',
   'uniform float uMinRatio;',
   'uniform float uStarVisibility;',
+  'uniform float uCloudCover;',
+  'uniform float uCloudVolumeEnabled;',
+  'uniform vec2 uCloudWind;',
+  'uniform vec3 uCloudHighlight;',
+  'uniform vec3 uCloudShadow;',
   'uniform float uTime;',
   'float hash(vec2 p){',
   '  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);',
+  '}',
+  'float hash3(vec3 p){',
+  '  p=fract(p*0.1031);',
+  '  p+=dot(p,p.yzx+33.33);',
+  '  return fract((p.x+p.y)*p.z);',
+  '}',
+  'float noise3(vec3 p){',
+  '  vec3 i=floor(p);',
+  '  vec3 f=fract(p);',
+  '  f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(mix(hash3(i),hash3(i+vec3(1.0,0.0,0.0)),f.x),mix(hash3(i+vec3(0.0,1.0,0.0)),hash3(i+vec3(1.0,1.0,0.0)),f.x),f.y),mix(mix(hash3(i+vec3(0.0,0.0,1.0)),hash3(i+vec3(1.0,0.0,1.0)),f.x),mix(hash3(i+vec3(0.0,1.0,1.0)),hash3(i+vec3(1.0,1.0,1.0)),f.x),f.y),f.z);',
+  '}',
+  'float cloudNoise(vec3 p){',
+  '  return noise3(p)*0.68+noise3(p*2.07+7.4)*0.32;',
   '}',
   'void main(){',
   '  float lower=smoothstep(0.0,0.52,vUv.y);',
@@ -48,6 +67,29 @@ var THREE_SKY_FRAGMENT=[
   '  float lightRadius=0.48+uDiffusion*0.20;',
   '  float airlight=1.0-smoothstep(0.0,lightRadius,length(lightDelta));',
   '  color=mix(color,uLightColor,airlight*uLightAlpha);',
+  '  if(uCloudVolumeEnabled>0.5){',
+  '    vec2 view=(vUv-vec2(0.5,0.64))*vec2(uViewportScale.x/max(0.001,uViewportScale.y),1.0);',
+  '    vec3 ray=normalize(vec3(view*0.78,1.25));',
+  '    vec3 origin=vec3(view*0.58,-0.35);',
+  '    vec4 cloud=vec4(0.0);',
+  '    float threshold=mix(0.74,0.43,uCloudCover);',
+  '    for(int i=0;i<7;i++){',
+  '      float stepT=(float(i)+0.5)/7.0;',
+  '      vec3 samplePos=origin+ray*(stepT*1.75);',
+  '      samplePos.xy+=uCloudWind*uTime*0.012;',
+  '      samplePos.x+=sin(uTime*0.021+stepT*5.0)*0.035;',
+  '      float vertical=smoothstep(-0.28,0.02,samplePos.y)*(1.0-smoothstep(0.38,0.78,samplePos.y));',
+  '      float density=smoothstep(threshold,threshold+0.16,cloudNoise(samplePos*2.15))*vertical*uCloudDensity;',
+  '      float towardLight=cloudNoise(samplePos*2.15+vec3(-0.20,0.16,0.10));',
+  '      float illumination=clamp(0.34+(towardLight-density)*0.82+stepT*0.12,0.12,1.0);',
+  '      vec3 cloudColor=mix(uCloudShadow,uCloudHighlight,illumination);',
+  '      float alpha=density*0.24*(1.0-cloud.a);',
+  '      cloud.rgb+=cloudColor*alpha;',
+  '      cloud.a+=alpha;',
+  '    }',
+  '    float cloudBand=smoothstep(0.42,0.58,vUv.y)*(1.0-smoothstep(0.96,1.0,vUv.y));',
+  '    color=mix(color,cloud.rgb/max(cloud.a,0.001),cloud.a*cloudBand);',
+  '  }',
   '  vec2 edgeDelta=(vUv-vec2(0.5,0.52))*uViewportScale;',
   '  float vignette=smoothstep(uMinRatio*0.22,0.78,length(edgeDelta));',
   '  color*=1.0-vignette*(0.035+uCloudDensity*0.035);',
@@ -71,7 +113,7 @@ function initializeThreeAtmosphere(){
       canvas:canvas,antialias:false,alpha:false,depth:false,stencil:false,
       powerPreference:'low-power',failIfMajorPerformanceCaveat:true
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.25));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,0.85));
     var scene=new api.Scene();
     var camera=new api.PerspectiveCamera(45,1,0.1,20);
     camera.position.set(0,0,5);
@@ -83,7 +125,9 @@ function initializeThreeAtmosphere(){
         uLightColor:{value:new api.Color()},uLightPosition:{value:new api.Vector2(0.5,0.5)},
         uViewportScale:{value:new api.Vector2(1,1)},uHaze:{value:0},uDiffusion:{value:0},
         uLightAlpha:{value:0},uCloudDensity:{value:0},uMinRatio:{value:1},
-        uStarVisibility:{value:0},uTime:{value:0}
+        uStarVisibility:{value:0},uCloudCover:{value:0},uCloudVolumeEnabled:{value:0},
+        uCloudWind:{value:new api.Vector2(0,0)},uCloudHighlight:{value:new api.Color()},
+        uCloudShadow:{value:new api.Color()},uTime:{value:0}
       }
     });
     var geometry=new api.PlaneGeometry(2,2);
@@ -98,6 +142,10 @@ function initializeThreeAtmosphere(){
     console.warn('Weather Aether: WebGL atmosphere unavailable; using Canvas fallback.',error);
     return false;
   }
+}
+
+function usesThreeCloudVolume(){
+  return new URLSearchParams(window.location.search).get('cloudModel')!=='planes';
 }
 
 function resizeThreeAtmosphere(w,h){
@@ -143,7 +191,7 @@ function refreshThreeCloudTextures(){
 }
 
 function rebuildThreeClouds(){
-  if(!S.useThreeRenderer||!S.threeAtmosphere||S.clouds.length===0)return;
+  if(usesThreeCloudVolume()||!S.useThreeRenderer||!S.threeAtmosphere||S.clouds.length===0)return;
   var api=window.WeatherAetherThree;
   var geometry=new api.PlaneGeometry(1,1);
   var textures=[];
@@ -203,6 +251,14 @@ function updateThreeAtmosphere(timestamp){
     uniforms.uDiffusion.value=atmosphere.lightDiffusion;
     uniforms.uLightAlpha.value=(0.055+atmosphere.lightDiffusion*0.09)*(atmosphere.isDay?1:0.34);
     uniforms.uCloudDensity.value=atmosphere.cloudDensity;
+    uniforms.uCloudCover.value=atmosphere.cloudCover;
+    uniforms.uCloudVolumeEnabled.value=usesThreeCloudVolume()&&atmosphere.cloudCover>=0.10&&
+      atmosphere.condition!=='fog'&&atmosphere.condition!=='snow'?1:0;
+    var cloudLight=getCloudLighting(atmosphere,now);
+    uniforms.uCloudHighlight.value.copy(threeColor(cloudLight.highlight));
+    uniforms.uCloudShadow.value.copy(threeColor(cloudLight.shadow));
+    var windToward=((atmosphere.windDirection+180)%360)*Math.PI/180;
+    uniforms.uCloudWind.value.set(Math.sin(windToward)*atmosphere.motionEnergy,Math.cos(windToward)*atmosphere.motionEnergy*0.12);
     state.lastPaintKey=key;
   }
   uniforms.uStarVisibility.value=!atmosphere.isDay&&S.props.showParticles?
@@ -214,8 +270,8 @@ function renderThreeAtmosphere(timestamp){
   var state=S.threeAtmosphere;
   if(!S.useThreeRenderer||!state)return;
   // Atmospheric motion does not benefit from 60 fps. Canvas precipitation can
-  // remain responsive while the WebGL background updates at at most 30 fps.
-  if(timestamp-state.lastFrame<1000/30)return;
+  // remain responsive while the volumetric WebGL background stays at 24 fps.
+  if(timestamp-state.lastFrame<1000/24)return;
   updateThreeAtmosphere(timestamp);
   updateThreeClouds(timestamp);
   state.renderer.render(state.scene,state.camera);
