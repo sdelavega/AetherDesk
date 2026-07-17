@@ -121,12 +121,14 @@ function rebuildParticles(){
       }
     }
   }else if(bk==='snow'){
-    var snowCount=Math.round(60+atmosphere.precipitation*140);
-    for(var i=0;i<snowCount;i++){
-      var depth=Math.pow(Math.random(),0.82);
-      S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
-        speed:10+depth*66,sz:0.55+depth*3.5,wb:Math.random()*Math.PI*2,
-        wbs:0.55+Math.random()*1.8,wobble:7+depth*19,op:0.10+depth*0.58});
+    if(!S.useThreeRenderer||!S.threeSnow){
+      var snowCount=Math.round(60+atmosphere.precipitation*140);
+      for(var i=0;i<snowCount;i++){
+        var depth=Math.pow(Math.random(),0.82);
+        S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
+          speed:10+depth*66,sz:0.55+depth*3.5,wb:Math.random()*Math.PI*2,
+          wbs:0.55+Math.random()*1.8,wobble:7+depth*19,op:0.10+depth*0.58});
+      }
     }
   }else if(bk==='sleet'){
     var sleetCount=Math.round(65+atmosphere.precipitation*135);
@@ -168,6 +170,31 @@ function precipitationGust(atmosphere){
   return Math.max(0.62,0.88+energy*(0.17*slow+0.09*fast));
 }
 
+function createLightningBolt(w,h){
+  var main=[],branches=[];
+  var x=w*(0.20+Math.random()*0.60);
+  var endY=h*(0.58+Math.random()*0.24);
+  var segments=9+Math.floor(Math.random()*5);
+  for(var i=0;i<=segments;i++){
+    var y=-h*0.03+(endY+h*0.03)*(i/segments);
+    x+=((Math.random()-0.5)*w*0.075)*(1-i/segments*0.45);
+    x=Math.max(w*0.08,Math.min(w*0.92,x));
+    main.push({x:x,y:y});
+    if(i>2&&i<segments-2&&Math.random()<0.24){
+      var branch=[{x:x,y:y}],bx=x,by=y;
+      var direction=Math.random()<0.5?-1:1;
+      var branchSegments=2+Math.floor(Math.random()*3);
+      for(var j=0;j<branchSegments;j++){
+        bx+=direction*w*(0.025+Math.random()*0.035);
+        by+=h*(0.025+Math.random()*0.045);
+        branch.push({x:bx,y:by});
+      }
+      branches.push(branch);
+    }
+  }
+  return{main:main,branches:branches};
+}
+
 function updateClouds(dt,atmosphere,w){
   if(S.clouds.length===0)return;
   var now=wallpaperNow();
@@ -200,7 +227,7 @@ function updateParticles(dt){
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
     }
-  }else if(bk==='snow'){
+  }else if(bk==='snow'&&!rendersThreeSnow()){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       p.wb+=p.wbs*spd*dt;
@@ -226,13 +253,18 @@ function updateParticles(dt){
   }
   if(bk==='thunder'){
     S.lightningCooldown-=dt;
-    if(S.lightningCooldown<=0&&Math.random()<0.03*spd){
-      S.lightningAlpha=0.6+Math.random()*0.4;
-      S.lightningCooldown=2+Math.random()*6;
+    if(S.lightningCooldown<=0&&Math.random()<0.012*spd){
+      var showBolt=Math.random()<0.68;
+      S.lightningBolt=showBolt?createLightningBolt(w,h):null;
+      S.lightningBoltAlpha=showBolt?0.78+Math.random()*0.22:0;
+      S.lightningAlpha=showBolt?(Math.random()<0.25?0.08+Math.random()*0.12:0):0.13+Math.random()*0.15;
+      S.lightningCooldown=7+Math.random()*12;
     }
-    S.lightningAlpha*=Math.pow(0.85,dt*60);
+    S.lightningAlpha*=Math.pow(0.72,dt*60);
+    S.lightningBoltAlpha*=Math.pow(0.84,dt*60);
     if(S.lightningAlpha<0.005)S.lightningAlpha=0;
-  }else{S.lightningAlpha=0;}
+    if(S.lightningBoltAlpha<0.005){S.lightningBoltAlpha=0;S.lightningBolt=null;}
+  }else{S.lightningAlpha=0;S.lightningBoltAlpha=0;S.lightningBolt=null;}
   if(bk==='fog'){
     if(S.fogAlpha<0.28)S.fogAlpha=Math.min(0.28,S.fogAlpha+0.004);
   }else{S.fogAlpha=0;}
@@ -243,7 +275,7 @@ function updateParticles(dt){
 // Renders all particles, stars, lightning flash, and fog overlay for the
 // current frame. Each weather type uses a different drawing primitive:
 // rain=strokeLine, snow=arc, sleet=mixed, stars=arc+twinkle.
-// Lightning: full-canvas white fillRect at lightningAlpha opacity.
+// Lightning: restrained blue-white ambient flash plus an optional branching bolt.
 // Fog: full-canvas grey fillRect at fogAlpha opacity.
 function drawClouds(ctx){
   if(S.useThreeRenderer)return;
@@ -254,6 +286,27 @@ function drawClouds(ctx){
     ctx.drawImage(sprite,cloud.x,cloud.y,cloud.width,cloud.height);
     ctx.restore();
   }
+}
+
+function traceLightningPath(ctx,points){
+  if(!points||points.length<2)return;
+  ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);
+  for(var i=1;i<points.length;i++)ctx.lineTo(points[i].x,points[i].y);
+  ctx.stroke();
+}
+
+function drawLightningBolt(ctx){
+  var bolt=S.lightningBolt,alpha=S.lightningBoltAlpha;
+  if(!bolt||alpha<=0.005)return;
+  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.globalAlpha=alpha*0.26;ctx.strokeStyle='rgb(135,174,255)';ctx.lineWidth=6;ctx.shadowColor='rgba(120,165,255,0.95)';ctx.shadowBlur=22;
+  traceLightningPath(ctx,bolt.main);
+  for(var i=0;i<bolt.branches.length;i++)traceLightningPath(ctx,bolt.branches[i]);
+  ctx.globalAlpha=alpha;ctx.strokeStyle='rgb(238,244,255)';ctx.lineWidth=1.35;ctx.shadowColor='rgba(205,224,255,0.9)';ctx.shadowBlur=8;
+  traceLightningPath(ctx,bolt.main);
+  ctx.globalAlpha=alpha*0.62;ctx.lineWidth=0.8;
+  for(var i=0;i<bolt.branches.length;i++)traceLightningPath(ctx,bolt.branches[i]);
+  ctx.restore();
 }
 
 function drawParticles(ctx){
@@ -282,7 +335,7 @@ function drawParticles(ctx){
       ctx.lineWidth=p.width;
       ctx.stroke();
     }
-  }else if(bk==='snow'){
+  }else if(bk==='snow'&&!rendersThreeSnow()){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       ctx.beginPath();
@@ -304,9 +357,10 @@ function drawParticles(ctx){
     }
   }
   if(S.lightningAlpha>0.005){
-    ctx.fillStyle=rgba([255,255,255],S.lightningAlpha);
+    ctx.fillStyle=rgba([215,228,255],S.lightningAlpha);
     ctx.fillRect(0,0,cssW(),cssH());
   }
+  drawLightningBolt(ctx);
   if(S.fogAlpha>0.005){
     ctx.fillStyle=rgba([180,185,195],S.fogAlpha);
     ctx.fillRect(0,0,cssW(),cssH());
