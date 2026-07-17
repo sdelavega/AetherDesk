@@ -32,6 +32,7 @@ var THREE_SKY_FRAGMENT=[
   'uniform float uCloudLightBase;',
   'uniform float uCloudLightStrength;',
   'uniform float uCloudTopLight;',
+  'uniform float uCloudDepthShadow;',
   'uniform float uTime;',
   'float hash(vec2 p){',
   '  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);',
@@ -86,7 +87,7 @@ var THREE_SKY_FRAGMENT=[
   '      float density=smoothstep(threshold,threshold+0.16,cloudNoise(samplePos*2.15))*vertical*uCloudDensity;',
   '      float towardLight=cloudNoise((samplePos+uCloudLightOffset)*2.15);',
   '      float crown=smoothstep(-0.08,0.48,samplePos.y);',
-  '      float illumination=clamp(uCloudLightBase+(towardLight-density)*uCloudLightStrength+crown*uCloudTopLight,0.04,1.0);',
+  '      float illumination=clamp(uCloudLightBase+(towardLight-density)*uCloudLightStrength+crown*uCloudTopLight-cloud.a*uCloudDepthShadow,0.04,1.0);',
   '      vec3 cloudColor=mix(uCloudShadow,uCloudHighlight,illumination);',
   '      float alpha=density*0.24*(1.0-cloud.a);',
   '      cloud.rgb+=cloudColor*alpha;',
@@ -134,7 +135,7 @@ function initializeThreeAtmosphere(){
         uCloudWind:{value:new api.Vector2(0,0)},uCloudHighlight:{value:new api.Color()},
         uCloudShadow:{value:new api.Color()},uCloudLightOffset:{value:new api.Vector3(-0.20,0.16,0.10)},
         uCloudLightBase:{value:0.34},uCloudLightStrength:{value:0.82},uCloudTopLight:{value:0.12},
-        uTime:{value:0}
+        uCloudDepthShadow:{value:0},uTime:{value:0}
       }
     });
     var geometry=new api.PlaneGeometry(2,2);
@@ -161,15 +162,16 @@ function usesThreeCloudVolume(){
 // night settle into subdued ambient moonlight.
 function getThreeCloudShading(atmosphere,track){
   if(!atmosphere.isDay){
-    return{offset:[(track.x-0.5)*0.18,0.10,0.08],base:0.11,strength:0.20,top:0.045};
+    return{offset:[(track.x-0.5)*0.18,0.10,0.08],base:0.16,strength:0.48,top:0.07,depth:0.16};
   }
   var overhead=Math.max(0,Math.min(1,(track.elevation-0.18)/0.64));
   overhead=overhead*overhead*(3-2*overhead);
   return{
     offset:[lerp(-0.20,(track.x-0.5)*0.08,overhead),lerp(0.16,0.34,overhead),lerp(0.10,0.04,overhead)],
-    base:lerp(0.34,0.50,overhead),
-    strength:lerp(0.82,0.34,overhead),
-    top:lerp(0.12,0.30,overhead)
+    base:lerp(0.34,0.38,overhead),
+    strength:lerp(0.82,0.70,overhead),
+    top:lerp(0.12,0.20,overhead),
+    depth:lerp(0,0.26,overhead)
   };
 }
 
@@ -287,6 +289,7 @@ function updateThreeAtmosphere(timestamp){
     uniforms.uCloudLightBase.value=cloudShading.base;
     uniforms.uCloudLightStrength.value=cloudShading.strength;
     uniforms.uCloudTopLight.value=cloudShading.top;
+    uniforms.uCloudDepthShadow.value=cloudShading.depth;
     var windToward=((atmosphere.windDirection+180)%360)*Math.PI/180;
     uniforms.uCloudWind.value.set(Math.sin(windToward)*atmosphere.motionEnergy,Math.cos(windToward)*atmosphere.motionEnergy*0.12);
     state.lastPaintKey=key;
