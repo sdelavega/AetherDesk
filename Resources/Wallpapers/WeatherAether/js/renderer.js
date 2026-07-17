@@ -53,17 +53,27 @@ function rebuildParticles(){
 // horizontally, cloud puffs drift rightward. Particles that exit the canvas
 // are recycled back to a random position at the top (or left edge for puffs).
 // Lightning alpha decays exponentially each frame; fog alpha ramps to target.
+// Weather APIs report the direction wind comes FROM, clockwise from north.
+// Convert that to the horizontal component of the direction precipitation
+// travels TOWARD. Missing/northerly wind produces essentially vertical fall.
+function precipitationWindDrift(atmosphere){
+  var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
+  return Math.sin(toward)*(24+atmosphere.motionEnergy*40);
+}
+
 function updateParticles(dt){
   if(!S.props.showParticles)return;
   var w=cssW(),h=cssH(),atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   var spd=S.props.animationSpeed*(0.65+atmosphere.motionEnergy*0.7),bk=S.weatherBucket;
+  var windDrift=precipitationWindDrift(atmosphere);
   if(bk==='rain'||bk==='thunder'){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       p.y+=p.speed*spd*dt;
-      p.x-=1.2*spd*dt*60;
+      p.x+=windDrift*spd*dt;
       if(p.y>h){p.y=-p.len;p.x=Math.random()*w;}
       if(p.x<-10)p.x=w+10;
+      if(p.x>w+10)p.x=-10;
     }
   }else if(bk==='snow'){
     for(var i=0;i<S.particles.length;i++){
@@ -79,10 +89,11 @@ function updateParticles(dt){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       p.y+=p.speed*spd*dt;
-      p.x-=(p.ice?0.6:1.3)*spd*dt*60;
+      p.x+=windDrift*(p.ice?0.55:1)*spd*dt;
       var bot=p.ice?h:h+(p.len||0);
       if(p.y>bot){p.y=p.ice?-p.sz:-p.len;p.x=Math.random()*w;}
       if(p.x<-10)p.x=w+10;
+      if(p.x>w+10)p.x=-10;
     }
   }else if(bk==='overcast'||bk==='partly'){
     for(var i=0;i<S.particles.length;i++){
@@ -118,12 +129,14 @@ function updateParticles(dt){
 function drawParticles(ctx){
   if(!S.props.showParticles)return;
   var bk=S.weatherBucket;
+  var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  var windDrift=precipitationWindDrift(atmosphere);
   if(bk==='rain'||bk==='thunder'){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       ctx.beginPath();
       ctx.moveTo(p.x,p.y);
-      ctx.lineTo(p.x+1.2,p.y+p.len);
+      ctx.lineTo(p.x+windDrift*(p.len/p.speed),p.y+p.len);
       ctx.strokeStyle=rgba([180,200,230],p.op);
       ctx.lineWidth=1;
       ctx.stroke();
@@ -143,7 +156,7 @@ function drawParticles(ctx){
         ctx.beginPath();ctx.arc(p.x,p.y,Math.max(0.5,p.sz),0,Math.PI*2);
         ctx.fillStyle=rgba([215,228,242],p.op);ctx.fill();
       }else{
-        ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+0.8,p.y+p.len);
+        ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+windDrift*(p.len/p.speed),p.y+p.len);
         ctx.strokeStyle=rgba([180,205,228],p.op);ctx.lineWidth=1;ctx.stroke();
       }
     }
