@@ -126,5 +126,3 @@ function getIconCanvas(code,isDay){
   drawWeatherIcon(c.getContext('2d'),code,isDay,48);
   S.iconCache[key]=c;return c;
 }
-
-

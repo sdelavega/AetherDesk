@@ -316,5 +316,3 @@ function applyWeather(d){
   setupAttribution();
   renderUI();
 }
-
-

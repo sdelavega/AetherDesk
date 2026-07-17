@@ -328,5 +328,3 @@ function render(timestamp){
     S.animationFrameId=requestAnimationFrame(render);
   }
 }
-
-

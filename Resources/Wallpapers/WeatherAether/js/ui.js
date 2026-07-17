@@ -188,5 +188,3 @@ function setupBridge(){
     var o={};o[name]=value;applyProps(o);
   };
 }
-
-

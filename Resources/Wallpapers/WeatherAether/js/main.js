@@ -135,5 +135,3 @@ function convertWind(v,from,to){
   if(from==='imperial'&&to==='metric')return v/0.621371;
   return v;
 }
-
-

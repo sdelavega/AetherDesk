@@ -160,5 +160,3 @@ function getPhaseColors(){
   }
   return{top:top,mid:mid,bot:bot,phase:a.p};
 }
-
-
