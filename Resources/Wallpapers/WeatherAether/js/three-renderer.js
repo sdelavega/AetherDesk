@@ -1,5 +1,7 @@
 'use strict';
 
+var THREE_ATMOSPHERE_REVISION='world-volume-2';
+
 var THREE_SKY_VERTEX=[
   'varying vec2 vUv;',
   'void main(){',
@@ -127,6 +129,22 @@ function threeColor(c){
   return new WeatherAetherThree.Color(c[0]/255,c[1]/255,c[2]/255);
 }
 
+function reportWeatherRendererStatus(){
+  if(window.parent===window)return;
+  var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  var volume=false;
+  if(S.threeAtmosphere){
+    volume=S.threeAtmosphere.material.uniforms.uCloudVolumeEnabled.value>0.5;
+  }
+  window.parent.postMessage({
+    type:'weather-aether-renderer-status',
+    renderer:S.useThreeRenderer?'three':'canvas',
+    revision:THREE_ATMOSPHERE_REVISION,
+    volume:volume,
+    error:S.threeShaderError||null
+  },'*');
+}
+
 function initializeThreeAtmosphere(){
   if(new URLSearchParams(window.location.search).get('renderer')==='canvas')return false;
   var api=window.WeatherAetherThree;
@@ -137,6 +155,12 @@ function initializeThreeAtmosphere(){
       canvas:canvas,antialias:false,alpha:false,depth:false,stencil:false,
       powerPreference:'low-power',failIfMajorPerformanceCaveat:true
     });
+    renderer.debug.onShaderError=function(gl,program,vertexShader,fragmentShader){
+      var details=[gl.getProgramInfoLog(program),gl.getShaderInfoLog(vertexShader),gl.getShaderInfoLog(fragmentShader)].filter(Boolean).join('\n');
+      S.threeShaderError=details||'WebGL shader compilation failed';
+      console.error('Weather Aether: Three.js shader error.',S.threeShaderError);
+      reportWeatherRendererStatus();
+    };
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,0.85));
     var scene=new api.Scene();
     var camera=new api.PerspectiveCamera(45,1,0.1,20);
@@ -161,11 +185,14 @@ function initializeThreeAtmosphere(){
     skyMesh.frustumCulled=false;skyMesh.renderOrder=-100;
     scene.add(skyMesh);
     S.threeAtmosphere={renderer:renderer,scene:scene,camera:camera,material:material,lastPaintKey:null,lastFrame:0};
+    S.threeShaderError=null;
     S.useThreeRenderer=true;canvas.style.display='block';
     return true;
   }catch(error){
     S.useThreeRenderer=false;S.threeAtmosphere=null;canvas.style.display='none';
+    S.threeShaderError=String(error&&error.message?error.message:error);
     console.warn('Weather Aether: WebGL atmosphere unavailable; using Canvas fallback.',error);
+    reportWeatherRendererStatus();
     return false;
   }
 }
@@ -326,5 +353,9 @@ function renderThreeAtmosphere(timestamp){
   updateThreeAtmosphere(timestamp);
   updateThreeClouds(timestamp);
   state.renderer.render(state.scene,state.camera);
+  if(!state.statusReported){
+    state.statusReported=true;
+    reportWeatherRendererStatus();
+  }
   state.lastFrame=timestamp;
 }
