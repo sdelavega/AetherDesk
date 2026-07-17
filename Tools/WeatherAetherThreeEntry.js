@@ -1,7 +1,9 @@
 import {
+  CanvasTexture,
   Color,
   Mesh,
-  OrthographicCamera,
+  MeshBasicMaterial,
+  PerspectiveCamera,
   PlaneGeometry,
   Scene,
   ShaderMaterial,
@@ -10,9 +12,11 @@ import {
 } from 'three';
 
 globalThis.WeatherAetherThree={
+  CanvasTexture,
   Color,
   Mesh,
-  OrthographicCamera,
+  MeshBasicMaterial,
+  PerspectiveCamera,
   PlaneGeometry,
   Scene,
   ShaderMaterial,

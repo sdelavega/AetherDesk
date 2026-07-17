@@ -69,10 +69,12 @@ function refreshCloudSprites(atmosphere,now){
   S.cloudSprites=[];
   for(var i=0;i<4;i++)S.cloudSprites.push(buildCloudSprite(1701+i*7919,atmosphere.cloudDensity,lighting));
   S.cloudLightingKey=getCloudLightingKey(atmosphere,now);
+  refreshThreeCloudTextures();
 }
 
 function rebuildClouds(w,h,atmosphere){
   S.clouds=[];S.cloudSprites=[];S.cloudLightingKey=null;
+  clearThreeClouds();
   // Ground-level fog and snowfall read as continuous atmospheric extinction,
   // not discrete cloud bodies. Snow keeps its dense overcast sky, but visible
   // cloud forms would compete with the flakes and flatten the scene into layers.
@@ -92,6 +94,7 @@ function rebuildClouds(w,h,atmosphere){
       sprite:i%S.cloudSprites.length
     });
   }
+  rebuildThreeClouds();
 }
 
 function rebuildParticles(){
@@ -239,6 +242,7 @@ function updateParticles(dt){
 // Lightning: full-canvas white fillRect at lightningAlpha opacity.
 // Fog: full-canvas grey fillRect at fogAlpha opacity.
 function drawClouds(ctx){
+  if(S.useThreeRenderer)return;
   for(var i=0;i<S.clouds.length;i++){
     var cloud=S.clouds[i],sprite=S.cloudSprites[cloud.sprite];
     if(!sprite)continue;
