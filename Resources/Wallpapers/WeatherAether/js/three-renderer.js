@@ -28,6 +28,10 @@ var THREE_SKY_FRAGMENT=[
   'uniform vec2 uCloudWind;',
   'uniform vec3 uCloudHighlight;',
   'uniform vec3 uCloudShadow;',
+  'uniform vec3 uCloudLightOffset;',
+  'uniform float uCloudLightBase;',
+  'uniform float uCloudLightStrength;',
+  'uniform float uCloudTopLight;',
   'uniform float uTime;',
   'float hash(vec2 p){',
   '  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);',
@@ -80,8 +84,9 @@ var THREE_SKY_FRAGMENT=[
   '      samplePos.x+=sin(uTime*0.021+stepT*5.0)*0.035;',
   '      float vertical=smoothstep(-0.28,0.02,samplePos.y)*(1.0-smoothstep(0.38,0.78,samplePos.y));',
   '      float density=smoothstep(threshold,threshold+0.16,cloudNoise(samplePos*2.15))*vertical*uCloudDensity;',
-  '      float towardLight=cloudNoise(samplePos*2.15+vec3(-0.20,0.16,0.10));',
-  '      float illumination=clamp(0.34+(towardLight-density)*0.82+stepT*0.12,0.12,1.0);',
+  '      float towardLight=cloudNoise((samplePos+uCloudLightOffset)*2.15);',
+  '      float crown=smoothstep(-0.08,0.48,samplePos.y);',
+  '      float illumination=clamp(uCloudLightBase+(towardLight-density)*uCloudLightStrength+crown*uCloudTopLight,0.04,1.0);',
   '      vec3 cloudColor=mix(uCloudShadow,uCloudHighlight,illumination);',
   '      float alpha=density*0.24*(1.0-cloud.a);',
   '      cloud.rgb+=cloudColor*alpha;',
@@ -127,7 +132,9 @@ function initializeThreeAtmosphere(){
         uLightAlpha:{value:0},uCloudDensity:{value:0},uMinRatio:{value:1},
         uStarVisibility:{value:0},uCloudCover:{value:0},uCloudVolumeEnabled:{value:0},
         uCloudWind:{value:new api.Vector2(0,0)},uCloudHighlight:{value:new api.Color()},
-        uCloudShadow:{value:new api.Color()},uTime:{value:0}
+        uCloudShadow:{value:new api.Color()},uCloudLightOffset:{value:new api.Vector3(-0.20,0.16,0.10)},
+        uCloudLightBase:{value:0.34},uCloudLightStrength:{value:0.82},uCloudTopLight:{value:0.12},
+        uTime:{value:0}
       }
     });
     var geometry=new api.PlaneGeometry(2,2);
@@ -146,6 +153,24 @@ function initializeThreeAtmosphere(){
 
 function usesThreeCloudVolume(){
   return new URLSearchParams(window.location.search).get('cloudModel')!=='planes';
+}
+
+// Low sunlight benefits from dramatic lateral shading, but reusing that model
+// at every hour makes noon clouds look under-lit and night clouds look carved.
+// Keep the horizon treatment, rotate the light overhead around noon, and let
+// night settle into subdued ambient moonlight.
+function getThreeCloudShading(atmosphere,track){
+  if(!atmosphere.isDay){
+    return{offset:[(track.x-0.5)*0.18,0.10,0.08],base:0.11,strength:0.20,top:0.045};
+  }
+  var overhead=Math.max(0,Math.min(1,(track.elevation-0.18)/0.64));
+  overhead=overhead*overhead*(3-2*overhead);
+  return{
+    offset:[lerp(-0.20,(track.x-0.5)*0.08,overhead),lerp(0.16,0.34,overhead),lerp(0.10,0.04,overhead)],
+    base:lerp(0.34,0.50,overhead),
+    strength:lerp(0.82,0.34,overhead),
+    top:lerp(0.12,0.30,overhead)
+  };
 }
 
 function resizeThreeAtmosphere(w,h){
@@ -257,6 +282,11 @@ function updateThreeAtmosphere(timestamp){
     var cloudLight=getCloudLighting(atmosphere,now);
     uniforms.uCloudHighlight.value.copy(threeColor(cloudLight.highlight));
     uniforms.uCloudShadow.value.copy(threeColor(cloudLight.shadow));
+    var cloudShading=getThreeCloudShading(atmosphere,track);
+    uniforms.uCloudLightOffset.value.set(cloudShading.offset[0],cloudShading.offset[1],cloudShading.offset[2]);
+    uniforms.uCloudLightBase.value=cloudShading.base;
+    uniforms.uCloudLightStrength.value=cloudShading.strength;
+    uniforms.uCloudTopLight.value=cloudShading.top;
     var windToward=((atmosphere.windDirection+180)%360)*Math.PI/180;
     uniforms.uCloudWind.value.set(Math.sin(windToward)*atmosphere.motionEnergy,Math.cos(windToward)*atmosphere.motionEnergy*0.12);
     state.lastPaintKey=key;
