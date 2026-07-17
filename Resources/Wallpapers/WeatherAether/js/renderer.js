@@ -15,40 +15,50 @@ function seededRandom(seed){
   };
 }
 
-// Builds one reusable cloud image from a broad base and irregular illuminated
-// lobes. Four cached variants are shared by every cloud, keeping the animation
-// to cheap drawImage calls instead of rebuilding gradients each frame.
+// Builds one reusable cloud image as a unified silhouette, then shades that
+// mask as a single volume. Internal lobes are deliberately opaque; softness is
+// confined to the outer edge so clouds do not resemble translucent foam.
 function buildCloudSprite(seed,density){
   var canvas=document.createElement('canvas');
   canvas.width=420;canvas.height=180;
   var ctx=canvas.getContext('2d');
   var rand=seededRandom(seed);
-  var highlight=Math.round(246-density*66);
-  var middle=Math.round(226-density*86);
-  var shadow=Math.round(190-density*105);
+  var highlight=Math.round(247-density*62);
+  var middle=Math.round(224-density*88);
+  var shadow=Math.round(172-density*102);
 
-  var base=ctx.createRadialGradient(210,92,18,210,105,178);
-  base.addColorStop(0,'rgba('+middle+','+(middle+3)+','+(middle+8)+',0.94)');
-  base.addColorStop(0.62,'rgba('+middle+','+(middle+3)+','+(middle+8)+',0.88)');
-  base.addColorStop(1,'rgba('+shadow+','+(shadow+5)+','+(shadow+12)+',0)');
-  ctx.fillStyle=base;ctx.beginPath();ctx.ellipse(210,108,184,54,0,0,Math.PI*2);ctx.fill();
-
-  for(var i=0;i<14;i++){
-    var x=52+rand()*316;
+  // Build one solid alpha mask. Fewer, wider lobes create coherent cloud
+  // masses instead of a chain of similarly sized bubbles.
+  ctx.fillStyle='#fff';
+  ctx.shadowColor='rgba(255,255,255,0.72)';
+  ctx.shadowBlur=13;
+  ctx.beginPath();ctx.ellipse(210,112,176,46,0,0,Math.PI*2);ctx.fill();
+  for(var i=0;i<7;i++){
+    var x=60+rand()*300;
     var centerBias=1-Math.abs(x-210)/210;
-    var y=99-rand()*44-centerBias*22;
-    var radius=34+rand()*36+centerBias*12;
-    var lobe=ctx.createRadialGradient(x-radius*0.18,y-radius*0.24,radius*0.08,x,y,radius);
-    lobe.addColorStop(0,'rgba('+highlight+','+(highlight+2)+','+Math.min(255,highlight+7)+',0.98)');
-    lobe.addColorStop(0.56,'rgba('+middle+','+(middle+3)+','+(middle+9)+',0.90)');
-    lobe.addColorStop(1,'rgba('+shadow+','+(shadow+5)+','+(shadow+12)+',0)');
-    ctx.fillStyle=lobe;ctx.beginPath();ctx.arc(x,y,radius,0,Math.PI*2);ctx.fill();
+    var y=103-rand()*30-centerBias*25;
+    var rx=43+rand()*35+centerBias*14;
+    var ry=30+rand()*22+centerBias*12;
+    ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill();
   }
+  ctx.shadowBlur=0;
 
-  var underside=ctx.createLinearGradient(0,78,0,156);
-  underside.addColorStop(0,'rgba('+shadow+','+(shadow+4)+','+(shadow+10)+',0)');
-  underside.addColorStop(1,'rgba('+Math.max(35,shadow-30)+','+Math.max(40,shadow-24)+','+Math.max(48,shadow-15)+','+(0.20+density*0.25)+')');
-  ctx.fillStyle=underside;ctx.beginPath();ctx.ellipse(210,118,166,42,0,0,Math.PI*2);ctx.fill();
+  // Color the complete mask with one top-to-bottom light field. source-in
+  // preserves the unified alpha while eliminating internal overlap seams.
+  ctx.globalCompositeOperation='source-in';
+  var volume=ctx.createLinearGradient(0,42,0,156);
+  volume.addColorStop(0,'rgb('+highlight+','+(highlight+2)+','+Math.min(255,highlight+7)+')');
+  volume.addColorStop(0.56,'rgb('+middle+','+(middle+3)+','+(middle+9)+')');
+  volume.addColorStop(1,'rgb('+shadow+','+(shadow+6)+','+(shadow+15)+')');
+  ctx.fillStyle=volume;ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // One broad highlight suggests illumination without revealing construction.
+  ctx.globalCompositeOperation='source-atop';
+  var light=ctx.createRadialGradient(150,52,8,190,76,170);
+  light.addColorStop(0,'rgba(255,255,255,'+(0.24-density*0.08)+')');
+  light.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=light;ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.globalCompositeOperation='source-over';
   return canvas;
 }
 
@@ -68,7 +78,7 @@ function rebuildClouds(w,h,atmosphere){
       y:h*(0.03+rand()*0.40),
       width:width,height:width*(180/420),depth:depth,
       speed:3+depth*8+atmosphere.motionEnergy*7,
-      opacity:Math.min(0.88,0.24+atmosphere.cloudDensity*0.48+depth*0.10),
+      opacity:Math.min(0.98,0.70+atmosphere.cloudDensity*0.22+depth*0.05),
       sprite:i%S.cloudSprites.length
     });
   }
