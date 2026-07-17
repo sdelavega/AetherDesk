@@ -118,6 +118,42 @@ function getCelestialTrack(now,isDay){
   };
 }
 
+// Converts celestial position and cloud density into a cloud palette. This is
+// atmospheric policy rather than renderer policy: every future renderer should
+// agree that midnight clouds are dim and cool, while low sunlight warms their
+// illuminated edges.
+function getCloudLighting(atmosphere,now){
+  now=now||wallpaperNow();
+  var isDay=atmosphere.isDay;
+  var track=getCelestialTrack(now,isDay);
+  var density=atmosphere.cloudDensity;
+  var highlight,middle,shadow;
+  if(isDay){
+    var warmth=track.horizonWarmth*0.78;
+    highlight=lerpC([246,248,251],[255,207,164],warmth);
+    middle=lerpC([222,228,236],[223,164,132],warmth);
+    shadow=lerpC([164,174,190],[152,108,105],warmth);
+    highlight=lerpC(highlight,[128,138,153],density*0.48);
+    middle=lerpC(middle,[98,108,125],density*0.52);
+    shadow=lerpC(shadow,[55,63,79],density*0.58);
+  }else{
+    highlight=lerpC([78,88,108],[46,52,68],density*0.58);
+    middle=lerpC([52,61,80],[31,37,52],density*0.64);
+    shadow=lerpC([29,35,51],[16,20,32],density*0.72);
+  }
+  return{
+    highlight:highlight,middle:middle,shadow:shadow,
+    sourceX:0.18+track.x*0.64,
+    highlightAlpha:isDay?0.24-density*0.08:0.10-density*0.035
+  };
+}
+
+function getCloudLightingKey(atmosphere,now){
+  now=now||wallpaperNow();
+  var quarter=Math.floor((now.getHours()*60+now.getMinutes())/15);
+  return[atmosphere.condition,atmosphere.isDay?1:0,quarter].join(':');
+}
+
 // ── buildTimeline() ──────────────────────────────────────────────────────────
 // Builds the colour keyframe array for today's sky gradient, anchored to the
 // actual sunrise and sunset times from the API. Each keyframe has a clock hour

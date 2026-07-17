@@ -18,14 +18,14 @@ function seededRandom(seed){
 // Builds one reusable cloud image as a unified silhouette, then shades that
 // mask as a single volume. Internal lobes are deliberately opaque; softness is
 // confined to the outer edge so clouds do not resemble translucent foam.
-function buildCloudSprite(seed,density){
+function buildCloudSprite(seed,density,lighting){
   var canvas=document.createElement('canvas');
   canvas.width=420;canvas.height=180;
   var ctx=canvas.getContext('2d');
   var rand=seededRandom(seed);
-  var highlight=Math.round(247-density*62);
-  var middle=Math.round(224-density*88);
-  var shadow=Math.round(172-density*102);
+  var highlight=lighting.highlight;
+  var middle=lighting.middle;
+  var shadow=lighting.shadow;
 
   // Build one solid alpha mask. Fewer, wider lobes create coherent cloud
   // masses instead of a chain of similarly sized bubbles.
@@ -47,27 +47,35 @@ function buildCloudSprite(seed,density){
   // preserves the unified alpha while eliminating internal overlap seams.
   ctx.globalCompositeOperation='source-in';
   var volume=ctx.createLinearGradient(0,42,0,156);
-  volume.addColorStop(0,'rgb('+highlight+','+(highlight+2)+','+Math.min(255,highlight+7)+')');
-  volume.addColorStop(0.56,'rgb('+middle+','+(middle+3)+','+(middle+9)+')');
-  volume.addColorStop(1,'rgb('+shadow+','+(shadow+6)+','+(shadow+15)+')');
+  volume.addColorStop(0,rgb(highlight));
+  volume.addColorStop(0.56,rgb(middle));
+  volume.addColorStop(1,rgb(shadow));
   ctx.fillStyle=volume;ctx.fillRect(0,0,canvas.width,canvas.height);
 
   // One broad highlight suggests illumination without revealing construction.
   ctx.globalCompositeOperation='source-atop';
-  var light=ctx.createRadialGradient(150,52,8,190,76,170);
-  light.addColorStop(0,'rgba(255,255,255,'+(0.24-density*0.08)+')');
+  var lightX=canvas.width*lighting.sourceX;
+  var light=ctx.createRadialGradient(lightX,52,8,lightX,76,170);
+  light.addColorStop(0,'rgba(255,255,255,'+lighting.highlightAlpha+')');
   light.addColorStop(1,'rgba(255,255,255,0)');
   ctx.fillStyle=light;ctx.fillRect(0,0,canvas.width,canvas.height);
   ctx.globalCompositeOperation='source-over';
   return canvas;
 }
 
+function refreshCloudSprites(atmosphere,now){
+  var lighting=getCloudLighting(atmosphere,now);
+  S.cloudSprites=[];
+  for(var i=0;i<4;i++)S.cloudSprites.push(buildCloudSprite(1701+i*7919,atmosphere.cloudDensity,lighting));
+  S.cloudLightingKey=getCloudLightingKey(atmosphere,now);
+}
+
 function rebuildClouds(w,h,atmosphere){
-  S.clouds=[];S.cloudSprites=[];
+  S.clouds=[];S.cloudSprites=[];S.cloudLightingKey=null;
   // Ground-level fog is represented by atmospheric extinction, not a row of
   // discrete cloud bodies drifting overhead.
   if(atmosphere.cloudCover<0.10||atmosphere.condition==='fog')return;
-  for(var i=0;i<4;i++)S.cloudSprites.push(buildCloudSprite(1701+i*7919,atmosphere.cloudDensity));
+  refreshCloudSprites(atmosphere,wallpaperNow());
   var count=Math.round(3+atmosphere.cloudCover*9);
   var rand=seededRandom(8137+Math.round(atmosphere.cloudCover*1000));
   for(var i=0;i<count;i++){
@@ -136,6 +144,8 @@ function precipitationWindDrift(atmosphere){
 
 function updateClouds(dt,atmosphere,w){
   if(S.clouds.length===0)return;
+  var now=wallpaperNow();
+  if(S.cloudLightingKey!==getCloudLightingKey(atmosphere,now))refreshCloudSprites(atmosphere,now);
   var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
   var direction=Math.sin(toward);
   if(Math.abs(direction)<0.15)direction=0.15;
