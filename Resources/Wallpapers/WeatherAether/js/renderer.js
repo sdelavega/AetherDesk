@@ -90,7 +90,9 @@ function rebuildClouds(w,h,atmosphere){
       y:h*(0.03+rand()*0.40),
       width:width,height:width*(180/420),depth:depth,
       speed:3+depth*8+atmosphere.motionEnergy*7,
-      opacity:Math.min(0.98,0.70+atmosphere.cloudDensity*0.22+depth*0.05),
+      // The sprite edge carries its own softness. Keep the body optically
+      // opaque so stars cannot shine through the center of a cloud.
+      opacity:1,
       sprite:i%S.cloudSprites.length
     });
   }
@@ -258,11 +260,13 @@ function drawParticles(ctx){
   var windDrift=precipitationWindDrift(atmosphere)*S.windGust;
   var light=getPrecipitationLighting(atmosphere,wallpaperNow());
   // Stars sit behind cloud cover; precipitation sits in front of it.
-  for(var i=0;i<S.stars.length;i++){
-    var s=S.stars[i];
-    var tw=0.25+0.75*Math.abs(Math.sin(s.tw));
-    ctx.beginPath();ctx.arc(s.x,s.y,Math.max(0.3,s.sz),0,Math.PI*2);
-    ctx.fillStyle=rgba([255,255,240],tw);ctx.fill();
+  if(!S.useThreeRenderer){
+    for(var i=0;i<S.stars.length;i++){
+      var s=S.stars[i];
+      var tw=0.25+0.75*Math.abs(Math.sin(s.tw));
+      ctx.beginPath();ctx.arc(s.x,s.y,Math.max(0.3,s.sz),0,Math.PI*2);
+      ctx.fillStyle=rgba([255,255,240],tw);ctx.fill();
+    }
   }
   drawClouds(ctx);
   if(!S.props.showParticles)return;
