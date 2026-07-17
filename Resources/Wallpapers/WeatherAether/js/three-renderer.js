@@ -16,8 +16,12 @@ var THREE_SKY_FRAGMENT=[
   'uniform vec3 uBottom;',
   'uniform vec3 uLightColor;',
   'uniform vec2 uLightPosition;',
+  'uniform vec2 uViewportScale;',
   'uniform float uHaze;',
   'uniform float uDiffusion;',
+  'uniform float uLightAlpha;',
+  'uniform float uCloudDensity;',
+  'uniform float uMinRatio;',
   'uniform float uTime;',
   'float hash(vec2 p){',
   '  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);',
@@ -27,11 +31,16 @@ var THREE_SKY_FRAGMENT=[
   '  float upper=smoothstep(0.42,1.0,vUv.y);',
   '  vec3 color=mix(uBottom,uMiddle,lower);',
   '  color=mix(color,uTop,upper);',
-  '  float horizon=exp(-pow((vUv.y-0.08)/(0.16+uHaze*0.16),2.0));',
-  '  color=mix(color,vec3(0.78,0.81,0.85),horizon*uHaze*0.22);',
-  '  vec2 lightDelta=(vUv-uLightPosition)*vec2(1.0,1.35);',
-  '  float airlight=exp(-dot(lightDelta,lightDelta)*(2.1-uDiffusion*0.8));',
-  '  color+=uLightColor*airlight*(0.035+uDiffusion*0.065);',
+  '  float hazeField=1.0-smoothstep(0.0,0.46,vUv.y);',
+  '  float hazeAlpha=(0.025+uHaze*0.16)*hazeField;',
+  '  color=mix(color,vec3(0.863,0.882,0.910),hazeAlpha);',
+  '  vec2 lightDelta=(vUv-uLightPosition)*uViewportScale;',
+  '  float lightRadius=0.48+uDiffusion*0.20;',
+  '  float airlight=1.0-smoothstep(0.0,lightRadius,length(lightDelta));',
+  '  color=mix(color,uLightColor,airlight*uLightAlpha);',
+  '  vec2 edgeDelta=(vUv-vec2(0.5,0.52))*uViewportScale;',
+  '  float vignette=smoothstep(uMinRatio*0.22,0.78,length(edgeDelta));',
+  '  color*=1.0-vignette*(0.035+uCloudDensity*0.035);',
   '  float grain=hash(gl_FragCoord.xy+floor(uTime*2.0))-0.5;',
   '  color+=grain/255.0;',
   '  gl_FragColor=vec4(color,1.0);',
@@ -62,7 +71,8 @@ function initializeThreeAtmosphere(){
       uniforms:{
         uTop:{value:new api.Color()},uMiddle:{value:new api.Color()},uBottom:{value:new api.Color()},
         uLightColor:{value:new api.Color()},uLightPosition:{value:new api.Vector2(0.5,0.5)},
-        uHaze:{value:0},uDiffusion:{value:0},uTime:{value:0}
+        uViewportScale:{value:new api.Vector2(1,1)},uHaze:{value:0},uDiffusion:{value:0},
+        uLightAlpha:{value:0},uCloudDensity:{value:0},uMinRatio:{value:1},uTime:{value:0}
       }
     });
     var geometry=new api.PlaneGeometry(2,2);
@@ -84,6 +94,17 @@ function resizeThreeAtmosphere(w,h){
   S.threeAtmosphere.renderer.setSize(w,h,false);
   S.threeAtmosphere.camera.aspect=w/Math.max(1,h);
   S.threeAtmosphere.camera.updateProjectionMatrix();
+  var maxDimension=Math.max(w,h);
+  var uniforms=S.threeAtmosphere.material.uniforms;
+  uniforms.uViewportScale.value.set(w/maxDimension,h/maxDimension);
+  uniforms.uMinRatio.value=Math.min(w,h)/maxDimension;
+}
+
+function makeThreeCloudTexture(canvas){
+  var api=window.WeatherAetherThree;
+  var texture=new api.CanvasTexture(canvas);
+  texture.colorSpace=api.SRGBColorSpace;
+  return texture;
 }
 
 function clearThreeClouds(){
@@ -103,7 +124,7 @@ function refreshThreeCloudTextures(){
   if(!S.useThreeRenderer||!api||!cloudState)return;
   for(var i=0;i<cloudState.textures.length;i++)cloudState.textures[i].dispose();
   cloudState.textures=[];
-  for(var i=0;i<S.cloudSprites.length;i++)cloudState.textures.push(new api.CanvasTexture(S.cloudSprites[i]));
+  for(var i=0;i<S.cloudSprites.length;i++)cloudState.textures.push(makeThreeCloudTexture(S.cloudSprites[i]));
   for(var i=0;i<cloudState.meshes.length;i++){
     cloudState.meshes[i].material.map=cloudState.textures[S.clouds[i].sprite];
     cloudState.meshes[i].material.needsUpdate=true;
@@ -115,7 +136,7 @@ function rebuildThreeClouds(){
   var api=window.WeatherAetherThree;
   var geometry=new api.PlaneGeometry(1,1);
   var textures=[];
-  for(var i=0;i<S.cloudSprites.length;i++)textures.push(new api.CanvasTexture(S.cloudSprites[i]));
+  for(var i=0;i<S.cloudSprites.length;i++)textures.push(makeThreeCloudTexture(S.cloudSprites[i]));
   var meshes=[];
   for(var i=0;i<S.clouds.length;i++){
     var cloud=S.clouds[i];
@@ -166,9 +187,11 @@ function updateThreeAtmosphere(timestamp){
     uniforms.uMiddle.value.copy(threeColor(colors.mid));
     uniforms.uBottom.value.copy(threeColor(colors.bot));
     uniforms.uLightColor.value.copy(threeColor(lightColor));
-    uniforms.uLightPosition.value.set(track.x,1-track.y);
+    uniforms.uLightPosition.value.set(track.x,Math.min(0.66,1-track.y));
     uniforms.uHaze.value=atmosphere.horizonHaze;
     uniforms.uDiffusion.value=atmosphere.lightDiffusion;
+    uniforms.uLightAlpha.value=(0.055+atmosphere.lightDiffusion*0.09)*(atmosphere.isDay?1:0.34);
+    uniforms.uCloudDensity.value=atmosphere.cloudDensity;
     state.lastPaintKey=key;
   }
   uniforms.uTime.value=timestamp/1000;

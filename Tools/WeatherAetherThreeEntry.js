@@ -7,6 +7,7 @@ import {
   PlaneGeometry,
   Scene,
   ShaderMaterial,
+  SRGBColorSpace,
   Vector2,
   WebGLRenderer
 } from 'three';
@@ -20,6 +21,7 @@ globalThis.WeatherAetherThree={
   PlaneGeometry,
   Scene,
   ShaderMaterial,
+  SRGBColorSpace,
   Vector2,
   WebGLRenderer
 };
