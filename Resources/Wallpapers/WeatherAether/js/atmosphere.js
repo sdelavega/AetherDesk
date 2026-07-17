@@ -154,6 +154,22 @@ function getCloudLightingKey(atmosphere,now){
   return[atmosphere.condition,atmosphere.isDay?1:0,quarter].join(':');
 }
 
+function getPrecipitationLighting(atmosphere,now){
+  var cloudLight=getCloudLighting(atmosphere,now);
+  if(atmosphere.isDay){
+    return{
+      rain:lerpC(cloudLight.middle,[190,215,240],0.56),
+      sleet:lerpC(cloudLight.highlight,[210,226,242],0.62),
+      snow:lerpC(cloudLight.highlight,[238,242,248],0.76)
+    };
+  }
+  return{
+    rain:lerpC(cloudLight.middle,[88,112,148],0.48),
+    sleet:lerpC(cloudLight.highlight,[118,139,170],0.52),
+    snow:lerpC(cloudLight.highlight,[155,169,194],0.62)
+  };
+}
+
 // ── buildTimeline() ──────────────────────────────────────────────────────────
 // Builds the colour keyframe array for today's sky gradient, anchored to the
 // actual sunrise and sunset times from the API. Each keyframe has a clock hour

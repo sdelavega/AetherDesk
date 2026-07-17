@@ -7,7 +7,8 @@
 //   snow          — slow drifting circles with sinusoidal horizontal wobble
 //   sleet         — mixed: fast lines (rain) + slower circles (ice pellets)
 //   clear night   — stationary twinkling stars
-// showParticles:false short-circuits and clears all pools immediately.
+// showParticles:false clears precipitation and stars; atmospheric cloud forms
+// remain because they communicate the condition rather than decorate it.
 function seededRandom(seed){
   return function(){
     seed=(seed*1664525+1013904223)>>>0;
@@ -104,19 +105,30 @@ function rebuildParticles(){
   if(!S.props.showParticles)return;
   S.particleType=bk;
   if(bk==='rain'||bk==='thunder'){
-    for(var i=0;i<180;i++){
-      S.particles.push({x:Math.random()*w,y:Math.random()*h,speed:300+Math.random()*400,len:12+Math.random()*22,op:0.15+Math.random()*0.35});
+    var rainCount=Math.round(70+atmosphere.precipitation*160);
+    for(var i=0;i<rainCount;i++){
+      var depth=Math.pow(Math.random(),0.72);
+      var near=depth>0.92?1.35:1;
+      S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
+        speed:180+depth*620,len:(6+depth*23)*near,width:0.45+depth*1.05,
+        op:0.055+depth*0.36});
     }
   }else if(bk==='snow'){
-    for(var i=0;i<120;i++){
-      S.particles.push({x:Math.random()*w,y:Math.random()*h,speed:25+Math.random()*55,sz:1.5+Math.random()*3,wb:Math.random()*Math.PI*2,wbs:0.8+Math.random()*2,op:0.3+Math.random()*0.5});
+    var snowCount=Math.round(60+atmosphere.precipitation*140);
+    for(var i=0;i<snowCount;i++){
+      var depth=Math.pow(Math.random(),0.82);
+      S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
+        speed:10+depth*66,sz:0.55+depth*3.5,wb:Math.random()*Math.PI*2,
+        wbs:0.55+Math.random()*1.8,wobble:7+depth*19,op:0.10+depth*0.58});
     }
   }else if(bk==='sleet'){
-    for(var i=0;i<130;i++){
+    var sleetCount=Math.round(65+atmosphere.precipitation*135);
+    for(var i=0;i<sleetCount;i++){
+      var depth=Math.pow(Math.random(),0.78);
       var ice=Math.random()<0.38;
       S.particles.push(ice?
-        {x:Math.random()*w,y:Math.random()*h,speed:120+Math.random()*180,sz:1.2+Math.random()*2.2,op:0.25+Math.random()*0.35,ice:true}:
-        {x:Math.random()*w,y:Math.random()*h,speed:250+Math.random()*320,len:6+Math.random()*10,op:0.15+Math.random()*0.28,ice:false});
+        {x:Math.random()*w,y:Math.random()*h,depth:depth,speed:75+depth*230,sz:0.6+depth*2.5,op:0.10+depth*0.42,ice:true}:
+        {x:Math.random()*w,y:Math.random()*h,depth:depth,speed:155+depth*440,len:4+depth*13,width:0.4+depth*0.8,op:0.06+depth*0.30,ice:false});
     }
   }
   if((bk==='clear'||bk==='partly')&&!S.isDay){
@@ -131,9 +143,8 @@ function rebuildParticles(){
 
 // ── updateParticles() ────────────────────────────────────────────────────────
 // Advances particle positions by `dt` seconds scaled by animationSpeed. Each
-// particle type has its own physics: rain falls diagonally, snow wobbles
-// horizontally, cloud puffs drift rightward. Particles that exit the canvas
-// are recycled back to a random position at the top (or left edge for puffs).
+// depth layer has distinct speed, scale, opacity, and wind coupling. Particles
+// that exit the canvas are recycled back to a random position at the top.
 // Lightning alpha decays exponentially each frame; fog alpha ramps to target.
 // Weather APIs report the direction wind comes FROM, clockwise from north.
 // Convert that to the horizontal component of the direction precipitation
@@ -141,6 +152,13 @@ function rebuildParticles(){
 function precipitationWindDrift(atmosphere){
   var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
   return Math.sin(toward)*(24+atmosphere.motionEnergy*40);
+}
+
+function precipitationGust(atmosphere){
+  var energy=atmosphere.motionEnergy;
+  var slow=Math.sin(S.motionTime*0.37);
+  var fast=Math.sin(S.motionTime*1.13+1.7);
+  return Math.max(0.62,0.88+energy*(0.17*slow+0.09*fast));
 }
 
 function updateClouds(dt,atmosphere,w){
@@ -160,15 +178,17 @@ function updateClouds(dt,atmosphere,w){
 
 function updateParticles(dt){
   var w=cssW(),h=cssH(),atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  S.motionTime+=dt;
+  S.windGust=precipitationGust(atmosphere);
   updateClouds(dt,atmosphere,w);
   if(!S.props.showParticles)return;
   var spd=S.props.animationSpeed*(0.65+atmosphere.motionEnergy*0.7),bk=S.weatherBucket;
-  var windDrift=precipitationWindDrift(atmosphere);
+  var windDrift=precipitationWindDrift(atmosphere)*S.windGust;
   if(bk==='rain'||bk==='thunder'){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       p.y+=p.speed*spd*dt;
-      p.x+=windDrift*spd*dt;
+      p.x+=windDrift*(0.42+p.depth*0.78)*spd*dt;
       if(p.y>h){p.y=-p.len;p.x=Math.random()*w;}
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
@@ -178,7 +198,7 @@ function updateParticles(dt){
       var p=S.particles[i];
       p.wb+=p.wbs*spd*dt;
       p.y+=p.speed*spd*dt;
-      p.x+=Math.sin(p.wb)*0.4*spd;
+      p.x+=(Math.sin(p.wb)*p.wobble+windDrift*p.depth*0.22)*spd*dt;
       if(p.y>h){p.y=-p.sz;p.x=Math.random()*w;}
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
@@ -187,7 +207,7 @@ function updateParticles(dt){
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
       p.y+=p.speed*spd*dt;
-      p.x+=windDrift*(p.ice?0.55:1)*spd*dt;
+      p.x+=windDrift*(p.ice?0.42:0.55+p.depth*0.55)*spd*dt;
       var bot=p.ice?h:h+(p.len||0);
       if(p.y>bot){p.y=p.ice?-p.sz:-p.len;p.x=Math.random()*w;}
       if(p.x<-10)p.x=w+10;
@@ -215,7 +235,7 @@ function updateParticles(dt){
 // ── drawParticles() ──────────────────────────────────────────────────────────
 // Renders all particles, stars, lightning flash, and fog overlay for the
 // current frame. Each weather type uses a different drawing primitive:
-// rain=strokeLine, snow=arc, sleet=mixed, cloud puffs=arc, stars=arc+twinkle.
+// rain=strokeLine, snow=arc, sleet=mixed, stars=arc+twinkle.
 // Lightning: full-canvas white fillRect at lightningAlpha opacity.
 // Fog: full-canvas grey fillRect at fogAlpha opacity.
 function drawClouds(ctx){
@@ -231,7 +251,8 @@ function drawClouds(ctx){
 function drawParticles(ctx){
   var bk=S.weatherBucket;
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
-  var windDrift=precipitationWindDrift(atmosphere);
+  var windDrift=precipitationWindDrift(atmosphere)*S.windGust;
+  var light=getPrecipitationLighting(atmosphere,wallpaperNow());
   // Stars sit behind cloud cover; precipitation sits in front of it.
   for(var i=0;i<S.stars.length;i++){
     var s=S.stars[i];
@@ -246,9 +267,9 @@ function drawParticles(ctx){
       var p=S.particles[i];
       ctx.beginPath();
       ctx.moveTo(p.x,p.y);
-      ctx.lineTo(p.x+windDrift*(p.len/p.speed),p.y+p.len);
-      ctx.strokeStyle=rgba([180,200,230],p.op);
-      ctx.lineWidth=1;
+      ctx.lineTo(p.x+windDrift*(0.42+p.depth*0.78)*(p.len/p.speed),p.y+p.len);
+      ctx.strokeStyle=rgba(light.rain,p.op);
+      ctx.lineWidth=p.width;
       ctx.stroke();
     }
   }else if(bk==='snow'){
@@ -256,7 +277,8 @@ function drawParticles(ctx){
       var p=S.particles[i];
       ctx.beginPath();
       ctx.arc(p.x,p.y,Math.max(0.5,p.sz),0,Math.PI*2);
-      ctx.fillStyle=rgba([230,235,245],p.op);
+      var lowerLight=0.86+0.20*Math.max(0,Math.min(1,p.y/cssH()));
+      ctx.fillStyle=rgba(light.snow,Math.min(0.9,p.op*lowerLight));
       ctx.fill();
     }
   }else if(bk==='sleet'){
@@ -264,10 +286,10 @@ function drawParticles(ctx){
       var p=S.particles[i];
       if(p.ice){
         ctx.beginPath();ctx.arc(p.x,p.y,Math.max(0.5,p.sz),0,Math.PI*2);
-        ctx.fillStyle=rgba([215,228,242],p.op);ctx.fill();
+        ctx.fillStyle=rgba(light.sleet,p.op);ctx.fill();
       }else{
-        ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+windDrift*(p.len/p.speed),p.y+p.len);
-        ctx.strokeStyle=rgba([180,205,228],p.op);ctx.lineWidth=1;ctx.stroke();
+        ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+windDrift*(0.55+p.depth*0.55)*(p.len/p.speed),p.y+p.len);
+        ctx.strokeStyle=rgba(light.sleet,p.op);ctx.lineWidth=p.width;ctx.stroke();
       }
     }
   }
