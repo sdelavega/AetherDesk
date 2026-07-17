@@ -2,7 +2,9 @@
 
 var PREVIEW_CODES={
   clear:0,partly:2,overcast:3,fog:45,
-  drizzle:51,rain:63,'heavy-rain':65,'violent-showers':82,
+  'light-drizzle':51,'moderate-drizzle':53,'dense-drizzle':55,
+  'slight-rain':61,'moderate-rain':63,'heavy-rain':65,
+  'slight-showers':80,'moderate-showers':81,'violent-showers':82,
   freezing:66,snow:73,thunder:95,hail:99
 };
 
