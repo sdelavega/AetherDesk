@@ -22,6 +22,7 @@ var THREE_SKY_FRAGMENT=[
   'uniform float uLightAlpha;',
   'uniform float uCloudDensity;',
   'uniform float uMinRatio;',
+  'uniform float uStarVisibility;',
   'uniform float uTime;',
   'float hash(vec2 p){',
   '  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);',
@@ -31,6 +32,15 @@ var THREE_SKY_FRAGMENT=[
   '  float upper=smoothstep(0.42,1.0,vUv.y);',
   '  vec3 color=mix(uBottom,uMiddle,lower);',
   '  color=mix(color,uTop,upper);',
+  '  vec2 starGrid=vec2(180.0,100.0);',
+  '  vec2 starCell=floor(vUv*starGrid);',
+  '  vec2 starLocal=fract(vUv*starGrid)-0.5;',
+  '  float starSeed=hash(starCell);',
+  '  float starRadius=mix(0.035,0.105,hash(starCell+17.3));',
+  '  float starPoint=(1.0-smoothstep(starRadius,starRadius*2.1,length(starLocal)))*step(0.9945,starSeed);',
+  '  float twinkle=0.62+0.38*sin(uTime*(0.7+hash(starCell+4.1)*1.8)+starSeed*20.0);',
+  '  float horizonFade=smoothstep(0.10,0.42,vUv.y);',
+  '  color+=vec3(0.84,0.89,1.0)*starPoint*twinkle*horizonFade*uStarVisibility;',
   '  float hazeField=1.0-smoothstep(0.0,0.46,vUv.y);',
   '  float hazeAlpha=(0.025+uHaze*0.16)*hazeField;',
   '  color=mix(color,vec3(0.863,0.882,0.910),hazeAlpha);',
@@ -72,7 +82,8 @@ function initializeThreeAtmosphere(){
         uTop:{value:new api.Color()},uMiddle:{value:new api.Color()},uBottom:{value:new api.Color()},
         uLightColor:{value:new api.Color()},uLightPosition:{value:new api.Vector2(0.5,0.5)},
         uViewportScale:{value:new api.Vector2(1,1)},uHaze:{value:0},uDiffusion:{value:0},
-        uLightAlpha:{value:0},uCloudDensity:{value:0},uMinRatio:{value:1},uTime:{value:0}
+        uLightAlpha:{value:0},uCloudDensity:{value:0},uMinRatio:{value:1},
+        uStarVisibility:{value:0},uTime:{value:0}
       }
     });
     var geometry=new api.PlaneGeometry(2,2);
@@ -194,6 +205,8 @@ function updateThreeAtmosphere(timestamp){
     uniforms.uCloudDensity.value=atmosphere.cloudDensity;
     state.lastPaintKey=key;
   }
+  uniforms.uStarVisibility.value=!atmosphere.isDay&&S.props.showParticles?
+    (atmosphere.condition==='clear'?1:atmosphere.condition==='partly'?0.38:0):0;
   uniforms.uTime.value=timestamp/1000;
 }
 
