@@ -93,7 +93,7 @@ function deriveAtmosphericState(weather){
 // Night uses the inverse arc as a deliberately quiet moon approximation until
 // a full astronomical position model earns its complexity.
 function getCelestialTrack(now,isDay){
-  now=now||new Date();
+  now=now||wallpaperNow();
   var hour=now.getHours()+now.getMinutes()/60+now.getSeconds()/3600;
   var sunrise=6,sunset=18;
   if(S.sunrise&&S.sunset&&!isNaN(S.sunrise.getTime())&&!isNaN(S.sunset.getTime())){
@@ -161,7 +161,7 @@ function buildTimeline(){
 // expensive part; getPhaseColors() itself is ~10 lerps and a lookup.
 function getPhaseColors(){
   var tl=buildTimeline();
-  var now=new Date();
+  var now=wallpaperNow();
   var h=now.getHours()+now.getMinutes()/60+now.getSeconds()/3600;
   var i=0;
   while(i<tl.length-1&&tl[i+1].h<=h)i++;

@@ -1,5 +1,36 @@
 'use strict';
 
+var PREVIEW_CODES={clear:0,partly:2,overcast:3,fog:45,rain:63,sleet:66,snow:73,thunder:95};
+
+function readPreviewConfig(){
+  var params=new URLSearchParams(window.location.search);
+  var condition=params.get('preview');
+  if(!Object.prototype.hasOwnProperty.call(PREVIEW_CODES,condition))return false;
+  var hour=Number(params.get('hour'));
+  S.previewCondition=condition;
+  S.previewHour=isFinite(hour)?Math.max(0,Math.min(23.99,hour)):12;
+  if(params.get('minimal')==='1')document.body.classList.add('wa-preview-minimal');
+  return true;
+}
+
+function buildPreviewWeather(){
+  var now=wallpaperNow();
+  var code=PREVIEW_CODES[S.previewCondition];
+  var isDay=S.previewHour>=6&&S.previewHour<18;
+  var date=now.toISOString().slice(0,10);
+  var days=[],codes=[],highs=[],lows=[],precip=[];
+  for(var i=0;i<5;i++){
+    var day=new Date(now.getTime()+i*86400000);
+    days.push(day.toISOString().slice(0,10));
+    codes.push(code);highs.push(72-i);lows.push(54-i);precip.push(Math.round((ATMOSPHERIC_PROFILES[S.previewCondition].precipitation||0)*100));
+  }
+  return{
+    _units:'imperial',_src:'open-meteo',
+    current:{temperature_2m:68,apparent_temperature:67,relative_humidity_2m:64,weather_code:code,wind_speed_10m:12,wind_direction_10m:235,is_day:isDay?1:0},
+    daily:{time:days,weather_code:codes,temperature_2m_max:highs,temperature_2m_min:lows,precipitation_probability_max:precip,uv_index_max:[4,4,4,4,4],sunrise:[date+'T06:00'],sunset:[date+'T18:00']}
+  };
+}
+
 // ── init() — boot sequence ────────────────────────────────────────────────────
 // Entry point. Runs once when the DOM is ready.
 //
@@ -20,7 +51,8 @@
 function init(){
   S.canvas=document.getElementById('wa-sky');
   S.ctx=S.canvas.getContext('2d');
-  var now=new Date();
+  var preview=readPreviewConfig();
+  var now=wallpaperNow();
   var hr=now.getHours();
   S.isDay=hr>=6&&hr<18;
   resizeCanvas();
@@ -28,6 +60,12 @@ function init(){
   setupBridge();
   setupAttribution();
   setupVisibility();
+  if(preview){
+    S.label='Preview — '+S.previewCondition.charAt(0).toUpperCase()+S.previewCondition.slice(1);
+    applyWeather(buildPreviewWeather());
+    S.animationFrameId=requestAnimationFrame(render);
+    return;
+  }
   var cachedLoc=loadCachedLocation();
   if(cachedLoc){S.lat=cachedLoc.lat;S.lon=cachedLoc.lon;S.label=cachedLoc.label;}
   var cachedW=loadCachedWeather();

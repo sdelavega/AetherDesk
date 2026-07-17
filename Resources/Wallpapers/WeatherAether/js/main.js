@@ -102,6 +102,7 @@ var S={
   lat:null,lon:null,label:'Unknown',
   weather:null,staleTime:null,
   sunrise:null,sunset:null,isDay:true,
+  previewCondition:null,previewHour:null,
   props:{
     locationMode:'auto',manualLocation:'',
     units:'imperial',forecastOpacity:0.9,
@@ -123,6 +124,14 @@ function tUnit(){return S.props.units==='imperial'?'\u00B0F':'\u00B0C'}
 function wUnit(){return S.props.units==='imperial'?'mph':'km/h'}
 function cssW(){return window.innerWidth}
 function cssH(){return window.innerHeight}
+function wallpaperNow(){
+  var now=new Date();
+  if(S.previewHour!=null){
+    var whole=Math.floor(S.previewHour);
+    now.setHours(whole,Math.round((S.previewHour-whole)*60),0,0);
+  }
+  return now;
+}
 function convertTemp(v,from,to){
   if(from===to)return v;
   if(from==='metric'&&to==='imperial')return v*9/5+32;

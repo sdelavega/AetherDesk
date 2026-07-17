@@ -185,7 +185,7 @@ function drawAtmosphericSky(ctx,w,h){
   var paint=S.skyPaintCache;
   if(!paint||paint.key!==paintKey){
     var colors=getPhaseColors();
-    var track=getCelestialTrack(new Date(),S.isDay);
+    var track=getCelestialTrack(wallpaperNow(),S.isDay);
 
     var sky=ctx.createLinearGradient(0,0,0,h);
     sky.addColorStop(0,rgb(colors.top));
@@ -319,7 +319,7 @@ function drawBgCelestial(ctx,w,h,t){
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   var op=atmosphere.celestialVisibility;
   if(op===0)return;
-  var track=getCelestialTrack(new Date(),S.isDay);
+  var track=getCelestialTrack(wallpaperNow(),S.isDay);
   ctx.save();ctx.globalAlpha=op;
   var r=Math.min(w,h)*0.055;
   if(S.isDay)drawBgSun(ctx,w*track.x,h*track.y,r,t);
