@@ -1,6 +1,6 @@
 'use strict';
 
-var THREE_ATMOSPHERE_REVISION='world-volume-7';
+var THREE_ATMOSPHERE_REVISION='world-volume-8';
 var THREE_QUALITY_PROFILES={
   eco:{name:'eco',pixelRatio:0.55,fps:15,motionFps:30,steps:4,rainCount:80,snowCount:70},
   balanced:{name:'balanced',pixelRatio:0.85,fps:24,motionFps:60,steps:7,rainCount:160,snowCount:130},
@@ -208,7 +208,7 @@ var THREE_SNOW_VERTEX=[
   '  gl_PointSize=clamp(aSize*uPixelRatio*perspective,1.2,18.0);',
   '  gl_Position=projectionMatrix*viewPosition;',
   '  vOpacity=aOpacity*clamp(perspective,0.42,1.0);',
-  '  vSparkle=0.82+0.18*sin(uTime*(0.7+aWobble*0.2)+aPhase);',
+  '  vSparkle=0.5+0.5*sin(uTime*(0.7+aWobble*0.2)+aPhase);',
   '}'
 ].join('\n');
 
@@ -225,7 +225,8 @@ var THREE_SNOW_FRAGMENT=[
   '  float core=1.0-smoothstep(0.0,0.20,radius);',
   '  float alpha=(body*0.72+core*0.28)*vOpacity*uOpacity;',
   '  if(alpha<0.01)discard;',
-  '  gl_FragColor=vec4(uColor*vSparkle,alpha);',
+  '  vec3 flakeColor=mix(uColor,vec3(1.0),vSparkle*0.10);',
+  '  gl_FragColor=vec4(flakeColor,alpha);',
   '}'
 ].join('\n');
 
@@ -445,7 +446,8 @@ function updateThreeSnow(timestamp,atmosphere){
   var lightKey=getCloudLightingKey(atmosphere,wallpaperNow());
   if(snow.lastLightKey!==lightKey){
     var lighting=getPrecipitationLighting(atmosphere,wallpaperNow());
-    snow.material.uniforms.uColor.value.copy(threeColor(lighting.snow));
+    var cleanSnow=lerpC(lighting.snow,[248,250,255],atmosphere.isDay?0.62:0.42);
+    snow.material.uniforms.uColor.value.copy(threeColor(cleanSnow));
     snow.lastLightKey=lightKey;
   }
 }
