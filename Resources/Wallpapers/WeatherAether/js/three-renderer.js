@@ -1,6 +1,6 @@
 'use strict';
 
-var THREE_ATMOSPHERE_REVISION='world-volume-9';
+var THREE_ATMOSPHERE_REVISION='rain-modulation-1';
 var THREE_QUALITY_PROFILES={
   eco:{name:'eco',pixelRatio:0.55,fps:15,motionFps:30,steps:4,rainCount:80,snowCount:70,hailCount:100},
   balanced:{name:'balanced',pixelRatio:0.85,fps:24,motionFps:60,steps:7,rainCount:160,snowCount:130,hailCount:190},
@@ -144,6 +144,7 @@ var THREE_RAIN_VERTEX=[
   'uniform float uAspect;',
   'uniform float uWind;',
   'uniform float uSpeed;',
+  'uniform float uDropScale;',
   'attribute float aSpeed;',
   'attribute float aLength;',
   'attribute float aOpacity;',
@@ -158,7 +159,7 @@ var THREE_RAIN_VERTEX=[
   '  p.x=p.x*halfWidth+uWind*(4.0-fall)*0.11;',
   '  vec4 viewPosition=modelViewMatrix*vec4(p,1.0);',
   '  float perspective=clamp(2.6/max(0.8,-viewPosition.z),0.38,1.65);',
-  '  gl_PointSize=clamp(aLength*uPixelRatio*perspective,2.0,64.0);',
+  '  gl_PointSize=clamp(aLength*uDropScale*uPixelRatio*perspective,1.5,64.0);',
   '  gl_Position=projectionMatrix*viewPosition;',
   '  vOpacity=aOpacity*clamp(perspective,0.36,1.0);',
   '  vWind=uWind;',
@@ -309,6 +310,8 @@ function reportWeatherRendererStatus(){
     rain:!!(S.threeRain&&S.threeRain.active),
     snow:!!(S.threeSnow&&S.threeSnow.active),
     hail:!!(S.threeHail&&S.threeHail.active),
+    precipitationIntensity:atmosphere.precipitationIntensity||0,
+    precipitationActivity:getPrecipitationActivity(atmosphere,S.motionTime),
     metrics:S.threeAtmosphere?S.threeAtmosphere.latestMetrics||null:null,
     motionMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMotionMetrics||null:null,
     error:S.threeShaderError||null
@@ -411,13 +414,13 @@ function initializeThreeRain(api,state){
     transparent:true,depthTest:false,depthWrite:false,
     uniforms:{
       uTime:{value:0},uPixelRatio:{value:state.renderer.getPixelRatio()},uAspect:{value:1},uWind:{value:0},
-      uSpeed:{value:1},uColor:{value:new api.Color(0.65,0.76,0.90)},uOpacity:{value:0.62}
+      uSpeed:{value:1},uDropScale:{value:1},uColor:{value:new api.Color(0.65,0.76,0.90)},uOpacity:{value:0.62}
     }
   });
   var points=new api.Points(geometry,material);
   points.frustumCulled=false;points.renderOrder=50;points.visible=false;
   state.presentationScene.add(points);
-  S.threeRain={points:points,geometry:geometry,material:material,active:false};
+  S.threeRain={points:points,geometry:geometry,material:material,active:false,qualityCount:state.quality.rainCount};
 }
 
 function rendersThreeRain(){
@@ -431,14 +434,19 @@ function updateThreeRain(timestamp,atmosphere){
   rain.active=active;rain.points.visible=active;
   if(!active)return;
   var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
+  var intensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+  var activity=getPrecipitationActivity(atmosphere,S.motionTime);
+  var visibleFraction=lerp(0.20,1,intensity)*lerp(0.28,1,activity);
+  rain.geometry.setDrawRange(0,Math.max(10,Math.round(rain.qualityCount*visibleFraction)));
   rain.material.uniforms.uTime.value=timestamp/1000;
   rain.material.uniforms.uWind.value=Math.sin(toward)*(0.28+atmosphere.motionEnergy*0.72);
-  rain.material.uniforms.uSpeed.value=S.props.animationSpeed*(0.76+atmosphere.motionEnergy*0.54);
+  rain.material.uniforms.uSpeed.value=S.props.animationSpeed*lerp(0.56,1.28,intensity)*(0.84+atmosphere.motionEnergy*0.34);
+  rain.material.uniforms.uDropScale.value=(atmosphere.precipitationScale||1)*lerp(0.82,1.12,intensity);
+  rain.material.uniforms.uOpacity.value=lerp(0.38,0.80,intensity)*lerp(0.72,1,activity);
   var lightKey=getCloudLightingKey(atmosphere,wallpaperNow())+':'+atmosphere.condition;
   if(rain.lastLightKey!==lightKey){
     var lighting=getPrecipitationLighting(atmosphere,wallpaperNow());
     rain.material.uniforms.uColor.value.copy(threeColor(lighting.rain));
-    rain.material.uniforms.uOpacity.value=atmosphere.condition==='thunder'?0.78:0.64;
     rain.lastLightKey=lightKey;
   }
 }
@@ -673,7 +681,7 @@ function updateThreeAtmosphere(timestamp){
   var state=S.threeAtmosphere;
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   var now=wallpaperNow();
-  var key=[Math.floor(now.getTime()/15000),atmosphere.condition,atmosphere.isDay?1:0].join(':');
+  var key=[Math.floor(now.getTime()/15000),atmosphere.condition,Math.round(atmosphere.precipitationIntensity*100),atmosphere.isDay?1:0].join(':');
   var uniforms=state.material.uniforms;
   if(state.lastPaintKey!==key){
     var colors=getPhaseColors();

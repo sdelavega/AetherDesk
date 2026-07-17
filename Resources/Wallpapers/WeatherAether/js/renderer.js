@@ -112,12 +112,14 @@ function rebuildParticles(){
   S.particleType=bk;
   if(bk==='rain'||bk==='thunder'){
     if(!S.useThreeRenderer||!S.threeRain){
-      var rainCount=Math.round(70+atmosphere.precipitation*160);
+      var rainIntensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+      var dropScale=atmosphere.precipitationScale||1;
+      var rainCount=Math.round(38+rainIntensity*202);
       for(var i=0;i<rainCount;i++){
         var depth=Math.pow(Math.random(),0.72);
         var near=depth>0.92?1.35:1;
         S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
-          speed:180+depth*620,len:(6+depth*23)*near,width:0.45+depth*1.05,
+          speed:180+depth*620,len:(6+depth*23)*near*dropScale,width:(0.45+depth*1.05)*dropScale,
           op:0.055+depth*0.36});
       }
     }
@@ -229,10 +231,13 @@ function updateParticles(dt){
   var spd=S.props.animationSpeed*(0.65+atmosphere.motionEnergy*0.7),bk=S.weatherBucket;
   var windDrift=precipitationWindDrift(atmosphere)*S.windGust;
   if((bk==='rain'||bk==='thunder')&&!rendersThreeRain()){
+    var rainActivity=getPrecipitationActivity(atmosphere,S.motionTime);
+    var rainIntensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+    var rainSpeed=spd*lerp(0.58,1.22,rainIntensity)*lerp(0.88,1.04,rainActivity);
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
-      p.y+=p.speed*spd*dt;
-      p.x+=windDrift*(0.42+p.depth*0.78)*spd*dt;
+      p.y+=p.speed*rainSpeed*dt;
+      p.x+=windDrift*(0.42+p.depth*0.78)*rainSpeed*dt;
       if(p.y>h){p.y=-p.len;p.x=Math.random()*w;}
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
@@ -345,12 +350,15 @@ function drawParticles(ctx){
   drawClouds(ctx);
   if(!S.props.showParticles)return;
   if((bk==='rain'||bk==='thunder')&&!rendersThreeRain()){
-    for(var i=0;i<S.particles.length;i++){
+    var rainActivity=getPrecipitationActivity(atmosphere,S.motionTime);
+    var visibleRain=Math.round(S.particles.length*lerp(0.22,1,rainActivity));
+    var rainOpacity=lerp(0.62,1,atmosphere.precipitationIntensity||atmosphere.precipitation);
+    for(var i=0;i<visibleRain;i++){
       var p=S.particles[i];
       ctx.beginPath();
       ctx.moveTo(p.x,p.y);
       ctx.lineTo(p.x+windDrift*(0.42+p.depth*0.78)*(p.len/p.speed),p.y+p.len);
-      ctx.strokeStyle=rgba(light.rain,p.op);
+      ctx.strokeStyle=rgba(light.rain,p.op*rainOpacity);
       ctx.lineWidth=p.width;
       ctx.stroke();
     }
