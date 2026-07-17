@@ -345,65 +345,96 @@ function getLunarPhase(){
 // separate from the small card icons — they're the ambient light sources
 // painted directly behind the city/sky gradient, not inside the UI card.
 //
-// drawBgSun: radial gradient disc + outer glow halo + slowly rotating rays.
-// drawBgMoon: lunar phase using clip + overlapping arc technique (no images).
+// drawBgSun: white-hot disc with atmosphere-scaled diffusion.
+// drawBgMoon: cached shaded lunar surface clipped to the current phase.
 // drawBgCelestial: dispatcher — chooses sun or moon based on S.isDay,
 //   and fades the body out for non-clear conditions (overcast hides the sun).
 function drawBgSun(ctx,cx,cy,r,t){
   r=Math.max(4,r);
-  // outer glow halo
-  var og=ctx.createRadialGradient(cx,cy,r,cx,cy,r*4.5);
-  og.addColorStop(0,'rgba(255,210,60,0.22)');
-  og.addColorStop(0.55,'rgba(255,170,30,0.07)');
-  og.addColorStop(1,'rgba(255,140,0,0)');
-  ctx.fillStyle=og;ctx.beginPath();ctx.arc(cx,cy,r*4.5,0,Math.PI*2);ctx.fill();
-  // sun disk with radial gradient
-  var sg=ctx.createRadialGradient(cx-r*0.25,cy-r*0.25,r*0.1,cx,cy,r);
-  sg.addColorStop(0,'rgba(255,252,200,1)');
-  sg.addColorStop(0.55,'rgba(255,215,55,1)');
-  sg.addColorStop(1,'rgba(255,170,20,1)');
+  var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  var diffusion=atmosphere.lightDiffusion;
+  var corona=ctx.createRadialGradient(cx,cy,r*0.55,cx,cy,r*(5.5+diffusion*3));
+  corona.addColorStop(0,'rgba(255,250,220,'+(0.34+diffusion*0.10)+')');
+  corona.addColorStop(0.18,'rgba(255,222,150,'+(0.16+diffusion*0.08)+')');
+  corona.addColorStop(0.55,'rgba(255,190,105,0.045)');
+  corona.addColorStop(1,'rgba(255,170,80,0)');
+  ctx.fillStyle=corona;ctx.beginPath();ctx.arc(cx,cy,r*(5.5+diffusion*3),0,Math.PI*2);ctx.fill();
+
+  var sg=ctx.createRadialGradient(cx-r*0.16,cy-r*0.16,r*0.05,cx,cy,r);
+  sg.addColorStop(0,'rgb(255,255,250)');
+  sg.addColorStop(0.72,'rgb(255,250,222)');
+  sg.addColorStop(0.93,'rgb(255,228,168)');
+  sg.addColorStop(1,'rgba(255,205,115,0.82)');
   ctx.fillStyle=sg;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+}
+
+function getMoonTexture(){
+  if(S.moonTexture)return S.moonTexture;
+  var canvas=document.createElement('canvas');canvas.width=192;canvas.height=192;
+  var ctx=canvas.getContext('2d'),center=96,radius=88;
+  var surface=ctx.createRadialGradient(68,58,8,96,96,radius);
+  surface.addColorStop(0,'rgb(232,232,216)');
+  surface.addColorStop(0.62,'rgb(198,200,190)');
+  surface.addColorStop(0.88,'rgb(151,155,151)');
+  surface.addColorStop(1,'rgb(91,96,98)');
+  ctx.fillStyle=surface;ctx.beginPath();ctx.arc(center,center,radius,0,Math.PI*2);ctx.fill();
+
+  ctx.save();ctx.beginPath();ctx.arc(center,center,radius,0,Math.PI*2);ctx.clip();
+  var rand=seededRandom(2903);
+  for(var i=0;i<22;i++){
+    var angle=rand()*Math.PI*2,dist=Math.sqrt(rand())*radius*0.78;
+    var x=center+Math.cos(angle)*dist,y=center+Math.sin(angle)*dist;
+    var crater=2.5+rand()*8.5,flatten=0.62+rand()*0.28;
+    ctx.fillStyle='rgba(52,58,62,'+(0.07+rand()*0.09)+')';
+    ctx.beginPath();ctx.ellipse(x,y,crater,crater*flatten,rand()*0.5,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(255,255,244,0.055)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.ellipse(x-1,y-1,crater,crater*flatten,rand()*0.5,Math.PI,Math.PI*2);ctx.stroke();
+  }
+  ctx.restore();
+  S.moonTexture=canvas;return canvas;
+}
+
+function drawMoonTextureRegion(ctx,texture,cx,cy,r){
+  ctx.save();ctx.clip();ctx.drawImage(texture,cx-r,cy-r,r*2,r*2);ctx.restore();
 }
 
 function drawBgMoon(ctx,cx,cy,r){
   r=Math.max(4,r);
   var phase=getLunarPhase(); // 0=new, 0.5=full
-  // soft glow halo
-  var grd=ctx.createRadialGradient(cx,cy,r*0.6,cx,cy,r*3.2);
-  grd.addColorStop(0,'rgba(210,218,190,0.16)');
-  grd.addColorStop(1,'rgba(180,190,160,0)');
-  ctx.fillStyle=grd;ctx.beginPath();ctx.arc(cx,cy,r*3.2,0,Math.PI*2);ctx.fill();
-  // clip to moon disc then draw phase
+  var texture=getMoonTexture();
+  var grd=ctx.createRadialGradient(cx,cy,r*0.72,cx,cy,r*3.8);
+  grd.addColorStop(0,'rgba(218,225,218,0.20)');
+  grd.addColorStop(0.35,'rgba(190,205,205,0.065)');
+  grd.addColorStop(1,'rgba(170,190,200,0)');
+  ctx.fillStyle=grd;ctx.beginPath();ctx.arc(cx,cy,r*3.8,0,Math.PI*2);ctx.fill();
+
   ctx.save();
   ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.clip();
-  ctx.fillStyle='#0C0F1E';ctx.fillRect(cx-r,cy-r,r*2,r*2);
+  ctx.globalAlpha=0.16;ctx.drawImage(texture,cx-r,cy-r,r*2,r*2);ctx.globalAlpha=1;
+  ctx.fillStyle='rgba(5,9,19,0.72)';ctx.fillRect(cx-r,cy-r,r*2,r*2);
   if(phase>0.02&&phase<0.98){
     if(phase<=0.5){
       // waxing: lit on right
-      ctx.fillStyle='#E4E6D2';
-      ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,Math.PI/2);ctx.closePath();ctx.fill();
+      ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,Math.PI/2);ctx.closePath();drawMoonTextureRegion(ctx,texture,cx,cy,r);
       var ex=Math.cos(phase*Math.PI*2)*r;
       if(ex>0.5){
         // crescent: dark ellipse over right side
-        ctx.fillStyle='#0C0F1E';
+        ctx.fillStyle='rgba(5,9,19,0.90)';
         ctx.beginPath();ctx.ellipse(cx,cy,ex,r,0,-Math.PI/2,Math.PI/2);ctx.closePath();ctx.fill();
       }else if(ex<-0.5){
         // gibbous: add lit ellipse on left
-        ctx.fillStyle='#E4E6D2';
-        ctx.beginPath();ctx.ellipse(cx,cy,-ex,r,0,Math.PI/2,-Math.PI/2);ctx.closePath();ctx.fill();
+        ctx.beginPath();ctx.ellipse(cx,cy,-ex,r,0,Math.PI/2,-Math.PI/2);ctx.closePath();drawMoonTextureRegion(ctx,texture,cx,cy,r);
       }
     }else{
       // waning: lit on left
-      ctx.fillStyle='#E4E6D2';
-      ctx.beginPath();ctx.arc(cx,cy,r,Math.PI/2,-Math.PI/2);ctx.closePath();ctx.fill();
+      ctx.beginPath();ctx.arc(cx,cy,r,Math.PI/2,-Math.PI/2);ctx.closePath();drawMoonTextureRegion(ctx,texture,cx,cy,r);
       var ex=Math.cos(phase*Math.PI*2)*r;
       if(ex<-0.5){
         // gibbous: add lit ellipse on right
-        ctx.fillStyle='#E4E6D2';
-        ctx.beginPath();ctx.ellipse(cx,cy,-ex,r,0,-Math.PI/2,Math.PI/2);ctx.closePath();ctx.fill();
+        ctx.beginPath();ctx.ellipse(cx,cy,-ex,r,0,-Math.PI/2,Math.PI/2);ctx.closePath();drawMoonTextureRegion(ctx,texture,cx,cy,r);
       }else if(ex>0.5){
         // crescent: dark ellipse over left side
-        ctx.fillStyle='#0C0F1E';
+        ctx.fillStyle='rgba(5,9,19,0.90)';
         ctx.beginPath();ctx.ellipse(cx,cy,ex,r,0,Math.PI/2,-Math.PI/2);ctx.closePath();ctx.fill();
       }
     }
@@ -417,9 +448,9 @@ function drawBgCelestial(ctx,w,h,t){
   if(op===0)return;
   var track=getCelestialTrack(wallpaperNow(),S.isDay);
   ctx.save();ctx.globalAlpha=op;
-  var r=Math.min(w,h)*0.055;
+  var r=Math.min(w,h)*(S.isDay?0.030:0.034);
   if(S.isDay)drawBgSun(ctx,w*track.x,h*track.y,r,t);
-  else drawBgMoon(ctx,w*track.x,h*track.y,r*0.85);
+  else drawBgMoon(ctx,w*track.x,h*track.y,r);
   ctx.restore();
 }
 
