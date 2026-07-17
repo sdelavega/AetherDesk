@@ -16,7 +16,7 @@ main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 figure{position:relative;aspect-ratio:16/9;margin:0;overflow:hidden;border:1px solid #364156;border-radius:12px;background:#080b11}
 iframe{display:block;width:100%;height:100%;border:0;pointer-events:none}
 figcaption{position:absolute;left:12px;bottom:10px;padding:5px 9px;border-radius:7px;background:rgba(8,12,20,.64);backdrop-filter:blur(8px);font-size:13px;font-weight:600;text-transform:capitalize;letter-spacing:.2px}
-.renderer-status{position:absolute;right:10px;top:10px;padding:4px 7px;border-radius:6px;background:rgba(8,12,20,.76);color:#e5ad62;font:700 10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.2px;text-transform:none}
+.renderer-status{position:absolute;right:10px;top:10px;max-width:72%;padding:4px 7px;border-radius:6px;background:rgba(8,12,20,.76);color:#e5ad62;font:700 10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.2px;text-align:right;text-transform:none;white-space:normal}
 .renderer-status[data-renderer="three"]{color:#75e6a4}.renderer-status[data-error="true"]{color:#ff7b72}
 @media(max-width:800px){main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style>
@@ -39,6 +39,13 @@ figcaption{position:absolute;left:12px;bottom:10px;padding:5px 9px;border-radius
         <option value="22">Night</option>
       </select>
     </label>
+    <label for="quality">Quality
+      <select id="quality">
+        <option value="eco">Eco</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="showcase">Showcase</option>
+      </select>
+    </label>
   </div>
 </header>
 <main id="gallery"></main>
@@ -48,13 +55,14 @@ var states=['clear','partly','overcast','fog','rain','sleet','snow','thunder'];
 var gallery=document.getElementById('gallery');
 var time=document.getElementById('time');
 var renderer=document.getElementById('renderer');
+var quality=document.getElementById('quality');
 function draw(){
   gallery.innerHTML='';
   for(var i=0;i<states.length;i++){
     var state=states[i];
     var figure=document.createElement('figure');
     var frame=document.createElement('iframe');
-    frame.src='../Resources/Wallpapers/WeatherAether/index.html?preview='+state+'&hour='+time.value+'&minimal=1&renderer='+renderer.value;
+    frame.src='../Resources/Wallpapers/WeatherAether/index.html?preview='+state+'&hour='+time.value+'&minimal=1&renderer='+renderer.value+'&quality='+quality.value;
     frame.setAttribute('aria-label',state+' weather preview');
     var label=document.createElement('figcaption');
     label.textContent=state;
@@ -72,14 +80,23 @@ window.addEventListener('message',function(event){
     var status=frames[i].parentElement.querySelector('.renderer-status');
     status.dataset.renderer=data.renderer;
     status.dataset.error=data.error?'true':'false';
-    status.textContent=data.error?'SHADER ERROR':
-      data.renderer.toUpperCase()+' · '+data.revision+(data.renderer==='three'?' · volume '+(data.volume?'on':'off'):'');
+    if(data.error){
+      status.textContent='SHADER ERROR';
+    }else if(data.renderer==='three'&&data.metrics){
+      status.textContent='THREE · '+data.quality+' · '+data.metrics.fps.toFixed(1)+'/'+data.targetFps+' fps · '+data.steps+' steps · '+
+        data.metrics.p95.toFixed(1)+' ms p95 · '+data.metrics.submitAverage.toFixed(2)+' ms submit · '+
+        data.metrics.width+'×'+data.metrics.height+' · '+data.metrics.drawCalls+' draw · volume '+(data.volume?'on':'off');
+    }else{
+      status.textContent=data.renderer.toUpperCase()+' · '+data.revision+
+        (data.renderer==='three'?' · '+data.quality+' · volume '+(data.volume?'on':'off'):'');
+    }
     if(data.error)status.title=data.error;
     break;
   }
 });
 time.addEventListener('change',draw);
 renderer.addEventListener('change',draw);
+quality.addEventListener('change',draw);
 draw();
 </script>
 </body>
