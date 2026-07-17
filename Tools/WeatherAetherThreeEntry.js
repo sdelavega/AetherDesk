@@ -9,6 +9,7 @@ import {
   ShaderMaterial,
   SRGBColorSpace,
   Vector2,
+  Vector3,
   WebGLRenderer
 } from 'three';
 
@@ -23,5 +24,6 @@ globalThis.WeatherAetherThree={
   ShaderMaterial,
   SRGBColorSpace,
   Vector2,
+  Vector3,
   WebGLRenderer
 };
