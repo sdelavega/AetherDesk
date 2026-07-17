@@ -19,4 +19,3 @@ globalThis.WeatherAetherThree={
   Vector2,
   WebGLRenderer
 };
-
