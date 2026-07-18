@@ -125,30 +125,38 @@ function rebuildParticles(){
     }
   }else if(bk==='snow'){
     if(!S.useThreeRenderer||!S.threeSnow){
-      var snowCount=Math.round(60+atmosphere.precipitation*140);
+      var snowIntensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+      var snowScale=atmosphere.precipitationScale||1;
+      var snowCount=Math.round(38+snowIntensity*172);
       for(var i=0;i<snowCount;i++){
         var depth=Math.pow(Math.random(),0.82);
         S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
-          speed:10+depth*66,sz:0.55+depth*3.5,wb:Math.random()*Math.PI*2,
+          speed:10+depth*66,sz:(0.55+depth*3.5)*snowScale,wb:Math.random()*Math.PI*2,
           wbs:0.55+Math.random()*1.8,wobble:7+depth*19,op:0.10+depth*0.58});
       }
     }
   }else if(bk==='freezing'){
-    var freezingCount=Math.round(65+atmosphere.precipitation*135);
-    for(var i=0;i<freezingCount;i++){
-      var depth=Math.pow(Math.random(),0.78);
-      var ice=Math.random()<0.38;
-      S.particles.push(ice?
-        {x:Math.random()*w,y:Math.random()*h,depth:depth,speed:75+depth*230,sz:0.6+depth*2.5,op:0.10+depth*0.42,ice:true}:
-        {x:Math.random()*w,y:Math.random()*h,depth:depth,speed:155+depth*440,len:4+depth*13,width:0.4+depth*0.8,op:0.06+depth*0.30,ice:false});
+    if(!S.useThreeRenderer||!S.threeFreezing){
+      var freezingIntensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+      var freezingScale=atmosphere.precipitationScale||1;
+      var freezingCount=Math.round(42+freezingIntensity*178);
+      for(var i=0;i<freezingCount;i++){
+        var depth=Math.pow(Math.random(),0.78);
+        var ice=Math.random()<(atmosphere.iceFraction||0.06);
+        S.particles.push(ice?
+          {x:Math.random()*w,y:Math.random()*h,depth:depth,speed:95+depth*250,sz:(0.6+depth*2.2)*freezingScale,op:0.10+depth*0.42,ice:true}:
+          {x:Math.random()*w,y:Math.random()*h,depth:depth,speed:155+depth*440,len:(4+depth*13)*freezingScale,width:(0.4+depth*0.8)*freezingScale,op:0.06+depth*0.30,ice:false});
+      }
     }
   }else if(bk==='hail'){
     if(!S.useThreeRenderer||!S.threeHail){
-      var hailCount=Math.round(85+atmosphere.precipitation*170);
+      var hailIntensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+      var hailScale=atmosphere.precipitationScale||1;
+      var hailCount=Math.round(52+hailIntensity*218);
       for(var i=0;i<hailCount;i++){
         var depth=Math.pow(Math.random(),0.72);
         S.particles.push({x:Math.random()*w,y:Math.random()*h,depth:depth,
-          speed:340+depth*720,sz:0.85+depth*3.2,op:0.18+depth*0.60});
+          speed:340+depth*720,sz:(0.85+depth*3.2)*hailScale,op:0.18+depth*0.60});
       }
     }
   }
@@ -243,30 +251,40 @@ function updateParticles(dt){
       if(p.x>w+10)p.x=-10;
     }
   }else if(bk==='snow'&&!rendersThreeSnow()){
+    var snowActivity=getPrecipitationActivity(atmosphere,S.motionTime);
+    var snowIntensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+    var snowSpeed=spd*lerp(0.68,1.12,snowIntensity)*lerp(0.90,1.04,snowActivity);
+    var snowFlutter=atmosphere.precipitationFlutter==null?0.72:atmosphere.precipitationFlutter;
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
-      p.wb+=p.wbs*spd*dt;
-      p.y+=p.speed*spd*dt;
-      p.x+=(Math.sin(p.wb)*p.wobble+windDrift*p.depth*0.22)*spd*dt;
+      p.wb+=p.wbs*snowSpeed*dt;
+      p.y+=p.speed*snowSpeed*dt;
+      p.x+=(Math.sin(p.wb)*p.wobble*snowFlutter+windDrift*p.depth*0.22)*snowSpeed*dt;
       if(p.y>h){p.y=-p.sz;p.x=Math.random()*w;}
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
     }
-  }else if(bk==='freezing'){
+  }else if(bk==='freezing'&&!rendersThreeFreezing()){
+    var freezingActivity=getPrecipitationActivity(atmosphere,S.motionTime);
+    var freezingIntensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+    var freezingSpeed=spd*lerp(0.62,1.16,freezingIntensity)*lerp(0.90,1.04,freezingActivity);
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
-      p.y+=p.speed*spd*dt;
-      p.x+=windDrift*(p.ice?0.42:0.55+p.depth*0.55)*spd*dt;
+      p.y+=p.speed*freezingSpeed*dt;
+      p.x+=windDrift*(p.ice?0.42:0.55+p.depth*0.55)*freezingSpeed*dt;
       var bot=p.ice?h:h+(p.len||0);
       if(p.y>bot){p.y=p.ice?-p.sz:-p.len;p.x=Math.random()*w;}
       if(p.x<-10)p.x=w+10;
       if(p.x>w+10)p.x=-10;
     }
   }else if(bk==='hail'&&!rendersThreeHail()){
+    var hailActivity=getPrecipitationActivity(atmosphere,S.motionTime);
+    var hailIntensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+    var hailSpeed=spd*lerp(0.76,1.28,hailIntensity)*lerp(0.88,1.06,hailActivity);
     for(var i=0;i<S.particles.length;i++){
       var p=S.particles[i];
-      p.y+=p.speed*spd*dt;
-      p.x+=windDrift*(0.78+p.depth*1.05)*spd*dt;
+      p.y+=p.speed*hailSpeed*dt;
+      p.x+=windDrift*(0.78+p.depth*1.05)*hailSpeed*dt;
       if(p.y>h){p.y=-p.sz;p.x=Math.random()*w;}
       if(p.x<-12)p.x=w+12;
       if(p.x>w+12)p.x=-12;
@@ -276,13 +294,14 @@ function updateParticles(dt){
     S.stars[i].tw+=S.stars[i].tws*spd*dt;
   }
   if(bk==='thunder'||bk==='hail'){
+    var stormEnergy=atmosphere.stormEnergy||0.72;
     S.lightningCooldown-=dt;
-    if(S.lightningCooldown<=0&&Math.random()<0.012*spd){
+    if(S.lightningCooldown<=0&&Math.random()<(0.006+stormEnergy*0.008)*spd){
       var showBolt=Math.random()<0.68;
       S.lightningBolt=showBolt?createLightningBolt(w,h):null;
       S.lightningBoltAlpha=showBolt?0.78+Math.random()*0.22:0;
       S.lightningAlpha=showBolt?(Math.random()<0.25?0.08+Math.random()*0.12:0):0.13+Math.random()*0.15;
-      S.lightningCooldown=7+Math.random()*12;
+      S.lightningCooldown=lerp(14,6,stormEnergy)+Math.random()*lerp(10,5,stormEnergy);
     }
     S.lightningAlpha*=Math.pow(0.72,dt*60);
     S.lightningBoltAlpha*=Math.pow(0.84,dt*60);
@@ -363,31 +382,40 @@ function drawParticles(ctx){
       ctx.stroke();
     }
   }else if(bk==='snow'&&!rendersThreeSnow()){
-    for(var i=0;i<S.particles.length;i++){
+    var snowActivity=getPrecipitationActivity(atmosphere,S.motionTime);
+    var visibleSnow=Math.round(S.particles.length*lerp(0.26,1,snowActivity));
+    var snowOpacity=lerp(0.66,1,atmosphere.precipitationIntensity||atmosphere.precipitation);
+    for(var i=0;i<visibleSnow;i++){
       var p=S.particles[i];
       ctx.beginPath();
       ctx.arc(p.x,p.y,Math.max(0.5,p.sz),0,Math.PI*2);
       var lowerLight=0.86+0.20*Math.max(0,Math.min(1,p.y/cssH()));
-      ctx.fillStyle=rgba(light.snow,Math.min(0.9,p.op*lowerLight));
+      ctx.fillStyle=rgba(light.snow,Math.min(0.9,p.op*lowerLight*snowOpacity));
       ctx.fill();
     }
-  }else if(bk==='freezing'){
-    for(var i=0;i<S.particles.length;i++){
+  }else if(bk==='freezing'&&!rendersThreeFreezing()){
+    var freezingActivity=getPrecipitationActivity(atmosphere,S.motionTime);
+    var visibleFreezing=Math.round(S.particles.length*lerp(0.28,1,freezingActivity));
+    var freezingOpacity=lerp(0.68,1,atmosphere.precipitationIntensity||atmosphere.precipitation);
+    for(var i=0;i<visibleFreezing;i++){
       var p=S.particles[i];
       if(p.ice){
         ctx.beginPath();ctx.arc(p.x,p.y,Math.max(0.5,p.sz),0,Math.PI*2);
-        ctx.fillStyle=rgba(light.freezing,p.op);ctx.fill();
+        ctx.fillStyle=rgba(light.freezing,p.op*freezingOpacity);ctx.fill();
       }else{
         ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+windDrift*(0.55+p.depth*0.55)*(p.len/p.speed),p.y+p.len);
-        ctx.strokeStyle=rgba(light.freezing,p.op);ctx.lineWidth=p.width;ctx.stroke();
+        ctx.strokeStyle=rgba(light.freezing,p.op*freezingOpacity);ctx.lineWidth=p.width;ctx.stroke();
       }
     }
   }else if(bk==='hail'&&!rendersThreeHail()){
-    for(var i=0;i<S.particles.length;i++){
+    var hailActivity=getPrecipitationActivity(atmosphere,S.motionTime);
+    var visibleHail=Math.round(S.particles.length*lerp(0.30,1,hailActivity));
+    var hailOpacity=lerp(0.72,1,atmosphere.precipitationIntensity||atmosphere.precipitation);
+    for(var i=0;i<visibleHail;i++){
       var p=S.particles[i];
       ctx.beginPath();ctx.arc(p.x,p.y,Math.max(0.7,p.sz),0,Math.PI*2);
-      ctx.fillStyle=rgba(light.hail,p.op);ctx.fill();
-      ctx.strokeStyle=rgba([105,135,170],p.op*0.72);ctx.lineWidth=Math.max(0.5,p.sz*0.18);ctx.stroke();
+      ctx.fillStyle=rgba(light.hail,p.op*hailOpacity);ctx.fill();
+      ctx.strokeStyle=rgba([105,135,170],p.op*0.72*hailOpacity);ctx.lineWidth=Math.max(0.5,p.sz*0.18);ctx.stroke();
     }
   }
   if(S.lightningAlpha>0.005){
