@@ -80,6 +80,8 @@ function derivePrecipitationTraits(code,bucket,base){
     intensity:base.precipitation||0,
     intermittency:0,
     dropletScale:1,
+    flutter:bucket==='snow'?0.72:0,
+    grain:0,
     iceFraction:bucket==='freezing'?0.12:bucket==='snow'||bucket==='hail'?1:0,
     stormEnergy:bucket==='thunder'||bucket==='hail'?0.72:0
   };
@@ -92,6 +94,18 @@ function derivePrecipitationTraits(code,bucket,base){
   };
   if(intensityByCode[code]!=null)traits.intensity=intensityByCode[code];
   if(code>=51&&code<=55)traits.dropletScale=0.52+traits.intensity*0.34;
+  if(code===56)traits.dropletScale=0.55;
+  if(code===57)traits.dropletScale=0.68;
+  if(code===66)traits.dropletScale=0.78;
+  if(code===67)traits.dropletScale=1.05;
+  if(code===71)traits.dropletScale=0.78;
+  if(code===73)traits.dropletScale=1.00;
+  if(code===75)traits.dropletScale=1.20;
+  if(code===77){traits.dropletScale=0.48;traits.flutter=0.12;traits.grain=1;}
+  if(code===85){traits.dropletScale=0.82;traits.flutter=0.92;}
+  if(code===86){traits.dropletScale=1.14;traits.flutter=1.00;}
+  if(code===96)traits.dropletScale=0.72;
+  if(code===99)traits.dropletScale=1.18;
   if(code>=80&&code<=82)traits.intermittency=0.52+traits.intensity*0.34;
   if(code===85||code===86)traits.intermittency=0.48+traits.intensity*0.28;
   if(code>=95)traits.intermittency=0.30+traits.intensity*0.20;
@@ -129,6 +143,19 @@ function deriveAtmosphericState(weather){
     horizonHaze=lerp(0.38,0.70,precipitation.intensity)+(code<=55?0.06:0);
     lightDiffusion=lerp(0.68,0.91,precipitation.intensity);
     airClarity=lerp(0.62,0.25,precipitation.intensity)-(code<=55?0.04:0);
+  }else if(bucket==='freezing'){
+    cloudDensity=lerp(0.80,0.96,precipitation.intensity);
+    horizonHaze=lerp(0.48,0.72,precipitation.intensity);
+    lightDiffusion=lerp(0.78,0.93,precipitation.intensity);
+    airClarity=lerp(0.50,0.24,precipitation.intensity);
+  }else if(bucket==='snow'){
+    cloudDensity=lerp(0.68,0.92,precipitation.intensity);
+    horizonHaze=lerp(0.48,0.82,precipitation.intensity);
+    lightDiffusion=lerp(0.80,0.96,precipitation.intensity);
+    airClarity=lerp(0.52,0.18,precipitation.intensity);
+  }else if(bucket==='hail'){
+    horizonHaze=lerp(0.54,0.72,precipitation.intensity);
+    airClarity=lerp(0.34,0.16,precipitation.intensity);
   }
   return{
     condition:bucket,
@@ -138,6 +165,8 @@ function deriveAtmosphericState(weather){
     precipitationIntensity:precipitation.intensity,
     precipitationIntermittency:precipitation.intermittency,
     precipitationScale:precipitation.dropletScale,
+    precipitationFlutter:precipitation.flutter,
+    precipitationGrain:precipitation.grain,
     iceFraction:precipitation.iceFraction,
     stormEnergy:precipitation.stormEnergy,
     horizonHaze:Math.max(0,Math.min(1,horizonHaze)),

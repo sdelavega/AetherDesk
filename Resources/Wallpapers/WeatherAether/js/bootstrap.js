@@ -5,7 +5,11 @@ var PREVIEW_CODES={
   'light-drizzle':51,'moderate-drizzle':53,'dense-drizzle':55,
   'slight-rain':61,'moderate-rain':63,'heavy-rain':65,
   'slight-showers':80,'moderate-showers':81,'violent-showers':82,
-  freezing:66,snow:73,thunder:95,hail:99
+  'light-freezing-drizzle':56,'dense-freezing-drizzle':57,
+  freezing:66,'light-freezing-rain':66,'heavy-freezing-rain':67,
+  snow:73,'slight-snow':71,'moderate-snow':73,'heavy-snow':75,'snow-grains':77,
+  'slight-snow-showers':85,'heavy-snow-showers':86,
+  thunder:95,hail:99,'slight-hail':96,'heavy-hail':99
 };
 
 function readPreviewConfig(){

@@ -1,10 +1,10 @@
 'use strict';
 
-var THREE_ATMOSPHERE_REVISION='rain-modulation-1';
+var THREE_ATMOSPHERE_REVISION='precipitation-modulation-1';
 var THREE_QUALITY_PROFILES={
-  eco:{name:'eco',pixelRatio:0.55,fps:15,motionFps:30,steps:4,rainCount:80,snowCount:70,hailCount:100},
-  balanced:{name:'balanced',pixelRatio:0.85,fps:24,motionFps:60,steps:7,rainCount:160,snowCount:130,hailCount:190},
-  showcase:{name:'showcase',pixelRatio:1.15,fps:30,motionFps:60,steps:9,rainCount:240,snowCount:200,hailCount:280}
+  eco:{name:'eco',pixelRatio:0.55,fps:15,motionFps:30,steps:4,rainCount:80,freezingCount:80,snowCount:70,hailCount:100},
+  balanced:{name:'balanced',pixelRatio:0.85,fps:24,motionFps:60,steps:7,rainCount:160,freezingCount:160,snowCount:130,hailCount:190},
+  showcase:{name:'showcase',pixelRatio:1.15,fps:30,motionFps:60,steps:9,rainCount:240,freezingCount:240,snowCount:200,hailCount:280}
 };
 
 function getThreeQualityProfile(){
@@ -184,12 +184,71 @@ var THREE_RAIN_FRAGMENT=[
   '}'
 ].join('\n');
 
+var THREE_FREEZING_VERTEX=[
+  'uniform float uTime;',
+  'uniform float uPixelRatio;',
+  'uniform float uAspect;',
+  'uniform float uWind;',
+  'uniform float uSpeed;',
+  'uniform float uDropScale;',
+  'uniform float uIceFraction;',
+  'attribute float aSpeed;',
+  'attribute float aLength;',
+  'attribute float aSize;',
+  'attribute float aOpacity;',
+  'attribute float aPhase;',
+  'attribute float aIce;',
+  'varying float vOpacity;',
+  'varying float vIce;',
+  'varying float vWind;',
+  'void main(){',
+  '  float fall=4.0-mod(aPhase+uTime*aSpeed*uSpeed,8.0);',
+  '  vec3 p=position;',
+  '  p.y=fall;',
+  '  float halfWidth=0.46*(5.0-p.z)*uAspect;',
+  '  p.x=p.x*halfWidth+uWind*(4.0-fall)*0.10;',
+  '  vec4 viewPosition=modelViewMatrix*vec4(p,1.0);',
+  '  float perspective=clamp(2.6/max(0.8,-viewPosition.z),0.38,1.65);',
+  '  vIce=step(aIce,uIceFraction);',
+  '  float pointSize=mix(aLength*uDropScale,aSize,vIce);',
+  '  gl_PointSize=clamp(pointSize*uPixelRatio*perspective,1.5,48.0);',
+  '  gl_Position=projectionMatrix*viewPosition;',
+  '  vOpacity=aOpacity*clamp(perspective,0.38,1.0);',
+  '  vWind=uWind;',
+  '}',
+].join('\n');
+
+var THREE_FREEZING_FRAGMENT=[
+  'precision mediump float;',
+  'uniform vec3 uLiquidColor;',
+  'uniform vec3 uIceColor;',
+  'uniform float uOpacity;',
+  'varying float vOpacity;',
+  'varying float vIce;',
+  'varying float vWind;',
+  'void main(){',
+  '  vec2 particle=gl_PointCoord-vec2(0.5);',
+  '  vec2 drop=particle;',
+  '  drop.x-=drop.y*vWind*0.13;',
+  '  float dropCore=1.0-smoothstep(0.026,0.080,abs(drop.x));',
+  '  float dropEnds=1.0-smoothstep(0.38,0.50,abs(drop.y));',
+  '  float pellet=1.0-smoothstep(0.34,0.50,length(particle));',
+  '  float shape=mix(dropCore*dropEnds,pellet,vIce);',
+  '  float alpha=shape*vOpacity*uOpacity;',
+  '  if(alpha<0.01)discard;',
+  '  vec3 color=mix(uLiquidColor,uIceColor,vIce);',
+  '  gl_FragColor=vec4(color,alpha);',
+  '}',
+].join('\n');
+
 var THREE_SNOW_VERTEX=[
   'uniform float uTime;',
   'uniform float uPixelRatio;',
   'uniform float uAspect;',
   'uniform float uWind;',
   'uniform float uSpeed;',
+  'uniform float uFlakeScale;',
+  'uniform float uFlutter;',
   'attribute float aSpeed;',
   'attribute float aSize;',
   'attribute float aOpacity;',
@@ -202,11 +261,11 @@ var THREE_SNOW_VERTEX=[
   '  vec3 p=position;',
   '  p.y=fall;',
   '  float halfWidth=0.46*(5.0-p.z)*uAspect;',
-  '  float flutter=sin(uTime*aWobble+aPhase*2.7)*(0.07+0.035*aWobble);',
+  '  float flutter=sin(uTime*aWobble+aPhase*2.7)*(0.07+0.035*aWobble)*uFlutter;',
   '  p.x=p.x*halfWidth+flutter+uWind*(4.0-fall)*0.045;',
   '  vec4 viewPosition=modelViewMatrix*vec4(p,1.0);',
   '  float perspective=clamp(2.6/max(0.8,-viewPosition.z),0.38,1.65);',
-  '  gl_PointSize=clamp(aSize*uPixelRatio*perspective,1.2,18.0);',
+  '  gl_PointSize=clamp(aSize*uFlakeScale*uPixelRatio*perspective,1.0,20.0);',
   '  gl_Position=projectionMatrix*viewPosition;',
   '  vOpacity=aOpacity*clamp(perspective,0.42,1.0);',
   '  vSparkle=0.5+0.5*sin(uTime*(0.7+aWobble*0.2)+aPhase);',
@@ -217,16 +276,19 @@ var THREE_SNOW_FRAGMENT=[
   'precision mediump float;',
   'uniform vec3 uColor;',
   'uniform float uOpacity;',
+  'uniform float uGrain;',
   'varying float vOpacity;',
   'varying float vSparkle;',
   'void main(){',
   '  vec2 flake=gl_PointCoord-vec2(0.5);',
   '  float radius=length(flake);',
-  '  float body=1.0-smoothstep(0.24,0.50,radius);',
+  '  float softBody=1.0-smoothstep(0.24,0.50,radius);',
+  '  float hardBody=1.0-smoothstep(0.36,0.49,radius);',
+  '  float body=mix(softBody,hardBody,uGrain);',
   '  float core=1.0-smoothstep(0.0,0.20,radius);',
   '  float alpha=(body*0.72+core*0.28)*vOpacity*uOpacity;',
   '  if(alpha<0.01)discard;',
-  '  vec3 flakeColor=mix(uColor,vec3(1.0),vSparkle*0.10);',
+  '  vec3 flakeColor=mix(uColor,vec3(1.0),vSparkle*0.10*(1.0-uGrain));',
   '  gl_FragColor=vec4(flakeColor,alpha);',
   '}'
 ].join('\n');
@@ -237,6 +299,7 @@ var THREE_HAIL_VERTEX=[
   'uniform float uAspect;',
   'uniform float uWind;',
   'uniform float uSpeed;',
+  'uniform float uPelletScale;',
   'attribute float aSpeed;',
   'attribute float aSize;',
   'attribute float aOpacity;',
@@ -251,7 +314,7 @@ var THREE_HAIL_VERTEX=[
   '  p.x=p.x*halfWidth+uWind*(4.0-fall)*0.16;',
   '  vec4 viewPosition=modelViewMatrix*vec4(p,1.0);',
   '  float perspective=clamp(2.6/max(0.8,-viewPosition.z),0.38,1.65);',
-  '  gl_PointSize=clamp(aSize*uPixelRatio*perspective,2.0,16.0);',
+  '  gl_PointSize=clamp(aSize*uPelletScale*uPixelRatio*perspective,1.5,20.0);',
   '  gl_Position=projectionMatrix*viewPosition;',
   '  vOpacity=aOpacity*clamp(perspective,0.42,1.0);',
   '  vNearness=perspective;',
@@ -308,6 +371,7 @@ function reportWeatherRendererStatus(){
     steps:S.threeAtmosphere?S.threeAtmosphere.quality.steps:getThreeQualityProfile().steps,
     volume:volume,
     rain:!!(S.threeRain&&S.threeRain.active),
+    freezing:!!(S.threeFreezing&&S.threeFreezing.active),
     snow:!!(S.threeSnow&&S.threeSnow.active),
     hail:!!(S.threeHail&&S.threeHail.active),
     precipitationIntensity:atmosphere.precipitationIntensity||0,
@@ -376,6 +440,7 @@ function initializeThreeAtmosphere(){
       motionPerformance:{startedAt:0,lastRenderedAt:0,frames:0,submitTotal:0,submitMax:0,intervals:[]}
     };
     initializeThreeRain(api,S.threeAtmosphere);
+    initializeThreeFreezing(api,S.threeAtmosphere);
     initializeThreeSnow(api,S.threeAtmosphere);
     initializeThreeHail(api,S.threeAtmosphere);
     S.threeShaderError=null;
@@ -451,6 +516,74 @@ function updateThreeRain(timestamp,atmosphere){
   }
 }
 
+function initializeThreeFreezing(api,state){
+  var maximum=THREE_QUALITY_PROFILES.showcase.freezingCount;
+  var positions=[],speeds=[],lengths=[],sizes=[],opacities=[],phases=[],iceSeeds=[];
+  var random=seededRandom(41863);
+  for(var i=0;i<maximum;i++){
+    var nearness=Math.pow(random(),0.74);
+    positions.push(random()*2-1,(random()-0.5)*8,-2.2+nearness*5.7);
+    speeds.push(1.30+nearness*2.35+random()*0.48);
+    lengths.push(8+nearness*18+random()*4);
+    sizes.push(2.1+nearness*5.0+random()*1.6);
+    opacities.push(0.20+nearness*0.54);
+    phases.push(random()*8);
+    iceSeeds.push(random());
+  }
+  var geometry=new api.BufferGeometry();
+  geometry.setAttribute('position',new api.Float32BufferAttribute(positions,3));
+  geometry.setAttribute('aSpeed',new api.Float32BufferAttribute(speeds,1));
+  geometry.setAttribute('aLength',new api.Float32BufferAttribute(lengths,1));
+  geometry.setAttribute('aSize',new api.Float32BufferAttribute(sizes,1));
+  geometry.setAttribute('aOpacity',new api.Float32BufferAttribute(opacities,1));
+  geometry.setAttribute('aPhase',new api.Float32BufferAttribute(phases,1));
+  geometry.setAttribute('aIce',new api.Float32BufferAttribute(iceSeeds,1));
+  geometry.setDrawRange(0,state.quality.freezingCount);
+  var material=new api.ShaderMaterial({
+    vertexShader:THREE_FREEZING_VERTEX,fragmentShader:THREE_FREEZING_FRAGMENT,
+    transparent:true,depthTest:false,depthWrite:false,
+    uniforms:{
+      uTime:{value:0},uPixelRatio:{value:state.renderer.getPixelRatio()},uAspect:{value:1},uWind:{value:0},
+      uSpeed:{value:1},uDropScale:{value:1},uIceFraction:{value:0.08},
+      uLiquidColor:{value:new api.Color(0.63,0.74,0.88)},uIceColor:{value:new api.Color(0.82,0.90,0.98)},uOpacity:{value:0.66}
+    }
+  });
+  var points=new api.Points(geometry,material);
+  points.frustumCulled=false;points.renderOrder=54;points.visible=false;
+  state.presentationScene.add(points);
+  S.threeFreezing={points:points,geometry:geometry,material:material,active:false,qualityCount:state.quality.freezingCount};
+}
+
+function rendersThreeFreezing(){
+  return!!(S.useThreeRenderer&&S.threeFreezing&&S.threeFreezing.active);
+}
+
+function updateThreeFreezing(timestamp,atmosphere){
+  var freezing=S.threeFreezing;
+  if(!freezing)return;
+  var active=S.props.showParticles&&atmosphere.condition==='freezing';
+  freezing.active=active;freezing.points.visible=active;
+  if(!active)return;
+  var intensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+  var activity=getPrecipitationActivity(atmosphere,S.motionTime);
+  var visibleFraction=lerp(0.22,1,intensity)*lerp(0.34,1,activity);
+  freezing.geometry.setDrawRange(0,Math.max(10,Math.round(freezing.qualityCount*visibleFraction)));
+  var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
+  freezing.material.uniforms.uTime.value=timestamp/1000;
+  freezing.material.uniforms.uWind.value=Math.sin(toward)*(0.24+atmosphere.motionEnergy*0.62);
+  freezing.material.uniforms.uSpeed.value=S.props.animationSpeed*lerp(0.60,1.16,intensity)*(0.86+atmosphere.motionEnergy*0.30);
+  freezing.material.uniforms.uDropScale.value=(atmosphere.precipitationScale||1)*lerp(0.84,1.08,intensity);
+  freezing.material.uniforms.uIceFraction.value=atmosphere.iceFraction||0.06;
+  freezing.material.uniforms.uOpacity.value=lerp(0.42,0.78,intensity)*lerp(0.76,1,activity);
+  var lightKey=getCloudLightingKey(atmosphere,wallpaperNow());
+  if(freezing.lastLightKey!==lightKey){
+    var lighting=getPrecipitationLighting(atmosphere,wallpaperNow());
+    freezing.material.uniforms.uLiquidColor.value.copy(threeColor(lighting.rain));
+    freezing.material.uniforms.uIceColor.value.copy(threeColor(lighting.freezing));
+    freezing.lastLightKey=lightKey;
+  }
+}
+
 function initializeThreeSnow(api,state){
   var maximum=THREE_QUALITY_PROFILES.showcase.snowCount;
   var positions=[],speeds=[],sizes=[],opacities=[],phases=[],wobbles=[];
@@ -477,13 +610,14 @@ function initializeThreeSnow(api,state){
     transparent:true,depthTest:false,depthWrite:false,
     uniforms:{
       uTime:{value:0},uPixelRatio:{value:state.renderer.getPixelRatio()},uAspect:{value:1},uWind:{value:0},
-      uSpeed:{value:1},uColor:{value:new api.Color(0.86,0.90,0.97)},uOpacity:{value:0.78}
+      uSpeed:{value:1},uFlakeScale:{value:1},uFlutter:{value:0.72},uGrain:{value:0},
+      uColor:{value:new api.Color(0.86,0.90,0.97)},uOpacity:{value:0.78}
     }
   });
   var points=new api.Points(geometry,material);
   points.frustumCulled=false;points.renderOrder=55;points.visible=false;
   state.presentationScene.add(points);
-  S.threeSnow={points:points,geometry:geometry,material:material,active:false};
+  S.threeSnow={points:points,geometry:geometry,material:material,active:false,qualityCount:state.quality.snowCount};
 }
 
 function rendersThreeSnow(){
@@ -496,10 +630,18 @@ function updateThreeSnow(timestamp,atmosphere){
   var active=S.props.showParticles&&atmosphere.condition==='snow';
   snow.active=active;snow.points.visible=active;
   if(!active)return;
+  var intensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+  var activity=getPrecipitationActivity(atmosphere,S.motionTime);
+  var visibleFraction=lerp(0.24,1,intensity)*lerp(0.30,1,activity);
+  snow.geometry.setDrawRange(0,Math.max(10,Math.round(snow.qualityCount*visibleFraction)));
   var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
   snow.material.uniforms.uTime.value=timestamp/1000;
   snow.material.uniforms.uWind.value=Math.sin(toward)*(0.18+atmosphere.motionEnergy*0.46);
-  snow.material.uniforms.uSpeed.value=S.props.animationSpeed*(0.72+atmosphere.motionEnergy*0.42);
+  snow.material.uniforms.uSpeed.value=S.props.animationSpeed*lerp(0.66,1.10,intensity)*(0.78+atmosphere.motionEnergy*0.32);
+  snow.material.uniforms.uFlakeScale.value=(atmosphere.precipitationScale||1)*lerp(0.88,1.08,intensity);
+  snow.material.uniforms.uFlutter.value=atmosphere.precipitationFlutter==null?0.72:atmosphere.precipitationFlutter;
+  snow.material.uniforms.uGrain.value=atmosphere.precipitationGrain||0;
+  snow.material.uniforms.uOpacity.value=lerp(0.54,0.86,intensity)*lerp(0.74,1,activity);
   var lightKey=getCloudLightingKey(atmosphere,wallpaperNow());
   if(snow.lastLightKey!==lightKey){
     var lighting=getPrecipitationLighting(atmosphere,wallpaperNow());
@@ -533,13 +675,13 @@ function initializeThreeHail(api,state){
     transparent:true,depthTest:false,depthWrite:false,
     uniforms:{
       uTime:{value:0},uPixelRatio:{value:state.renderer.getPixelRatio()},uAspect:{value:1},uWind:{value:0},
-      uSpeed:{value:1},uColor:{value:new api.Color(0.80,0.88,0.96)},uOpacity:{value:0.92}
+      uSpeed:{value:1},uPelletScale:{value:1},uColor:{value:new api.Color(0.80,0.88,0.96)},uOpacity:{value:0.92}
     }
   });
   var points=new api.Points(geometry,material);
   points.frustumCulled=false;points.renderOrder=58;points.visible=false;
   state.presentationScene.add(points);
-  S.threeHail={points:points,geometry:geometry,material:material,active:false};
+  S.threeHail={points:points,geometry:geometry,material:material,active:false,qualityCount:state.quality.hailCount};
 }
 
 function rendersThreeHail(){
@@ -552,10 +694,16 @@ function updateThreeHail(timestamp,atmosphere){
   var active=S.props.showParticles&&atmosphere.condition==='hail';
   hail.active=active;hail.points.visible=active;
   if(!active)return;
+  var intensity=atmosphere.precipitationIntensity||atmosphere.precipitation;
+  var activity=getPrecipitationActivity(atmosphere,S.motionTime);
+  var visibleFraction=lerp(0.26,1,intensity)*lerp(0.32,1,activity);
+  hail.geometry.setDrawRange(0,Math.max(12,Math.round(hail.qualityCount*visibleFraction)));
   var toward=((atmosphere.windDirection+180)%360)*Math.PI/180;
   hail.material.uniforms.uTime.value=timestamp/1000;
   hail.material.uniforms.uWind.value=Math.sin(toward)*(0.46+atmosphere.motionEnergy*0.84);
-  hail.material.uniforms.uSpeed.value=S.props.animationSpeed*(0.98+atmosphere.motionEnergy*0.62);
+  hail.material.uniforms.uSpeed.value=S.props.animationSpeed*lerp(0.78,1.34,intensity)*(0.88+atmosphere.motionEnergy*0.36);
+  hail.material.uniforms.uPelletScale.value=(atmosphere.precipitationScale||1)*lerp(0.86,1.10,intensity);
+  hail.material.uniforms.uOpacity.value=lerp(0.66,0.96,intensity)*lerp(0.76,1,activity);
   var lightKey=getCloudLightingKey(atmosphere,wallpaperNow());
   if(hail.lastLightKey!==lightKey){
     var lighting=getPrecipitationLighting(atmosphere,wallpaperNow());
@@ -600,6 +748,7 @@ function resizeThreeAtmosphere(w,h){
   var drawingSize=S.threeAtmosphere.renderer.getDrawingBufferSize(new WeatherAetherThree.Vector2());
   S.threeAtmosphere.atmosphereTarget.setSize(Math.max(1,drawingSize.x),Math.max(1,drawingSize.y));
   if(S.threeRain)S.threeRain.material.uniforms.uAspect.value=w/Math.max(1,h);
+  if(S.threeFreezing)S.threeFreezing.material.uniforms.uAspect.value=w/Math.max(1,h);
   if(S.threeSnow)S.threeSnow.material.uniforms.uAspect.value=w/Math.max(1,h);
   if(S.threeHail)S.threeHail.material.uniforms.uAspect.value=w/Math.max(1,h);
 }
@@ -777,9 +926,10 @@ function renderThreePresentation(timestamp,atmosphereChanged){
   if(!S.useThreeRenderer||!state)return;
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   updateThreeRain(timestamp,atmosphere);
+  updateThreeFreezing(timestamp,atmosphere);
   updateThreeSnow(timestamp,atmosphere);
   updateThreeHail(timestamp,atmosphere);
-  var targetFps=(rendersThreeRain()||rendersThreeSnow()||rendersThreeHail())?state.quality.motionFps:state.quality.fps;
+  var targetFps=(rendersThreeRain()||rendersThreeFreezing()||rendersThreeSnow()||rendersThreeHail())?state.quality.motionFps:state.quality.fps;
   if(atmosphereChanged){
     state.nextPresentationFrame=timestamp+1000/targetFps;
   }else if(!claimThreeFrame(state,'nextPresentationFrame',timestamp,targetFps))return;

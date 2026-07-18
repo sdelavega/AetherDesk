@@ -114,7 +114,7 @@ var S={
   animationFrameId:null,refreshTimeout:null,lastFrameTime:0,fetchSeq:0,
   lightningAlpha:0,lightningBolt:null,lightningBoltAlpha:0,lightningCooldown:5,fogAlpha:0,motionTime:0,windGust:1,
   canvas:null,ctx:null,iconCache:{},skyPaintCache:null,moonTexture:null,
-  useThreeRenderer:false,threeAtmosphere:null,threeClouds:null,threeRain:null,threeSnow:null,threeHail:null
+  useThreeRenderer:false,threeAtmosphere:null,threeClouds:null,threeRain:null,threeFreezing:null,threeSnow:null,threeHail:null
 };
 
 function lerp(a,b,t){return a+(b-a)*t}

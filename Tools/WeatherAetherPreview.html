@@ -28,6 +28,9 @@ figcaption{position:absolute;left:12px;bottom:10px;padding:5px 9px;border-radius
     <label for="view">Preview set
       <select id="view">
         <option value="rain" selected>Rain intensity</option>
+        <option value="snow">Snow intensity</option>
+        <option value="freezing">Freezing precipitation</option>
+        <option value="hail">Hail intensity</option>
         <option value="weather">All weather states</option>
       </select>
     </label>
@@ -79,6 +82,24 @@ rain:[
   {key:'slight-showers',label:'Slight showers · intermittent'},
   {key:'moderate-showers',label:'Moderate showers · intermittent'},
   {key:'violent-showers',label:'Violent showers · intermittent'}
+],
+snow:[
+  {key:'slight-snow',label:'Slight snow · 32%'},
+  {key:'moderate-snow',label:'Moderate snow · 60%'},
+  {key:'heavy-snow',label:'Heavy snow · 100%'},
+  {key:'snow-grains',label:'Snow grains · small and hard'},
+  {key:'slight-snow-showers',label:'Slight snow showers · intermittent'},
+  {key:'heavy-snow-showers',label:'Heavy snow showers · intermittent'}
+],
+freezing:[
+  {key:'light-freezing-drizzle',label:'Light freezing drizzle · 22%'},
+  {key:'dense-freezing-drizzle',label:'Dense freezing drizzle · 48%'},
+  {key:'light-freezing-rain',label:'Light freezing rain · 52%'},
+  {key:'heavy-freezing-rain',label:'Heavy freezing rain · 92%'}
+],
+hail:[
+  {key:'slight-hail',label:'Thunderstorm with slight hail · 62%'},
+  {key:'heavy-hail',label:'Thunderstorm with heavy hail · 100%'}
 ]};
 var gallery=document.getElementById('gallery');
 var view=document.getElementById('view');
@@ -116,8 +137,8 @@ window.addEventListener('message',function(event){
       status.textContent='THREE · '+data.quality+' · '+data.metrics.fps.toFixed(1)+'/'+data.targetFps+' fps · '+data.steps+' steps · '+
         data.metrics.p95.toFixed(1)+' ms p95 · '+data.metrics.submitAverage.toFixed(2)+' ms submit · '+
         data.metrics.width+'×'+data.metrics.height+' · '+data.metrics.drawCalls+' draw · volume '+(data.volume?'on':'off')+
-        (data.rain?' · intensity '+Math.round(data.precipitationIntensity*100)+'% · activity '+Math.round(data.precipitationActivity*100)+'%':'')+
-        ((data.rain||data.snow||data.hail)&&data.motionMetrics?' · motion '+data.motionMetrics.fps.toFixed(1)+'/'+data.motionTargetFps+' fps · '+data.motionMetrics.p95.toFixed(1)+' ms p95 · '+data.motionMetrics.drawCalls+' draw · '+(data.rain?'rain 3D':data.snow?'snow 3D':'hail 3D'):'');
+        ((data.rain||data.freezing||data.snow||data.hail)?' · intensity '+Math.round(data.precipitationIntensity*100)+'% · activity '+Math.round(data.precipitationActivity*100)+'%':'')+
+        ((data.rain||data.freezing||data.snow||data.hail)&&data.motionMetrics?' · motion '+data.motionMetrics.fps.toFixed(1)+'/'+data.motionTargetFps+' fps · '+data.motionMetrics.p95.toFixed(1)+' ms p95 · '+data.motionMetrics.drawCalls+' draw · '+(data.rain?'rain 3D':data.freezing?'freezing 3D':data.snow?'snow 3D':'hail 3D'):'');
     }else{
       status.textContent=data.renderer.toUpperCase()+' · '+data.revision+
         (data.renderer==='three'?' · '+data.quality+' · volume '+(data.volume?'on':'off'):'');
