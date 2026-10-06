@@ -32,6 +32,11 @@ final class WeatherKitBridge {
     static let shared = WeatherKitBridge()
     private let service = WeatherService.shared
 
+    /// Forecast-location time zones keyed by lat/lon rounded to 2 decimals
+    /// (~1 km), so reverse geocoding runs once per location, not per refresh.
+    private var timeZoneCache: [String: TimeZone] = [:]
+    private let timeZoneCacheLock = NSLock()
+
     private init() {}
 
     // MARK: - Intercept check
@@ -86,12 +91,14 @@ final class WeatherKitBridge {
                     for: location,
                     including: .current, .hourly, .daily
                 )
+                let locationTimeZone = await self.timeZone(for: location)
                 let json = self.buildJSON(
                     current: current,
                     hourly: hourly,
                     daily: daily,
                     tempUnit: tempUnit,
-                    windUnit: windUnit
+                    windUnit: windUnit,
+                    timeZone: locationTimeZone
                 )
                 if let data = try? JSONSerialization.data(withJSONObject: json),
                    let body = String(data: data, encoding: .utf8) {
@@ -109,6 +116,25 @@ final class WeatherKitBridge {
                 self.performValidatedFallback(url: url, bundleID: bundleID, completion: completion)
             }
         }
+    }
+
+    // MARK: - Location time zone
+
+    /// Returns the forecast location's time zone, falling back to the Mac's
+    /// when reverse geocoding fails (offline, open ocean, throttled). Daily
+    /// `DayWeather.date` values are midnight in the location's zone, so they
+    /// must be formatted in that zone to name the right calendar day.
+    private func timeZone(for location: CLLocation) async -> TimeZone {
+        let key = String(format: "%.2f,%.2f", location.coordinate.latitude, location.coordinate.longitude)
+        if let cached = timeZoneCacheLock.withLock({ timeZoneCache[key] }) { return cached }
+
+        // CLGeocoder instances must not be shared across concurrent requests.
+        guard let resolved = try? await CLGeocoder().reverseGeocodeLocation(location).first?.timeZone else {
+            Logger.app.info("ÆtherDesk WeatherKitBridge: no time zone for forecast location, using current")
+            return .current
+        }
+        timeZoneCacheLock.withLock { timeZoneCache[key] = resolved }
+        return resolved
     }
 
     // MARK: - Open-Meteo fallback with native fetch guards
@@ -166,7 +192,8 @@ final class WeatherKitBridge {
         hourly: Forecast<HourWeather>,
         daily: Forecast<DayWeather>,
         tempUnit: String,
-        windUnit: String
+        windUnit: String,
+        timeZone: TimeZone
     ) -> [String: Any] {
 
         let useFahrenheit = (tempUnit == "fahrenheit")
@@ -188,9 +215,14 @@ final class WeatherKitBridge {
 
         let iso      = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
+        // Daily dates match open-meteo's `timezone=auto` output: the calendar
+        // day at the forecast location. Formatting in UTC shifted every day
+        // back by one for locations east of UTC. POSIX locale keeps the
+        // Gregorian calendar regardless of the user's calendar setting.
         let dateFmt  = DateFormatter()
+        dateFmt.locale     = Locale(identifier: "en_US_POSIX")
         dateFmt.dateFormat = "yyyy-MM-dd"
-        dateFmt.timeZone   = TimeZone(identifier: "UTC")
+        dateFmt.timeZone   = timeZone
 
         // Current conditions — keys must match open-meteo's response schema
         // because WeatherAether's JS parses them by name.
@@ -248,8 +280,9 @@ final class WeatherKitBridge {
         case .partlyCloudy:                            return 2   // partly cloudy
         case .mostlyCloudy, .cloudy:                   return 3   // overcast
         case .foggy:                                   return 45  // fog
-        case .haze, .smoky:                            return 4   // smoke/haze
-        case .blowingDust:                             return 7   // dust
+        case .smoky:                                   return 4   // smoke
+        case .haze:                                    return 5   // haze
+        case .blowingDust:                             return 7   // dust raised by wind
         case .drizzle:                                 return 51  // light drizzle
         case .freezingDrizzle:                         return 56  // light freezing drizzle
         case .rain:                                    return 61  // slight rain

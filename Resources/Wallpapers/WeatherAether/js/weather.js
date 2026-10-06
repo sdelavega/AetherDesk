@@ -54,9 +54,16 @@ function loadCachedLocation(){
 // Entry point for location resolution. Dispatches to geocodeManual() for a
 // typed location or autoLocation() for device/IP-based detection.
 // Returns a Promise<boolean> — true if location was resolved successfully.
+//
+// Sequence guard: init() starts resolving with the default (auto) properties
+// before the host injects saved ones, so an earlier resolution can still be in
+// flight — e.g. a CoreLocation fix arriving after the injected manual location
+// has geocoded. Every step checks `seq` and drops its result once a newer
+// resolution has started, so a stale result never overwrites S.lat/S.lon/S.label.
 function resolveLocation(){
-  if(S.props.locationMode==='manual')return geocodeManual(S.props.manualLocation);
-  return autoLocation();
+  var seq=++S.locSeq;
+  if(S.props.locationMode==='manual')return geocodeManual(S.props.manualLocation,seq);
+  return autoLocation(seq);
 }
 
 
@@ -74,12 +81,12 @@ function resolveLocation(){
 //   CoreLocation (geoTimer 5s) → reverseGeocode (BigDataCloud) → cache + resolve
 //                 ↓ (on CoreLocation failure)
 //   fetchIP (ipapi.co, 6s) → loadCachedLocation()
-function autoLocation(){
+function autoLocation(seq){
   return new Promise(function(resolve){
     var done=false;
     var geoTimer=setTimeout(function(){
       if(done)return;done=true;
-      fetchIP().then(function(ok){resolve(ok);});
+      fetchIP(seq).then(function(ok){resolve(ok);});
     },5000);
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(
@@ -90,17 +97,19 @@ function autoLocation(){
           // resolve() and trigger a weather refresh directly instead.
           var alreadyResolved=done;
           done=true;clearTimeout(geoTimer);
+          if(seq!==S.locSeq){if(!alreadyResolved)resolve(false);return;}
           S.lat=p.coords.latitude;S.lon=p.coords.longitude;
           reverseGeocode(S.lat,S.lon).then(function(label){
+            if(seq!==S.locSeq){if(!alreadyResolved)resolve(false);return;}
             S.label=label;cacheLocation();
             if(!alreadyResolved){resolve(true);}
             else{refreshWeather();}
           });
         },
-        function(){if(done)return;done=true;clearTimeout(geoTimer);fetchIP().then(function(ok){resolve(ok);});},
+        function(){if(done)return;done=true;clearTimeout(geoTimer);fetchIP(seq).then(function(ok){resolve(ok);});},
         {timeout:4000}
       );
-    }else{clearTimeout(geoTimer);fetchIP().then(function(ok){resolve(ok);});}
+    }else{clearTimeout(geoTimer);fetchIP(seq).then(function(ok){resolve(ok);});}
   });
 }
 
@@ -136,19 +145,20 @@ function reverseGeocode(lat,lon){
 // CoreLocation is unavailable or denied. Constructs a human-readable label
 // from city + region + country fields. Falls through to fallbackLoc() (last
 // cached location) if the request fails or returns incomplete data.
-function fetchIP(){
+function fetchIP(seq){
   return fetchWithTimeout('https://ipapi.co/json/',6000)
     .then(function(r){return r.json();})
     .then(function(d){
+      if(seq!==S.locSeq)return false;
       if(d.latitude!=null&&d.longitude!=null){
         S.lat=d.latitude;S.lon=d.longitude;
         S.label=((d.city||'Unknown')+(d.region_code?', '+d.region_code:'')).trim();
         if(!S.label)S.label=d.city||'Unknown';
         cacheLocation();return true;
       }
-      return fallbackLoc();
+      return fallbackLoc(seq);
     })
-    .catch(function(){return fallbackLoc();});
+    .catch(function(){return fallbackLoc(seq);});
 }
 
 
@@ -160,11 +170,12 @@ function fetchIP(){
 // is unavailable and all IP-geolocation services are DNS-blocked, as long as
 // the user's configured manualLocation resolves. Returns a boolean or
 // Promise<boolean>; both are safe to return from a Promise .catch() handler.
-function fallbackLoc(){
+function fallbackLoc(seq){
+  if(seq!==S.locSeq)return false;
   var loc=loadCachedLocation();
   if(loc){S.lat=loc.lat;S.lon=loc.lon;S.label=loc.label;return true;}
   if(S.props.manualLocation&&S.props.manualLocation.trim()){
-    return geocodeManual(S.props.manualLocation);
+    return geocodeManual(S.props.manualLocation,seq);
   }
   return false;
 }
@@ -175,7 +186,7 @@ function fallbackLoc(){
 // using the Open-Meteo geocoding API. Free, no key required. Shows an error
 // pill if the location string isn't recognised. Called when locationMode is
 // 'manual' or when the manualLocation property changes.
-function geocodeManual(q){
+function geocodeManual(q,seq){
   if(!q||!q.trim()){showPill("couldn't find ''");return Promise.resolve(false);}
   var url=new URL('https://geocoding-api.open-meteo.com/v1/search');
   url.searchParams.set('name',q.trim());
@@ -184,13 +195,14 @@ function geocodeManual(q){
   return fetchWithTimeout(url.toString(),6000)
     .then(function(r){return r.json();})
     .then(function(d){
+      if(seq!==S.locSeq)return false;
       if(!d.results||d.results.length===0){showPill("couldn't find '"+q+"'");return false;}
       var r0=d.results[0];
       S.lat=r0.latitude;S.lon=r0.longitude;
       S.label=r0.name+(r0.admin1?', '+r0.admin1:'');
       cacheLocation();hidePill();return true;
     })
-    .catch(function(){showPill("couldn't find '"+q+"'");return false;});
+    .catch(function(){if(seq===S.locSeq)showPill("couldn't find '"+q+"'");return false;});
 }
 
 
@@ -286,6 +298,21 @@ function scheduleRefresh(){
 }
 
 
+// ── parseApiTime() ───────────────────────────────────────────────────────────
+// Open-Meteo (timezone=auto) returns times local to the forecast location with
+// no offset, e.g. "2026-10-06T07:12", plus a top-level utc_offset_seconds.
+// new Date() would read such a string in the Mac's zone, misplacing the sun
+// whenever the location is in another time zone (a manual location abroad).
+// Strings with an explicit offset (the WeatherKit bridge emits "...Z") and
+// responses without utc_offset_seconds (preview data) parse as before.
+function parseApiTime(s,offsetSec){
+  if(typeof offsetSec!=='number'||/(Z|[+-]\d\d:?\d\d)$/.test(s))return new Date(s);
+  var p=String(s).match(/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d))?$/);
+  if(!p)return new Date(s);
+  return new Date(Date.UTC(+p[1],p[2]-1,+p[3],+p[4],+p[5],+(p[6]||0))-offsetSec*1000);
+}
+
+
 // ── applyWeather() ───────────────────────────────────────────────────────────
 // Applies a weather API response object to the global state and re-renders the
 // UI. Called both with fresh data (from refreshWeather) and stale data (from
@@ -304,8 +331,8 @@ function applyWeather(d){
   var daily=d.daily;
   if(cur.is_day!==undefined)S.isDay=cur.is_day===1;
   if(daily&&daily.sunrise&&daily.sunrise.length>0){
-    S.sunrise=new Date(daily.sunrise[0]);
-    S.sunset=new Date(daily.sunset[0]);
+    S.sunrise=parseApiTime(daily.sunrise[0],d.utc_offset_seconds);
+    S.sunset=parseApiTime(daily.sunset[0],d.utc_offset_seconds);
   }
   var nb=wmoBucket(cur.weather_code);
   S.atmosphere=deriveAtmosphericState(d);

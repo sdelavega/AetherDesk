@@ -41,15 +41,15 @@
 </head>
 <body>
   <h1>ÆtherDesk Privacy Policy</h1>
-  <p class="updated">Last updated: May 2026</p>
+  <p class="updated">Last updated: October 2026</p>
 
   <p>ÆtherDesk is a macOS application that displays live wallpapers on your desktop.
   We are committed to your privacy. This policy explains what data ÆtherDesk does
   and does not collect.</p>
 
   <h2>No Data Collected</h2>
-  <p>ÆtherDesk does not collect, store, transmit, or share any personal information.
-  Specifically:</p>
+  <p>ÆtherDesk does not collect any personal information, and we operate no servers
+  that could receive it. Specifically:</p>
   <ul>
     <li>No account or registration is required.</li>
     <li>No analytics or usage telemetry is gathered.</li>
@@ -58,15 +58,34 @@
   </ul>
 
   <h2>Location</h2>
-  <p>If you use a weather-based wallpaper, ÆtherDesk may request access to your
-  location. This is used solely to fetch local weather conditions via Apple's
-  WeatherKit framework. Your location is sent directly to Apple's servers under
-  Apple's own privacy policy and is never transmitted to us or any third party.</p>
+  <p>If you use the bundled Weather Aether wallpaper, ÆtherDesk may request access
+  to your location. Location is used only to show local weather and is never sent
+  to us. To do that, the wallpaper sends your location directly from your Mac to
+  the following services, each under its own privacy policy:</p>
+  <ul>
+    <li><strong>Apple WeatherKit</strong>: your coordinates, to fetch the forecast.</li>
+    <li><strong>Apple geocoding</strong>: your coordinates, to determine the
+      forecast location's time zone.</li>
+    <li><strong>Open-Meteo</strong> (open-meteo.com): your coordinates, to fetch the
+      forecast when WeatherKit is unavailable or you choose Open-Meteo as the weather
+      source; and the place name you type, if you set a location manually.</li>
+    <li><strong>BigDataCloud</strong> (bigdatacloud.com): your coordinates, to look
+      up the name of your city.</li>
+    <li><strong>ipapi</strong> (ipapi.co): if location access is denied or
+      unavailable, the wallpaper asks this service for an approximate location
+      based on your IP address.</li>
+  </ul>
+  <p>Setting a manual location in the wallpaper's properties avoids sending
+  device coordinates. Your last known location and forecast are cached locally on
+  your Mac so the wallpaper can display immediately at launch.</p>
 
   <h2>Network Access</h2>
   <p>Wallpapers may make outbound network requests to fetch live data (such as
-  weather). These requests are initiated by the wallpaper content and do not include
-  any personal information. ÆtherDesk does not operate any backend servers.</p>
+  weather). As with any internet request, the services contacted can see your
+  IP address. Wallpapers you import from third parties may contact services not
+  listed here; ÆtherDesk restricts them from reaching your local network by
+  default, but cannot control what remote services they use. ÆtherDesk does not
+  operate any backend servers.</p>
 
   <h2>Local Storage</h2>
   <p>ÆtherDesk stores your wallpaper preferences and settings locally on your Mac
