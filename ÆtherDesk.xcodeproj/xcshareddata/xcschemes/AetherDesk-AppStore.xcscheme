@@ -48,6 +48,17 @@
                ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "2F20865CB318B3567A5DFE06"
+               BuildableName = "AetherDeskStoreTests.xctest"
+               BlueprintName = "AetherDeskStoreTests"
+               ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
@@ -70,6 +81,9 @@
             ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <StoreKitConfigurationFileReference
+         identifier = "../../AetherDesk.storekit">
+      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "AppStore"

@@ -44,11 +44,16 @@ final class WeatherKitBridge {
     /// Returns true when the URL should be fulfilled by WeatherKit instead of
     /// being forwarded to URLSession. Only the forecast endpoint is intercepted;
     /// geocoding requests (geocoding-api.open-meteo.com) pass through normally.
-    /// Honors the user's `WeatherSourceSettingsStore` preference — when the
-    /// user has forced Open-Meteo-only, we never attempt WeatherKit at all.
+    /// Requires ÆtherDesk Premium (`PremiumStore`), then honors the user's
+    /// `WeatherSourceSettingsStore` preference — when the user has forced
+    /// Open-Meteo-only, we never attempt WeatherKit at all.
     static func shouldIntercept(_ url: URL) -> Bool {
         guard url.host == "api.open-meteo.com" else {
             Logger.app.info("ÆtherDesk WeatherKitBridge: not intercepting host \(url.host ?? "(nil)", privacy: .public)")
+            return false
+        }
+        guard PremiumStore.shared.isEntitled else {
+            Logger.app.info("ÆtherDesk WeatherKitBridge: forecast intercept disabled, Premium not active")
             return false
         }
         let preference = WeatherSourceSettingsStore.shared.load()

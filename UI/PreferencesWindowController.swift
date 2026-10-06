@@ -73,6 +73,11 @@ private final class PreferencesViewController: NSViewController {
     private var currentEditor: PropertyEditorViewController?
     private let wallpaperEditorContainer = NSView()
     private var contactedDomainsLabel: NSTextField?
+    #if AETHERDESK_STORE
+    private let premiumController = PremiumViewController()
+    private weak var weatherSourcePopup: NSPopUpButton?
+    private weak var weatherSourceCaption: NSTextField?
+    #endif
 
     override func loadView() {
         view = NSView()
@@ -103,6 +108,10 @@ private final class PreferencesViewController: NSViewController {
         tabView.addTabViewItem(tabViewItem(id: "general",     label: "General",     view: buildGeneralTab()))
         tabView.addTabViewItem(tabViewItem(id: "performance", label: "Performance", view: buildPerformanceTab()))
         tabView.addTabViewItem(tabViewItem(id: "wallpaper",   label: "Wallpaper",   view: buildWallpaperTab()))
+        #if AETHERDESK_STORE
+        addChild(premiumController)
+        tabView.addTabViewItem(tabViewItem(id: "premium",     label: "Premium",     view: premiumController.view))
+        #endif
         tabView.addTabViewItem(tabViewItem(id: "about",       label: "About",       view: buildAboutTab()))
     }
 
@@ -571,22 +580,20 @@ private final class PreferencesViewController: NSViewController {
             popup.addItem(withTitle: "Automatic (Apple Weather)")
             popup.addItem(withTitle: "Open-Meteo Only")
             popup.toolTip = "Automatic tries Apple Weather first and silently falls back to Open-Meteo if it's unavailable."
-            let preference = WeatherSourceSettingsStore.shared.load()
-            popup.selectItem(at: preference == .automatic ? 0 : 1)
             popup.target = self
             popup.action = #selector(weatherSourceChanged(_:))
             wallpaperEditorContainer.addSubview(popup)
 
-            let caption = NSTextField(wrappingLabelWithString:
-                "ÆtherDesk tries Apple Weather first and silently falls back to " +
-                "Open-Meteo if it's unavailable. The credit shown in the corner " +
-                "of the wallpaper always reflects whichever source actually " +
-                "supplied the data.")
+            let caption = NSTextField(wrappingLabelWithString: "")
             caption.font = NSFont.systemFont(ofSize: 11)
             caption.textColor = .secondaryLabelColor
             caption.translatesAutoresizingMaskIntoConstraints = false
             caption.lineBreakMode = .byWordWrapping
             wallpaperEditorContainer.addSubview(caption)
+
+            weatherSourcePopup = popup
+            weatherSourceCaption = caption
+            updateWeatherSourceControls()
 
             NSLayoutConstraint.activate([
                 sourceLabel.leadingAnchor.constraint(equalTo: wallpaperEditorContainer.leadingAnchor, constant: 10),
@@ -631,6 +638,13 @@ private final class PreferencesViewController: NSViewController {
             selector: #selector(handlePropertyChanged(_:)),
             name: PropertyEditorViewController.propertyChangedNotification,
             object: nil)
+        #if AETHERDESK_STORE
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(premiumStoreChanged),
+            name: PremiumStore.didChange,
+            object: nil)
+        #endif
     }
 
     @objc private func handlePropertyChanged(_ note: Notification) {
@@ -664,6 +678,33 @@ private final class PreferencesViewController: NSViewController {
         let preference: WeatherDataSourcePreference =
             (sender.indexOfSelectedItem == 0) ? .automatic : .openMeteoOnly
         WeatherSourceSettingsStore.shared.save(preference)
+    }
+
+    @objc private func premiumStoreChanged() {
+        updateWeatherSourceControls()
+    }
+
+    /// Apple Weather needs Premium. Without it the source is effectively
+    /// Open-Meteo regardless of the saved preference, so show that and point
+    /// at the Premium tab instead of offering a choice that can't take effect.
+    /// The saved preference is left alone so it applies again after purchase.
+    private func updateWeatherSourceControls() {
+        guard let popup = weatherSourcePopup, let caption = weatherSourceCaption else { return }
+        if PremiumStore.shared.isEntitled {
+            popup.isEnabled = true
+            popup.selectItem(at: WeatherSourceSettingsStore.shared.load() == .automatic ? 0 : 1)
+            caption.stringValue =
+                "ÆtherDesk tries Apple Weather first and silently falls back to " +
+                "Open-Meteo if it's unavailable. The credit shown in the corner " +
+                "of the wallpaper always reflects whichever source actually " +
+                "supplied the data."
+        } else {
+            popup.isEnabled = false
+            popup.selectItem(at: 1)
+            caption.stringValue =
+                "Apple Weather requires ÆtherDesk Premium (see the Premium tab). " +
+                "Until then, Weather Aether uses Open-Meteo."
+        }
     }
     #endif
 

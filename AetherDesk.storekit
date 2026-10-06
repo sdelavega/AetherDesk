@@ -1,0 +1,62 @@
+{
+  "identifier": "589A6826-8F89-4D44-8D11-B5F23D5B5284",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "9.99",
+      "familyShareable": false,
+      "internalID": "FDA3BB3D-9100-4528-B69F-FF555C2EDDB1",
+      "localizations": [
+        {
+          "description": "Unlock Apple Weather for Weather Aether, forever.",
+          "displayName": "Premium Lifetime",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.sdelavega.AetherDesk.premium",
+      "referenceName": "Premium Lifetime",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_developerTeamID": "N5PUFD82GV",
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [
+    {
+      "id": "A60D0BE5-DE15-4CE4-92DD-789F64982DAA",
+      "localizations": [],
+      "name": "Premium",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "2.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "B57ABEAF-93CD-4121-8F68-577363112824",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Apple Weather for Weather Aether, renewed yearly.",
+              "displayName": "Premium Yearly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.sdelavega.AetherDesk.premium.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Premium Yearly",
+          "subscriptionGroupID": "A60D0BE5-DE15-4CE4-92DD-789F64982DAA",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

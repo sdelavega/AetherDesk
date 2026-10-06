@@ -10,7 +10,7 @@ It reads Lively's bundle format directly, so a lot of community wallpapers just 
 
 ## Get It
 
-**TestFlight (App Store build):** The current build is on TestFlight while the App Store submission finishes review. Sandboxed, WeatherKit weather data, macOS 13.5+.
+**TestFlight (App Store build):** The current build is on TestFlight while the App Store submission finishes review. Sandboxed, macOS 14+. The app is free; an optional **ÆtherDesk Premium** in-app purchase (lifetime or yearly) switches WeatherAether to Apple Weather data. Without it, WeatherAether uses Open-Meteo, same as the OSS build. TestFlight purchases are free.
 
 [**Join the TestFlight Beta →**](https://testflight.apple.com/join/KFUDzBqY)
 
@@ -44,7 +44,7 @@ Four come in the box: `GradientWave`, `MatrixRain`, `NeonCity`, and `WeatherAeth
 
 Click the menu bar item, open the Wallpapers submenu, pick something. On a single display it's obvious. On multiple displays, the menu gives you per-display targeting and an "All Displays" shortcut.
 
-Preferences has four tabs: **General** (launch at login, updates, wallpaper folder), **Performance** (FPS, pause policies, network controls), **Wallpaper** (the picker, thumbnails, property editor, and a view of what domains the selected wallpaper talks to), and **About**.
+Preferences has four tabs: **General** (launch at login, updates, wallpaper folder), **Performance** (FPS, pause policies, network controls), **Wallpaper** (the picker, thumbnails, property editor, and a view of what domains the selected wallpaper talks to), and **About**. The App Store build adds a fifth, **Premium**, for buying or restoring Apple Weather access.
 
 Imported wallpapers get copied into Application Support and show up immediately. No restart, no drama.
 
@@ -95,21 +95,23 @@ Persistence is split into two stores: `WallpaperStore` for display-to-wallpaper 
 
 ## Building From Source
 
-Clone the repo and open `AetherDesk.xcodeproj` directly in Xcode. No package managers, no code generation step, no third-party dependencies — just AppKit, WebKit, AVFoundation, and the usual Apple stack.
+Clone the repo and open `ÆtherDesk.xcodeproj` directly in Xcode. No package managers, no code generation step, no third-party dependencies — just AppKit, WebKit, AVFoundation, StoreKit, and the usual Apple stack.
 
 ```bash
 git clone https://github.com/sdelavega/AetherDesk.git
 cd AetherDesk
-open AetherDesk.xcodeproj
+open ÆtherDesk.xcodeproj
 ```
 
-There are two build configurations and they're meaningfully different:
+There are two schemes and they're meaningfully different:
 
-**OSS (default):** Unsandboxed, pulls weather data from open-meteo, runs on macOS 12.0+. This is what you get if you just hit Run.
+**`AetherDesk` (OSS, default):** Unsandboxed, pulls weather data from open-meteo, runs on macOS 14+. This is what you get if you just hit Run.
 
-**App Store:** Sandboxed, uses WeatherKit for weather data, requires macOS 13.5+. WeatherKit requires a paid Apple Developer Program membership — if you don't have one, the weather wallpaper will silently fall back to open-meteo anyway, but the App Store scheme won't archive cleanly without valid entitlements. Switching to this config involves changing the scheme and signing settings; it's doable but not the default path.
+**`AetherDesk-AppStore`:** Sandboxed, macOS 14+, with WeatherKit behind the Premium in-app purchase. Running it from Xcode uses `AetherDesk.storekit` for local purchase testing, so you can buy, restore, and refund (Debug › StoreKit › Manage Transactions) without App Store Connect. WeatherKit itself requires a paid Apple Developer Program membership and the WeatherKit capability on your App ID; without them the weather wallpaper falls back to open-meteo, and the scheme won't archive cleanly.
 
-If you're just poking around or building for yourself, the OSS configuration is the one you want.
+If you're just poking around or building for yourself, the OSS scheme is the one you want.
+
+Tests: `AetherDesk` runs the unit tests (no signing needed). `AetherDesk-AppStore` also runs the StoreKit tests, which are hosted in the app and need your own signing team.
 
 ---
 

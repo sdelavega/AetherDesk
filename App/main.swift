@@ -98,6 +98,18 @@ if CommandLine.arguments.count == 6,
 }
 #endif
 
+// MARK: - Test host
+
+// When hosting AetherDeskStoreTests, run a bare NSApplication: no
+// single-instance exit (the user's own copy may be running), no wallpapers on
+// the desktop, no reads or writes of the user's settings. XCTest injects the
+// test bundle into this process and drives it.
+if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+    NSApplication.shared.setActivationPolicy(.accessory)
+    NSApplication.shared.run()
+    exit(0)
+}
+
 // MARK: - Normal launch
 
 // Single-instance guard: exit immediately if another copy is already running.
