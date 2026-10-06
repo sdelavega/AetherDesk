@@ -51,7 +51,7 @@ final class ContentRuleListManager {
     /// Covers ad/tracking networks and crypto miners.
     /// file:// resources are never matched by these domain patterns, so
     /// wallpaper local assets are always allowed through.
-    private static let blocklistJSON = #"""
+    static let blocklistJSON = #"""
     [
       { "trigger": { "url-filter": ".*\\.google-analytics\\.com.*"   }, "action": { "type": "block" } },
       { "trigger": { "url-filter": ".*analytics\\.google\\.com.*"    }, "action": { "type": "block" } },
@@ -80,7 +80,7 @@ final class ContentRuleListManager {
     ]
     """#
 
-    private static let externalNetworkBlockJSON = #"""
+    static let externalNetworkBlockJSON = #"""
     [
       {
         "trigger": { "url-filter": "^https?://.*" },
@@ -91,7 +91,7 @@ final class ContentRuleListManager {
 
     /// Blocks WebSocket (ws:// and wss://) connections to raw IPv4 and IPv6
     /// addresses. FQDN WebSocket connections are allowed through.
-    private static let rawIPWebSocketBlockJSON = #"""
+    static let rawIPWebSocketBlockJSON = #"""
     [
       {
         "trigger": { "url-filter": "^wss?://[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?" },
@@ -116,13 +116,17 @@ final class ContentRuleListManager {
     ///   - `*.local` (mDNS — can resolve to arbitrary LAN devices)
     ///   - Cloud metadata hostnames (metadata.google.internal,
     ///     metadata.azure.com, 169.254.169.254.nip.io, etc.)
-    private static let ssrfBlockJSON = #"""
+    ///
+    /// WebKit's url-filter rejects disjunctions (`a|b`) and the whole list
+    /// fails to compile, so host terminators are `[:/]` (WebKit normalizes
+    /// a bare host to end in `/`) rather than `([/:]|$)`.
+    static let ssrfBlockJSON = #"""
     [
       { "trigger": { "url-filter": "^https?://[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?\\.[0-9][0-9]?[0-9]?" }, "action": { "type": "block" } },
       { "trigger": { "url-filter": "^https?://\\[" }, "action": { "type": "block" } },
-      { "trigger": { "url-filter": "^https?://[^/]*localhost([/:]|$)" }, "action": { "type": "block" } },
-      { "trigger": { "url-filter": "^https?://[^/]*\\.localhost([/:]|$)" }, "action": { "type": "block" } },
-      { "trigger": { "url-filter": "^https?://[^/]*\\.local([/:]|$)" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://localhost[:/]" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://[^/]*\\.localhost[:/]" }, "action": { "type": "block" } },
+      { "trigger": { "url-filter": "^https?://[^/]*\\.local[:/]" }, "action": { "type": "block" } },
       { "trigger": { "url-filter": "^https?://metadata\\.google\\.internal" }, "action": { "type": "block" } },
       { "trigger": { "url-filter": "^https?://metadata\\.azure\\.com" }, "action": { "type": "block" } },
       { "trigger": { "url-filter": "^https?://[^/]*\\.nip\\.io" }, "action": { "type": "block" } },
