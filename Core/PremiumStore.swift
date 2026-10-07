@@ -103,8 +103,13 @@ final class PremiumStore {
                 self.products = sorted
                 NotificationCenter.default.post(name: Self.didChange, object: self)
             }
-            if loaded.isEmpty {
-                Logger.app.warning("ÆtherDesk PremiumStore: App Store returned no products")
+            let missing = ProductID.all.subtracting(loaded.map(\.id)).sorted()
+            if missing.isEmpty {
+                Logger.app.info("ÆtherDesk PremiumStore: loaded all products")
+            } else {
+                // The App Store silently omits products it can't serve (missing
+                // metadata or price, typo'd ID, not cleared for sale).
+                Logger.app.warning("ÆtherDesk PremiumStore: App Store did not return \(missing.joined(separator: ", "), privacy: .public); loaded \(loaded.map(\.id).sorted().joined(separator: ", "), privacy: .public)")
             }
         } catch {
             Logger.app.error("ÆtherDesk PremiumStore: product load failed: \(error.localizedDescription, privacy: .public)")

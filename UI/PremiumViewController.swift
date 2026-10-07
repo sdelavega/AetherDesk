@@ -111,8 +111,9 @@ final class PremiumViewController: NSViewController {
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        // Pick up products if the launch-time load failed (e.g. offline).
-        if PremiumStore.shared.products.isEmpty {
+        // Pick up products the launch-time load didn't get (offline, or a
+        // product that only became available in App Store Connect since).
+        if PremiumStore.shared.products.count < PremiumStore.ProductID.all.count {
             Task { await PremiumStore.shared.loadProducts() }
         }
     }
@@ -148,14 +149,18 @@ final class PremiumViewController: NSViewController {
         restoreButton.isEnabled = !isBusy
         manageButton.isHidden = !entitled
 
-        let yearly = products.first { $0.id == PremiumStore.ProductID.yearly }
-        let yearlyPrice = yearly?.displayPrice ?? "the listed price"
-        disclosureLabel.stringValue =
-            "Premium Yearly is an auto-renewing subscription. Payment is charged to your " +
-            "Apple Account at confirmation of purchase. It renews automatically at \(yearlyPrice) " +
-            "per year unless cancelled at least 24 hours before the end of the current period. " +
-            "Manage or cancel it in your App Store account settings. Premium Lifetime is a " +
-            "one-time purchase."
+        // Only describe the subscription when it's actually offered, so the
+        // terms always quote its real price.
+        if let yearly = products.first(where: { $0.id == PremiumStore.ProductID.yearly }) {
+            disclosureLabel.stringValue =
+                "Premium Yearly is an auto-renewing subscription. Payment is charged to your " +
+                "Apple Account at confirmation of purchase. It renews automatically at \(yearly.displayPrice) " +
+                "per year unless cancelled at least 24 hours before the end of the current period. " +
+                "Manage or cancel it in your App Store account settings. Premium Lifetime is a " +
+                "one-time purchase."
+        } else {
+            disclosureLabel.stringValue = "Premium Lifetime is a one-time purchase."
+        }
     }
 
     private func buyTitle(for product: Product) -> String {

@@ -54,7 +54,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "2F20865CB318B3567A5DFE06"
-               BuildableName = "AetherDeskStoreTests.xctest"
+               BuildableName = "&#xc6;therDesk.xctest"
                BlueprintName = "AetherDeskStoreTests"
                ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
             </BuildableReference>

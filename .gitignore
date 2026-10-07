@@ -70,3 +70,18 @@ release
 /.claude
 /.codex
 /.ai
+
+# Gortex (code intelligence)
+/.gortex/
+/.claude/
+/.agents/
+/.gemini/
+/.kiro/
+/.opencode/
+/.github/skills/
+/.github/copilot-instructions.md
+/.mcp.json
+/.windsurfrules
+/.rules
+/GEMINI.md
+/opencode.json
