@@ -41,6 +41,9 @@ final class WallpaperManager {
     private var currentBundles: [DisplayIdentity: WallpaperBundle] = [:]
     private var displaySnapshots: [DisplaySnapshot] = []
     private var restoreRequests: [CGDirectDisplayID: UUID] = [:]
+    private var safeModeRetryPolicy = SafeModeRetryPolicy()
+    private var demotedDisplays: Set<DisplayIdentity> = []
+    private var wakeReconcilePending = false
     private let displayChangeCoalescer = DisplayChangeCoalescer { delay, action in
         let work = DispatchWorkItem(block: action)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
@@ -99,9 +102,9 @@ final class WallpaperManager {
 
         for displayID in displayManager.displayIDs {
             if let savedID = saved[displayID], let bundle = byID[savedID] {
-                setWallpaper(bundle, for: displayID)
+                installWallpaper(bundle, for: displayID)
             } else if let fallback = fallback {
-                setWallpaper(fallback, for: displayID)
+                installWallpaper(fallback, for: displayID)
             }
         }
         applyPowerPerformancePolicy()
@@ -117,6 +120,9 @@ final class WallpaperManager {
         }
         hosts.removeAll()
         currentBundles.removeAll()
+        demotedDisplays.removeAll()
+        safeModeRetryPolicy = SafeModeRetryPolicy()
+        wakeReconcilePending = false
         displaySnapshots.removeAll()
         restoreRequests.removeAll()
         DisplayGeometryCache.shared.invalidate()
@@ -126,7 +132,17 @@ final class WallpaperManager {
     /// runtime; on failure, installs safe-mode fallback content for that
     /// display and posts an error notification.
     func setWallpaper(_ bundle: WallpaperBundle, for displayID: CGDirectDisplayID) {
-        guard let identity = identity(for: displayID) else { return }
+        if let identity = identity(for: displayID) {
+            safeModeRetryPolicy.reset(identity)
+        }
+        installWallpaper(bundle, for: displayID)
+    }
+
+    private func installWallpaper(_ bundle: WallpaperBundle, for displayID: CGDirectDisplayID) {
+        guard let identity = identity(for: displayID) else {
+            Logger.app.warning("ÆtherDesk: cannot set wallpaper for display \(displayID): missing display identity")
+            return
+        }
         restoreRequests.removeValue(forKey: displayID)
         ensureHost(for: displayID)
         guard let host = hosts[displayID] else { return }
@@ -135,6 +151,8 @@ final class WallpaperManager {
         runtimes[displayID]?.stop()
         runtimes.removeValue(forKey: displayID)
 
+        // Retain the requested bundle even if starting it immediately fails.
+        currentBundles[identity] = bundle
         let runtime = makeRuntime(for: bundle, displayID: displayID)
 
         do {
@@ -144,7 +162,7 @@ final class WallpaperManager {
             }
             try runtime.start()
             runtimes[displayID] = runtime
-            currentBundles[identity] = bundle
+            demotedDisplays.remove(identity)
             host.setContentView(runtime.contentView)
             if !host.isVisible { host.orderBack(nil) }
 
@@ -232,7 +250,7 @@ final class WallpaperManager {
             // Best-effort: re-run last known good bundles.
             for display in displaySnapshots {
                 if let bundle = currentBundles[display.identity] {
-                    setWallpaper(bundle, for: display.info.displayID)
+                    installWallpaper(bundle, for: display.info.displayID)
                 }
             }
         }
@@ -296,6 +314,10 @@ final class WallpaperManager {
     }
 
     private func installSafeModeContent(for displayID: CGDirectDisplayID) {
+        if let identity = identity(for: displayID) {
+            demotedDisplays.insert(identity)
+            safeModeRetryPolicy.recordDemotion(identity)
+        }
         guard let host = hosts[displayID] else { return }
         runtimes[displayID]?.stop()
         runtimes.removeValue(forKey: displayID)
@@ -402,13 +424,21 @@ final class WallpaperManager {
             case .restore(let id, let source):
                 switch source {
                 case .session(let bundleID):
-                    if let bundle = currentBundle(for: id), bundle.id == bundleID {
-                        setWallpaper(bundle, for: id)
+                    if let identity = identity(for: id),
+                       let bundle = currentBundles[identity], bundle.id == bundleID {
+                        if demotedDisplays.contains(identity) {
+                            // Reconnection must not bypass the wake retry budget.
+                            installSafeModeContent(for: id)
+                        } else {
+                            installWallpaper(bundle, for: id)
+                        }
+                    } else {
+                        Logger.app.warning("ÆtherDesk: session restore mismatch for display \(id), expected bundle \(bundleID)")
                     }
                 case .persisted:
                     restorePersistedWallpaper(for: id, among: displays)
                 case .fallback:
-                    if let fallback = fallbackBundle { setWallpaper(fallback, for: id) }
+                    if let fallback = fallbackBundle { installWallpaper(fallback, for: id) }
                 }
             case .reframeHost(let id, _):
                 // Reconciler frames are Quartz coordinates; windows use AppKit.
@@ -417,6 +447,10 @@ final class WallpaperManager {
                 }
                 runtimes[id]?.displayGeometryDidChange()
             }
+        }
+        if wakeReconcilePending {
+            wakeReconcilePending = false
+            completeWakeReconcile()
         }
         applyPowerPerformancePolicy()
         NotificationCenter.default.post(name: Constants.Notifications.displayConfigurationDidChange,
@@ -438,9 +472,9 @@ final class WallpaperManager {
                       self.restoreRequests[id] == request, self.hosts[id] != nil else { return }
                 self.restoreRequests.removeValue(forKey: id)
                 if let savedID = saved[id], let bundle = byID[savedID] {
-                    self.setWallpaper(bundle, for: id)
+                    self.installWallpaper(bundle, for: id)
                 } else if let fallback = self.fallbackBundle {
-                    self.setWallpaper(fallback, for: id)
+                    self.installWallpaper(fallback, for: id)
                 }
             }
         }
@@ -458,25 +492,25 @@ final class WallpaperManager {
 
     @objc private func screenDidWake() {
         guard isRunning else { return }
+        wakeReconcilePending = true
+        displayChangeCoalescer.signal()
+    }
 
-        // Wake and screen notifications share the same reconciler lifecycle.
-        reconcileDisplays()
-
-        // macOS can reset window levels after wake — reassert desktop level.
+    private func completeWakeReconcile() {
+        // Hosts and identities are current only after the coalesced reconcile.
         for (_, host) in hosts {
             host.reassertDesktopLevel()
         }
-
-        // Restore wallpapers on any display that lost its runtime during sleep
-        // (e.g., display was "removed" on lid close, tearing down the runtime,
-        // then "re-added" on lid open).
-        for displayID in displayManager.displayIDs {
-            if runtimes[displayID] == nil, let bundle = currentBundle(for: displayID) {
-                setWallpaper(bundle, for: displayID)
-            }
+        guard !isSafeMode else { return }
+        for display in displaySnapshots {
+            let identity = display.identity
+            let displayID = display.info.displayID
+            guard demotedDisplays.contains(identity), hosts[displayID] != nil,
+                  let bundle = currentBundles[identity],
+                  safeModeRetryPolicy.shouldRetry(identity) else { continue }
+            // Automatic installation preserves the consumed retry allowance.
+            installWallpaper(bundle, for: displayID)
         }
-
-        applyPowerPerformancePolicy()
     }
 
     @objc private func thermalStateChanged() {
@@ -544,7 +578,7 @@ final class WallpaperManager {
         for display in displaySnapshots where affected.contains(display.identity) {
             let displayID = display.info.displayID
             if let replacement = fallbackBundle, replacement.id != bundleID {
-                setWallpaper(replacement, for: displayID)
+                installWallpaper(replacement, for: displayID)
             } else {
                 installSafeModeContent(for: displayID)
             }
