@@ -85,7 +85,7 @@ final class WallpaperManager {
         let byID = Dictionary(uniqueKeysWithValues: availableBundles.map { ($0.id, $0) })
         wallpaperStore.pruneMissing(knownBundleIDs: Set(byID.keys))
 
-        let saved = wallpaperStore.loadAssignments(for: displayManager.displayIDs)
+        let saved = wallpaperStore.loadAssignments(for: displayManager.hardwareInfo())
 
         for displayID in displayManager.displayIDs {
             if let savedID = saved[displayID], let bundle = byID[savedID] {
@@ -138,7 +138,10 @@ final class WallpaperManager {
             }
 
             // Persist (displayID -> bundleID) so next launch restores this.
-            wallpaperStore.setAssignment(bundleID: bundle.id, for: displayID)
+            let displays = displayManager.hardwareInfo()
+            if let info = displays.first(where: { $0.displayID == displayID }) {
+                wallpaperStore.setAssignment(bundleID: bundle.id, for: info, among: displays)
+            }
 
             NotificationCenter.default.post(name: Constants.Notifications.wallpaperDidChange,
                                             object: nil,
@@ -371,11 +374,12 @@ final class WallpaperManager {
                         // Genuinely new display — try persistence, then fallback.
                         // Directory scans can hitch the main thread; do the lookup
                         // on a background queue and apply on main.
+                        let displays = displayManager.hardwareInfo()
                         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                             guard let self = self else { return }
                             let available = WallpaperImporter.shared.listWallpapers()
                             let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
-                            let saved = self.wallpaperStore.loadAssignments(for: [id])
+                            let saved = self.wallpaperStore.loadAssignments(for: displays)
                             DispatchQueue.main.async {
                                 if let savedID = saved[id], let bundle = byID[savedID] {
                                     self.setWallpaper(bundle, for: id)

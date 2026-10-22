@@ -25,9 +25,8 @@ import AppKit
 ///   }
 ///
 /// Display identities prefer vendor/model/serial metadata when CoreGraphics
-/// exposes it, falling back to CGDirectDisplayID for displays that do not
-/// report stable hardware identifiers. Legacy numeric display-ID keys are read
-/// during restore so older installs migrate naturally as assignments are saved.
+/// exposes it, with ordered fallback candidates for older saved assignments.
+/// Legacy matches migrate to the primary identity during restore.
 final class WallpaperStore {
 
     private let userDefaults: UserDefaults
@@ -45,48 +44,53 @@ final class WallpaperStore {
     // MARK: Display assignments
 
     /// Persist the (display identity -> bundleID) mapping for a single display.
-    func setAssignment(bundleID: UUID, for displayID: CGDirectDisplayID) {
+    func setAssignment(bundleID: UUID, for info: DisplayHardwareInfo, among all: [DisplayHardwareInfo]) {
         var payload = loadPayload()
-        let identity = DisplayIdentity.forDisplay(displayID)
-        payload.displayAssignments[identity.key] = bundleID.uuidString
-        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacyNumeric(displayID))
-        if identity != .legacy(displayID) {
-            payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacy(displayID).key)
+        let candidates = DisplayIdentity.candidates(for: info, among: all)
+        for candidate in candidates.dropFirst() {
+            payload.displayAssignments.removeValue(forKey: candidate.key)
         }
+        payload.displayAssignments[candidates[0].key] = bundleID.uuidString
         save(payload)
     }
 
     /// Remove the persisted assignment for a display (e.g. when the display
     /// is no longer connected or the wallpaper is uninstalled).
-    func removeAssignment(for displayID: CGDirectDisplayID) {
+    func removeAssignment(for info: DisplayHardwareInfo, among all: [DisplayHardwareInfo]) {
         var payload = loadPayload()
-        payload.displayAssignments.removeValue(forKey: DisplayIdentity.forDisplay(displayID).key)
-        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacy(displayID).key)
-        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacyNumeric(displayID))
+        for candidate in DisplayIdentity.candidates(for: info, among: all) {
+            payload.displayAssignments.removeValue(forKey: candidate.key)
+        }
         save(payload)
     }
 
-    /// Resolve saved assignments for currently connected displays. Values that
-    /// fail to parse as UUIDs are silently dropped. Lookup order is stable
-    /// identity, new CGDisplay fallback key, then legacy raw numeric key.
-    func loadAssignments(for displayIDs: [CGDirectDisplayID]) -> [CGDirectDisplayID: UUID] {
-        let payload = loadPayload()
+    /// Resolve the first valid identity candidate for each connected display.
+    /// Legacy matches migrate to the primary identity during the same load.
+    func loadAssignments(for displays: [DisplayHardwareInfo]) -> [CGDirectDisplayID: UUID] {
+        var payload = loadPayload()
+        let assignments = payload.displayAssignments
         var out: [CGDirectDisplayID: UUID] = [:]
-        for displayID in displayIDs {
-            let candidateKeys = [
-                DisplayIdentity.forDisplay(displayID).key,
-                DisplayIdentity.legacy(displayID).key,
-                DisplayIdentity.legacyNumeric(displayID)
-            ]
-            for key in candidateKeys {
-                guard let value = payload.displayAssignments[key],
+        var migrated = false
+        for info in displays {
+            let candidates = DisplayIdentity.candidates(for: info, among: displays)
+            let primary = candidates[0].key
+            for candidate in candidates {
+                guard let value = assignments[candidate.key],
                       let bundleID = UUID(uuidString: value) else {
                     continue
                 }
-                out[displayID] = bundleID
+                out[info.displayID] = bundleID
+                if candidate.key != primary {
+                    for fallback in candidates.dropFirst() {
+                        payload.displayAssignments.removeValue(forKey: fallback.key)
+                    }
+                    payload.displayAssignments[primary] = bundleID.uuidString
+                    migrated = true
+                }
                 break
             }
         }
+        if migrated { save(payload) }
         return out
     }
 

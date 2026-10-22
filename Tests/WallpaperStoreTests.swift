@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// the Free Software Foundation, version 3 of the License.
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,109 +17,138 @@ import Testing
 import AppKit
 
 @Suite("WallpaperStore") struct WallpaperStoreTests {
-    // Use a synthetic display ID that won't collide with real hardware.
-    // CGDisplayVendorNumber(99999) returns 0 in a headless test environment,
-    // so DisplayIdentity.forDisplay falls back to the cgdisplay: key form.
-    let displayID: CGDirectDisplayID = 99999
+    private let key = "AetherDesk.wallpaperStore.v2"
 
-    var store: WallpaperStore
-
-    init() {
-        let defaults = UserDefaults(suiteName: "AetherDeskTests.\(UUID().uuidString)")!
-        store = WallpaperStore(userDefaults: defaults)
+    private func display(_ id: CGDirectDisplayID = 5, uuid: String? = "screen-uuid",
+                         x: CGFloat = 0) -> DisplayHardwareInfo {
+        DisplayHardwareInfo(displayID: id, uuid: uuid, vendor: 1, model: 2,
+                            serial: 0, frame: CGRect(x: x, y: 0, width: 1920, height: 1080))
     }
 
-    @Test func setAndLoadSingleAssignment() {
-        let bundleID = UUID()
-        store.setAssignment(bundleID: bundleID, for: displayID)
-        let loaded = store.loadAssignments(for: [displayID])
-        #expect(loaded[displayID] == bundleID)
+    private func withStore(_ body: (WallpaperStore, UserDefaults) throws -> Void) rethrows {
+        let suite = "AetherDeskTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try body(WallpaperStore(userDefaults: defaults), defaults)
     }
 
-    @Test func updateAssignment() {
-        let first = UUID(), second = UUID()
-        store.setAssignment(bundleID: first, for: displayID)
-        store.setAssignment(bundleID: second, for: displayID)
-        #expect(store.loadAssignments(for: [displayID])[displayID] == second)
+    private func seed(_ assignments: [String: String], in defaults: UserDefaults) throws {
+        defaults.set(try JSONSerialization.data(withJSONObject: ["displayAssignments": assignments]),
+                     forKey: key)
     }
 
-    @Test func removeAssignment() {
-        let bundleID = UUID()
-        store.setAssignment(bundleID: bundleID, for: displayID)
-        store.removeAssignment(for: displayID)
-        #expect(store.loadAssignments(for: [displayID])[displayID] == nil)
+    private func assignments(in defaults: UserDefaults) throws -> [String: String] {
+        let data = try #require(defaults.data(forKey: key))
+        let payload = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try #require(payload["displayAssignments"] as? [String: String])
+    }
+
+    @Test func setAndUpdateAssignment() throws {
+        try withStore { store, defaults in
+            let info = display(), first = UUID(), second = UUID()
+            let candidates = DisplayIdentity.candidates(for: info, among: [info])
+            try seed(Dictionary(uniqueKeysWithValues: candidates.map { ($0.key, first.uuidString) }), in: defaults)
+            store.setAssignment(bundleID: second, for: info, among: [info])
+            #expect(store.loadAssignments(for: [info])[info.displayID] == second)
+            #expect(try assignments(in: defaults) == ["uuid:screen-uuid": second.uuidString])
+        }
+    }
+
+    @Test func removeAssignmentClearsEveryCandidate() throws {
+        try withStore { store, defaults in
+            let info = display(), other = display(6, uuid: "other")
+            let all = [info, other], bundle = UUID()
+            var values = Dictionary(uniqueKeysWithValues: DisplayIdentity.candidates(for: info, among: all).map { ($0.key, bundle.uuidString) })
+            values["uuid:other"] = bundle.uuidString
+            try seed(values, in: defaults)
+            store.removeAssignment(for: info, among: all)
+            #expect(store.loadAssignments(for: all)[info.displayID] == nil)
+            #expect(try assignments(in: defaults) == ["uuid:other": bundle.uuidString])
+        }
     }
 
     @Test func unknownDisplayReturnsNil() {
-        #expect(store.loadAssignments(for: [displayID])[displayID] == nil)
+        withStore { store, _ in
+            #expect(store.loadAssignments(for: [display()]).isEmpty)
+        }
     }
 
-    @Test func multipleDisplaysLoadedTogether() throws {
-        // Synthetic display IDs may produce non-unique CG hardware identities on
-        // a given machine, so seed the payload directly using legacy numeric keys
-        // (the third fallback in loadAssignments) to guarantee distinct entries.
-        let a: CGDirectDisplayID = 11111, b: CGDirectDisplayID = 22222
-        let bundleA = UUID(), bundleB = UUID()
-        let defaults = UserDefaults(suiteName: "AetherDeskTests.\(UUID().uuidString)")!
-        let payload: [String: Any] = ["displayAssignments": [
-            DisplayIdentity.legacyNumeric(a): bundleA.uuidString,
-            DisplayIdentity.legacyNumeric(b): bundleB.uuidString
-        ]]
-        defaults.set(try JSONSerialization.data(withJSONObject: payload), forKey: "AetherDesk.wallpaperStore.v2")
-        let readStore = WallpaperStore(userDefaults: defaults)
-        let loaded = readStore.loadAssignments(for: [a, b])
-        #expect(loaded[a] == bundleA)
-        #expect(loaded[b] == bundleB)
+    @Test(arguments: ["display:1:2:cgd:5", "5", "cgdisplay:5"])
+    func legacyAssignmentMigratesOnce(legacyKey: String) throws {
+        try withStore { store, defaults in
+            let info = display(), bundle = UUID()
+            try seed([legacyKey: bundle.uuidString], in: defaults)
+            #expect(store.loadAssignments(for: [info])[5] == bundle)
+            #expect(try assignments(in: defaults) == ["uuid:screen-uuid": bundle.uuidString])
+            let migratedData = defaults.data(forKey: key)
+            store.invalidateCache()
+            #expect(store.loadAssignments(for: [info])[5] == bundle)
+            #expect(defaults.data(forKey: key) == migratedData)
+        }
     }
 
-    @Test func pruneMissingRemovesStaleEntries() throws {
-        let keep = UUID(), remove = UUID()
-        let displayA: CGDirectDisplayID = 33333, displayB: CGDirectDisplayID = 44444
-        let defaults = UserDefaults(suiteName: "AetherDeskTests.\(UUID().uuidString)")!
-        let payload: [String: Any] = ["displayAssignments": [
-            DisplayIdentity.legacyNumeric(displayA): keep.uuidString,
-            DisplayIdentity.legacyNumeric(displayB): remove.uuidString
-        ]]
-        defaults.set(try JSONSerialization.data(withJSONObject: payload), forKey: "AetherDesk.wallpaperStore.v2")
-        let pruneStore = WallpaperStore(userDefaults: defaults)
-        pruneStore.pruneMissing(knownBundleIDs: [keep])
-        let loaded = pruneStore.loadAssignments(for: [displayA, displayB])
-        #expect(loaded[displayA] == keep)
-        #expect(loaded[displayB] == nil)
+    @Test func firstValidCandidateWinsAndMigrates() throws {
+        try withStore { store, defaults in
+            let info = display(), bundle = UUID(), stale = UUID()
+            try seed(["uuid:screen-uuid": "invalid", "display:1:2:ord:0": bundle.uuidString,
+                      "display:1:2:cgd:5": stale.uuidString], in: defaults)
+            #expect(store.loadAssignments(for: [info])[5] == bundle)
+            #expect(try assignments(in: defaults) == ["uuid:screen-uuid": bundle.uuidString])
+        }
+    }
+
+    @Test func primaryWinsOverLegacyAssignment() throws {
+        try withStore { store, defaults in
+            let info = display(), bundle = UUID()
+            try seed(["uuid:screen-uuid": bundle.uuidString, "5": UUID().uuidString], in: defaults)
+            #expect(store.loadAssignments(for: [info])[5] == bundle)
+        }
+    }
+
+    @Test func twinsKeepPositionsWhenDisplayIDsSwap() throws {
+        try withStore { store, defaults in
+            let left = display(5, uuid: nil), right = display(6, uuid: nil, x: 1920)
+            let a = UUID(), b = UUID()
+            store.setAssignment(bundleID: a, for: left, among: [left, right])
+            store.setAssignment(bundleID: b, for: right, among: [left, right])
+            // Old CG display keys must not override the ordinal assignments.
+            var values = try assignments(in: defaults)
+            values["display:1:2:cgd:5"] = a.uuidString
+            values["display:1:2:cgd:6"] = b.uuidString
+            try seed(values, in: defaults)
+            store.invalidateCache()
+            let swappedLeft = display(6, uuid: nil), swappedRight = display(5, uuid: nil, x: 1920)
+            let loaded = store.loadAssignments(for: [swappedRight, swappedLeft])
+            #expect(loaded[swappedLeft.displayID] == a)
+            #expect(loaded[swappedRight.displayID] == b)
+        }
+    }
+
+    @Test func pruneMissingRemovesUnknownAndMalformedBundleIDs() throws {
+        try withStore { store, defaults in
+            let keep = UUID()
+            try seed(["5": keep.uuidString, "6": UUID().uuidString, "7": "invalid"], in: defaults)
+            store.pruneMissing(knownBundleIDs: [keep])
+            #expect(try assignments(in: defaults) == ["5": keep.uuidString])
+            #expect(store.loadAssignments(for: [display()])[5] == keep)
+        }
     }
 
     @Test func pruneMissingWithEmptySetClearsAll() {
-        store.setAssignment(bundleID: UUID(), for: displayID)
-        store.pruneMissing(knownBundleIDs: [])
-        #expect(store.loadAssignments(for: [displayID])[displayID] == nil)
-    }
-
-    @Test func pruneMissingKeepsAllWhenAllKnown() {
-        let bundleID = UUID()
-        store.setAssignment(bundleID: bundleID, for: displayID)
-        store.pruneMissing(knownBundleIDs: [bundleID])
-        #expect(store.loadAssignments(for: [displayID])[displayID] == bundleID)
+        withStore { store, _ in
+            let info = display()
+            store.setAssignment(bundleID: UUID(), for: info, among: [info])
+            store.pruneMissing(knownBundleIDs: [])
+            #expect(store.loadAssignments(for: [info]).isEmpty)
+        }
     }
 
     @Test func invalidateCacheThenReloadFromDefaults() {
-        let bundleID = UUID()
-        store.setAssignment(bundleID: bundleID, for: displayID)
-        store.invalidateCache()
-        #expect(store.loadAssignments(for: [displayID])[displayID] == bundleID)
-    }
-
-    @Test func legacyNumericKeyMigration() {
-        // Seed a payload with a raw numeric key (legacy format from pre-DisplayIdentity)
-        // and verify loadAssignments resolves it.
-        let bundleID = UUID()
-        let syntheticDisplay: CGDirectDisplayID = 55555
-        let legacyKey = DisplayIdentity.legacyNumeric(syntheticDisplay)
-        let defaults = UserDefaults(suiteName: "AetherDeskTests.\(UUID().uuidString)")!
-        struct Payload: Codable { var displayAssignments: [String: String] }
-        let encoded = try! JSONEncoder().encode(Payload(displayAssignments: [legacyKey: bundleID.uuidString]))
-        defaults.set(encoded, forKey: "AetherDesk.wallpaperStore.v2")
-        let migratingStore = WallpaperStore(userDefaults: defaults)
-        let loaded = migratingStore.loadAssignments(for: [syntheticDisplay])
-        #expect(loaded[syntheticDisplay] == bundleID)
+        withStore { store, _ in
+            let info = display(), bundle = UUID()
+            store.setAssignment(bundleID: bundle, for: info, among: [info])
+            store.invalidateCache()
+            #expect(store.loadAssignments(for: [info])[5] == bundle)
+        }
     }
 }

@@ -61,6 +61,13 @@ class DisplayManager {
         }
     }
 
+    func hardwareInfo() -> [DisplayHardwareInfo] {
+        displayIDs.map { displayID in
+            DisplayHardwareInfo.live(displayID,
+                                     frame: screens[displayID]?.frame ?? CGDisplayBounds(displayID))
+        }
+    }
+
     func screen(for displayID: CGDirectDisplayID) -> NSScreen? {
         screens[displayID]
     }
