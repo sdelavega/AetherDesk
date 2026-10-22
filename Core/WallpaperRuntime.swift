@@ -39,6 +39,11 @@ protocol WallpaperRuntime: AnyObject {
     func stop()
     func reload() throws
     func updateProperty(_ key: String, value: Any)
+    func displayGeometryDidChange()
+}
+
+extension WallpaperRuntime {
+    func displayGeometryDidChange() {}
 }
 
 /// Errors produced by wallpaper runtimes during lifecycle operations.

@@ -38,21 +38,29 @@ final class WallpaperManager {
 
     private var hosts: [CGDirectDisplayID: WallpaperHostWindow] = [:]
     private var runtimes: [CGDirectDisplayID: WallpaperRuntime] = [:]
-    private var currentBundles: [CGDirectDisplayID: WallpaperBundle] = [:]
+    private var currentBundles: [DisplayIdentity: WallpaperBundle] = [:]
+    private var displaySnapshots: [DisplaySnapshot] = []
+    private var restoreRequests: [CGDirectDisplayID: UUID] = [:]
+    private let displayChangeCoalescer = DisplayChangeCoalescer { delay, action in
+        let work = DispatchWorkItem(block: action)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        return work
+    }
 
     private(set) var isRunning = false
     private(set) var isSafeMode = false
     private var fallbackBundle: WallpaperBundle?
     private var occludedDisplays: Set<CGDirectDisplayID> = []
-    /// Snapshot of the last known display set. Used to detect redundant
-    /// displayConfigurationDidChange notifications (e.g. wake + notification).
-    private var lastKnownDisplayIDs: Set<CGDirectDisplayID> = []
+    // Session bundles survive disconnects; snapshots describe only active displays.
 
     // MARK: Lifecycle
 
     init() {
         // DisplayManager.init() already calls updateDisplayList(); no need to
         // duplicate it here. start() will call it again if needed.
+        displayChangeCoalescer.onFire = { [weak self] in
+            self?.reconcileDisplays()
+        }
         registerObservers()
     }
 
@@ -67,6 +75,8 @@ final class WallpaperManager {
         guard !isRunning else { return }
         isRunning = true
         displayManager.updateDisplayList()
+        displaySnapshots = snapshots(for: displayManager.hardwareInfo())
+        updateGeometryCache()
         for displayID in displayManager.displayIDs {
             ensureHost(for: displayID)
         }
@@ -107,12 +117,17 @@ final class WallpaperManager {
         }
         hosts.removeAll()
         currentBundles.removeAll()
+        displaySnapshots.removeAll()
+        restoreRequests.removeAll()
+        DisplayGeometryCache.shared.invalidate()
     }
 
     /// Install a wallpaper on a specific display. Starts the appropriate
     /// runtime; on failure, installs safe-mode fallback content for that
     /// display and posts an error notification.
     func setWallpaper(_ bundle: WallpaperBundle, for displayID: CGDirectDisplayID) {
+        guard let identity = identity(for: displayID) else { return }
+        restoreRequests.removeValue(forKey: displayID)
         ensureHost(for: displayID)
         guard let host = hosts[displayID] else { return }
 
@@ -129,7 +144,7 @@ final class WallpaperManager {
             }
             try runtime.start()
             runtimes[displayID] = runtime
-            currentBundles[displayID] = bundle
+            currentBundles[identity] = bundle
             host.setContentView(runtime.contentView)
             if !host.isVisible { host.orderBack(nil) }
 
@@ -188,7 +203,7 @@ final class WallpaperManager {
     func updateProperty(_ key: String, value: Any, for displayID: CGDirectDisplayID) {
         guard let runtime = runtimes[displayID] else { return }
         runtime.updateProperty(key, value: value)
-        if let bundle = currentBundles[displayID] {
+        if let bundle = currentBundle(for: displayID) {
             var overrides = propertyStore.load(for: bundle.id)
             overrides[key] = value
             propertyStore.save(overrides, for: bundle.id)
@@ -196,8 +211,8 @@ final class WallpaperManager {
     }
 
     func updateProperty(_ key: String, value: Any, forBundleID bundleID: UUID) {
-        for (displayID, bundle) in currentBundles where bundle.id == bundleID {
-            runtimes[displayID]?.updateProperty(key, value: value)
+        for display in displaySnapshots where currentBundles[display.identity]?.id == bundleID {
+            runtimes[display.info.displayID]?.updateProperty(key, value: value)
         }
 
         var overrides = propertyStore.load(for: bundleID)
@@ -215,14 +230,35 @@ final class WallpaperManager {
             for (id, _) in hosts { installSafeModeContent(for: id) }
         } else {
             // Best-effort: re-run last known good bundles.
-            for (id, bundle) in currentBundles {
-                setWallpaper(bundle, for: id)
+            for display in displaySnapshots {
+                if let bundle = currentBundles[display.identity] {
+                    setWallpaper(bundle, for: display.info.displayID)
+                }
             }
         }
     }
 
     func currentBundle(for displayID: CGDirectDisplayID) -> WallpaperBundle? {
-        currentBundles[displayID]
+        guard let identity = identity(for: displayID) else { return nil }
+        return currentBundles[identity]
+    }
+
+    private func identity(for displayID: CGDirectDisplayID) -> DisplayIdentity? {
+        displaySnapshots.first { $0.info.displayID == displayID }?.identity
+    }
+
+    private func snapshots(for displays: [DisplayHardwareInfo]) -> [DisplaySnapshot] {
+        displays.map { DisplaySnapshot(info: $0, identity: DisplayIdentity.primary(for: $0, among: displays)) }
+    }
+
+    private func updateGeometryCache() {
+        var entries: [CGDirectDisplayID: (CGRect, CGFloat, Bool)] = [:]
+        for displayID in displayManager.displayIDs {
+            guard let screen = displayManager.screen(for: displayID) else { continue }
+            entries[displayID] = (screen.frame, screen.backingScaleFactor,
+                                  displayManager.isPrimaryDisplay(displayID))
+        }
+        DisplayGeometryCache.shared.update(entries)
     }
 
     // MARK: Runtime factory
@@ -335,73 +371,79 @@ final class WallpaperManager {
     }
 
     @objc private func displayConfigurationDidChange(_ notification: Notification) {
+        guard isRunning else { return }
+        displayChangeCoalescer.signal()
+    }
+
+    private func reconcileDisplays() {
+        guard isRunning else { return }
         displayManager.updateDisplayList()
+        let displays = displayManager.hardwareInfo()
+        let current = snapshots(for: displays)
+        updateGeometryCache()
+        let actions = DisplayReconciler.reconcile(previous: displaySnapshots, current: current,
+                                                 sessionBundles: currentBundles.mapValues(\.id))
+        displaySnapshots = current
 
-        let current = Set(displayManager.displayIDs)
-        let existing = Set(hosts.keys)
-        let displaySetChanged = current != lastKnownDisplayIDs
-        lastKnownDisplayIDs = current
-
-        if displaySetChanged {
-            let added   = current.subtracting(existing)
-            let removed = existing.subtracting(current)
-
-            for id in removed {
-                runtimes[id]?.stop()
-                runtimes.removeValue(forKey: id)
+        for action in actions {
+            switch action {
+            case .tearDownHost(let id):
+                restoreRequests.removeValue(forKey: id)
+                runtimes.removeValue(forKey: id)?.stop()
                 occludedDisplays.remove(id)
-                // Keep currentBundles[id] — the display may return (e.g., lid
-                // open) and we need the bundle reference to restore it.
-                // The persisted wallpaperStore assignment is also preserved.
-                if let host = hosts[id] {
-                    NotificationCenter.default.removeObserver(
-                        self,
-                        name: NSWindow.didChangeOcclusionStateNotification,
-                        object: host)
+                if let host = hosts.removeValue(forKey: id) {
+                    NotificationCenter.default.removeObserver(self,
+                        name: NSWindow.didChangeOcclusionStateNotification, object: host)
                     host.orderOut(nil)
                     host.close()
                 }
-                hosts.removeValue(forKey: id)
-            }
-
-            for id in added {
+            case .createHost(let id, _):
                 ensureHost(for: id)
-                if runtimes[id] == nil {
-                    if let bundle = currentBundles[id] {
-                        // Display reconnected this session (lid open, cable replug).
+            case .restore(let id, let source):
+                switch source {
+                case .session(let bundleID):
+                    if let bundle = currentBundle(for: id), bundle.id == bundleID {
                         setWallpaper(bundle, for: id)
-                    } else {
-                        // Genuinely new display — try persistence, then fallback.
-                        // Directory scans can hitch the main thread; do the lookup
-                        // on a background queue and apply on main.
-                        let displays = displayManager.hardwareInfo()
-                        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                            guard let self = self else { return }
-                            let available = WallpaperImporter.shared.listWallpapers()
-                            let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
-                            let saved = self.wallpaperStore.loadAssignments(for: displays)
-                            DispatchQueue.main.async {
-                                if let savedID = saved[id], let bundle = byID[savedID] {
-                                    self.setWallpaper(bundle, for: id)
-                                } else if let fallback = self.fallbackBundle {
-                                    self.setWallpaper(fallback, for: id)
-                                }
-                            }
-                        }
                     }
+                case .persisted:
+                    restorePersistedWallpaper(for: id, among: displays)
+                case .fallback:
+                    if let fallback = fallbackBundle { setWallpaper(fallback, for: id) }
+                }
+            case .reframeHost(let id, _):
+                // Reconciler frames are Quartz coordinates; windows use AppKit.
+                if let screen = displayManager.screen(for: id) {
+                    hosts[id]?.setFrame(screen.frame, display: true)
+                }
+                runtimes[id]?.displayGeometryDidChange()
+            }
+        }
+        applyPowerPerformancePolicy()
+        NotificationCenter.default.post(name: Constants.Notifications.displayConfigurationDidChange,
+                                        object: nil)
+    }
+
+    private func restorePersistedWallpaper(for id: CGDirectDisplayID,
+                                          among displays: [DisplayHardwareInfo]) {
+        guard let identity = identity(for: id), hosts[id] != nil else { return }
+        let request = UUID()
+        restoreRequests[id] = request
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let available = WallpaperImporter.shared.listWallpapers()
+            let byID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
+            let saved = self.wallpaperStore.loadAssignments(for: displays)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isRunning, self.identity(for: id) == identity,
+                      self.restoreRequests[id] == request, self.hosts[id] != nil else { return }
+                self.restoreRequests.removeValue(forKey: id)
+                if let savedID = saved[id], let bundle = byID[savedID] {
+                    self.setWallpaper(bundle, for: id)
+                } else if let fallback = self.fallbackBundle {
+                    self.setWallpaper(fallback, for: id)
                 }
             }
         }
-
-        // Re-align frames for any kept displays (resolution / position changes).
-        for (id, host) in hosts {
-            if let screen = displayManager.screen(for: id) {
-                host.setFrame(screen.frame, display: true)
-            }
-        }
-
-        NotificationCenter.default.post(name: Constants.Notifications.displayConfigurationDidChange,
-                                        object: nil)
     }
 
     @objc private func sessionDidResignActive() { pauseAll() }
@@ -417,12 +459,8 @@ final class WallpaperManager {
     @objc private func screenDidWake() {
         guard isRunning else { return }
 
-        // The display list may have changed during sleep (lid open, external
-        // monitor reconnected). Refresh and ensure hosts exist.
-        displayManager.updateDisplayList()
-        for displayID in displayManager.displayIDs {
-            ensureHost(for: displayID)
-        }
+        // Wake and screen notifications share the same reconciler lifecycle.
+        reconcileDisplays()
 
         // macOS can reset window levels after wake — reassert desktop level.
         for (_, host) in hosts {
@@ -433,7 +471,7 @@ final class WallpaperManager {
         // (e.g., display was "removed" on lid close, tearing down the runtime,
         // then "re-added" on lid open).
         for displayID in displayManager.displayIDs {
-            if runtimes[displayID] == nil, let bundle = currentBundles[displayID] {
+            if runtimes[displayID] == nil, let bundle = currentBundle(for: displayID) {
                 setWallpaper(bundle, for: displayID)
             }
         }
@@ -501,14 +539,17 @@ final class WallpaperManager {
         guard let bundleIDString = note.userInfo?["bundleID"] as? String,
               let bundleID = UUID(uuidString: bundleIDString) else { return }
 
-        for (displayID, bundle) in currentBundles where bundle.id == bundleID {
-            currentBundles.removeValue(forKey: displayID)
-            if let replacement = fallbackBundle {
+        let affected = Set(currentBundles.filter { $0.value.id == bundleID }.keys)
+        for identity in affected { currentBundles.removeValue(forKey: identity) }
+        for display in displaySnapshots where affected.contains(display.identity) {
+            let displayID = display.info.displayID
+            if let replacement = fallbackBundle, replacement.id != bundleID {
                 setWallpaper(replacement, for: displayID)
             } else {
                 installSafeModeContent(for: displayID)
             }
         }
+        if fallbackBundle?.id == bundleID { fallbackBundle = nil }
     }
 
     @objc private func runtimeDidFail(_ note: Notification) {

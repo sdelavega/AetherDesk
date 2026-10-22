@@ -51,14 +51,13 @@ final class ImageWallpaperRuntime: NSObject, WallpaperRuntime {
             throw WallpaperRuntimeError.contentNotFound
         }
 
-        let screen = NSScreen.screens.first(where: { $0.displayID == displayID })
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
-        let maxPixel = max(
-            Int((screen?.frame.width ?? 1920) * (screen?.backingScaleFactor ?? 2.0)),
-            Int((screen?.frame.height ?? 1080) * (screen?.backingScaleFactor ?? 2.0))
-        )
-        let screenSize = screen?.frame.size ?? NSSize(width: 1920, height: 1080)
+        let cached = DisplayGeometryCache.shared.geometry(for: displayID)
+        let screen = cached == nil ? (NSScreen.screens.first(where: { $0.displayID == displayID })
+            ?? NSScreen.main ?? NSScreen.screens.first) : nil
+        let frame = cached?.frame ?? screen?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let scale = cached?.scale ?? screen?.backingScaleFactor ?? 2.0
+        let maxPixel = Int(max(frame.width, frame.height) * scale)
+        let screenSize = frame.size
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }

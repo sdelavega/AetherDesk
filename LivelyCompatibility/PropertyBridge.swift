@@ -159,16 +159,16 @@ final class PropertyBridge: NSObject {
     func injectEnvironment() {
         guard let webView = webView else { return }
 
-        let screen = NSScreen.screens.first(where: { $0.displayID == displayID })
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        let cached = DisplayGeometryCache.shared.geometry(for: displayID)
+        let screen = cached == nil ? (NSScreen.screens.first(where: { $0.displayID == displayID })
+            ?? NSScreen.main ?? NSScreen.screens.first) : nil
 
         let displayDict: [String: Any] = [
             "id":          Int(displayID),
-            "width":       Int(screen?.frame.width ?? 1920),
-            "height":      Int(screen?.frame.height ?? 1080),
-            "scaleFactor": Double(screen?.backingScaleFactor ?? 2.0),
-            "isPrimary":   CGDisplayIsMain(displayID) != 0
+            "width":       Int(cached?.frame.width ?? screen?.frame.width ?? 1920),
+            "height":      Int(cached?.frame.height ?? screen?.frame.height ?? 1080),
+            "scaleFactor": Double(cached?.scale ?? screen?.backingScaleFactor ?? 2.0),
+            "isPrimary":   cached?.isPrimary ?? (CGDisplayIsMain(displayID) != 0)
         ]
         let isLowPower: Bool
         if #available(macOS 12.0, *) {

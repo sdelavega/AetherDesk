@@ -376,6 +376,10 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         propertyBridge.updateProperty(key, value: value)
     }
 
+    func displayGeometryDidChange() {
+        propertyBridge.injectEnvironment()
+    }
+
     private func freezeAndTearDownWebViewIfStillPaused(_ webView: WKWebView) {
         let snapshotID = UUID()
         pendingPauseSnapshotID = snapshotID
