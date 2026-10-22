@@ -309,7 +309,85 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 - [ ] **Step 3: Attempt bundle shrink:** narrow `Tools/WeatherAetherThreeEntry.js` exports to what `three-renderer.js` uses; rebuild with `Tools/build-weather-three.sh`; keep only if Tasks 10–12 tests and the perf check still pass. Record before/after size.
 - [ ] **Step 4: `scripts/check-weather-perf.sh` PASS; gate PASS. Commit** `Measure and enforce WeatherAether performance budget`.
 
-**Phase B exit — user gate (B5):** coordinator builds the OSS app and gives the user the preview showing all nine states, day and night. Fix list → new tasks; approval recorded in the ledger.
+### Task 13a: NeonCity restructure and city-atmosphere state
+
+(Tasks 13a–13e implement spec B6, added 2026-10-22.)
+
+**Files:**
+- Create: `Resources/Wallpapers/NeonCity/js/classic-renderer.js` (today's `index.html` script, moved verbatim apart from reading the new state)
+- Create: `Resources/Wallpapers/NeonCity/js/city-state.js`, `js/main.js`
+- Modify: `Resources/Wallpapers/NeonCity/index.html`, `LivelyProperties.json`
+- Test: `Tests/JS/neoncity-state.test.mjs`
+
+**Interfaces:**
+- Produces:
+  - `function deriveCityState(input: {now: Date, timeMode: 'live'|'night', weatherMode: 'live'|'drifting'|'fixed', fixed: {rain: number, fog: number}, live: {state: WeatherState, intensity: number}|null, seed: number}) -> CityState`
+  - `WeatherState` = `'clear'|'drizzle'|'rain'|'downpour'|'fog'`
+  - `CityState` = `{ phase: 'night'|'dusk'|'day'|'dawn', phaseBlend: number, weather: WeatherState, rain: number /*0–1*/, fog: number /*0–1*/, neon: number /*0–1*/, windowsLit: number /*0–1*/, trafficDensity: number /*0–1*/ }`
+  - `function driftingWeather(seed: number, now: Date) -> {state: WeatherState, rain: number, fog: number}` — deterministic in (seed, now); state dwell ≥ 20 min; transitions blend over ≥ 3 min.
+  - Phases for `timeMode:'live'`: night 21:00–05:00, dawn 05:00–07:00, day 07:00–18:00, dusk 18:00–21:00, local time. `timeMode:'night'` → phase `night` at 03:00 regardless of `now`.
+- LivelyProperties (keeping the file's existing object format): `timeMode` dropdown [Live, Always night] default Live; `weatherMode` dropdown [Drifting, Live, Fixed] default Drifting; existing `rainIntensity`, `fogDensity`, `neonBrightness`, `vehicleCount` (renamed text "Traffic Density", same key); `renderer` dropdown [Auto, Classic] default Auto; `locationMode`/`manualLocation` as in WeatherAether.
+
+- [ ] **Step 1: Write failing tests:** phase boundaries at 04:59/05:00/06:59/07:00/17:59/18:00/20:59/21:00; Always night at noon → `night`; `driftingWeather` deterministic for same (seed, now), never changes state within 20 min of a change, blends rain/fog continuously across a transition (no step > 0.05 per simulated second); `fixed` mode passes slider values through (rain 60 → 0.5 on a 0–120 slider; fog 30 → 0.3); `windowsLit` decreases monotonically from 21:00 to 04:00.
+- [ ] **Step 2: Run, expect FAIL. Step 3: Implement**; move the current scene into `classic-renderer.js` reading `CityState` for rain, fog, neon, traffic. Classic visual output in Fixed + Always night with default sliders must match today's scene.
+- [ ] **Step 4: Gate (`--with-js`) PASS. Commit** `Restructure NeonCity around a city-atmosphere state`.
+
+### Task 13b: NeonCity live weather via copied WeatherAether modules
+
+**Files:**
+- Create: `Resources/Wallpapers/NeonCity/js/weather-shared/` (copies of the WeatherAether location/weather functions NeonCity needs, MIT header)
+- Create: `scripts/sync-shared-weather.sh`
+- Test: `Tests/JS/shared-weather-drift.test.mjs`, `Tests/JS/neoncity-live-weather.test.mjs`
+
+**Interfaces:**
+- Produces: `function mapWmoToCityWeather(code: number, precipMm: number) -> {state: WeatherState, intensity: number}` — fog 45/48 → fog; drizzle 51–57 → drizzle; rain 61–63, 80–81 → rain; 65, 82, 95–99 → downpour; snow and freezing codes → rain (the city has no snow scene); 0–3 → clear.
+- `scripts/sync-shared-weather.sh` copies the designated function bodies from WeatherAether into `weather-shared/` with the MIT header; the drift test re-derives the copies' bodies (header stripped) and fails on any difference from WeatherAether's.
+
+- [ ] **Step 1: Write failing tests:** mapping table above for every WMO code in `WMO_DESC`; drift test fails when a copy is edited; with `weatherMode: 'live'` and the `ipGeolocation` capability absent, no request to `ipapi.co` or `api.bigdatacloud.net` (same assertions as Task 12a); network failure in Live mode falls back to Drifting without a blank frame.
+- [ ] **Step 2: Run, expect FAIL. Step 3: Implement. Step 4: Gate PASS. Commit** `Add live weather to NeonCity via shared modules`.
+
+### Task 13c: NeonCity Three.js city and fallback ladder
+
+**Files:**
+- Create: `Resources/Wallpapers/NeonCity/js/three-city.js`, `Resources/Wallpapers/NeonCity/vendor/three-city.min.js`, `vendor/THREE-LICENSE.txt`
+- Create: `Tools/NeonCityThreeEntry.js`; modify `Tools/build-weather-three.sh` into `Tools/build-three-subset.sh <entry> <out>` (WeatherAether's invocation unchanged in output)
+- Create: `Tools/NeonCityPreview.html` (state / phase / weather controls like WeatherAether's preview)
+- Test: `Tests/JS/neoncity-fallback.test.mjs`
+
+**Interfaces:**
+- Produces:
+  - `function buildCity(seed: number) -> CityModel` — deterministic: same seed → identical tower count, footprints and heights.
+  - `function initializeThreeCity(canvas, model) -> boolean`, `function renderThreeCity(t, cityState)`.
+  - `selectRenderer` / `demoteRenderer` with the same truth table and context-loss behaviour as WeatherAether (Task 11); demotion target is `classic-renderer.js`, then a static gradient keyed to `CityState.phase`.
+
+- [ ] **Step 1: Write failing tests:** `buildCity` determinism and three depth bands present (near/mid/far counts > 0); fallback truth table; `webglcontextlost` → classic renderer draws the next frame.
+- [ ] **Step 2: Run, expect FAIL. Step 3: Implement** the city: instanced tower meshes per depth band, shader-lit windows driven by `windowsLit`, exponential fog colour from `phase`, camera on a slow closed spline (one loop ≥ 10 min).
+- [ ] **Step 4: Gate PASS. Commit** `Render NeonCity in Three.js with classic fallback`.
+
+### Task 13d: NeonCity life systems
+
+**Files:**
+- Create: `Resources/Wallpapers/NeonCity/js/city-life.js`
+- Test: `Tests/JS/neoncity-life.test.mjs`
+
+**Interfaces:**
+- Produces: `function createLife(seed: number, model: CityModel) -> Life`; `Life.update(dt: number, cityState: CityState)`; observable state for tests: `Life.vehicles[] {lane, t, speed}`, `Life.signs[] {on: boolean, dead: boolean}`, `Life.events[]` (searchlight sweeps, blimp passes, steam bursts).
+- Rules: vehicle speed varies ±30% around lane speed and eases at lane ends (no constant-speed loops); vehicle count = `round(trafficDensity × 20)`; 2–5% of signs are dead tubes; blimp passes at most once per 15 min; everything scaled down at `phase:'day'`.
+
+- [ ] **Step 1: Write failing tests** for each rule above, using simulated time.
+- [ ] **Step 2: Run, expect FAIL. Step 3: Implement and render in `three-city.js`** (the classic renderer keeps its own simpler life). **Step 4: Gate PASS. Commit** `Bring NeonCity's traffic, signs and events to life`.
+
+### Task 13e: NeonCity performance and portability
+
+**Files:**
+- Modify: `Tools/WeatherPerf/main.swift` → takes `--wallpaper weather|neoncity` (NeonCity drives `Tools/NeonCityPreview.html` through 4 phases × 5 weather states)
+- Modify: `scripts/check-weather-perf.sh` → also runs NeonCity; baseline renderer = Classic
+- Modify: `Tests/WeatherAetherPortabilityTests.swift` → parameterized over WeatherAether and NeonCity
+
+- [ ] **Step 1:** Run the harness for NeonCity; record baselines in the ledger. **Step 2:** Tune over-budget states (same budget as Task 13). **Step 3:** Portability test passes for both wallpapers.
+- [ ] **Step 4: Gate PASS, perf check PASS. Commit** `Enforce performance and portability for NeonCity`.
+
+**Phase B exit — user gates (B5, B6):** coordinator builds the OSS app and gives the user the WeatherAether preview (nine states, day and night) and the NeonCity preview (night, dusk, day and Always night × five weather states). Fix list → new tasks; approval recorded in the ledger.
 
 ---
 

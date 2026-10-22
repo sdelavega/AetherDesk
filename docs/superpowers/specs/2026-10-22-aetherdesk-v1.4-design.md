@@ -173,6 +173,46 @@ Before Part B is complete the user reviews all nine states, day and
 night, in the preview build and approves or lists fixes. No reviewer
 model substitutes for this.
 
+### B6. NeonCity v3 (added 2026-10-22 at the user's request)
+
+A ground-up rework of the bundled NeonCity wallpaper. The ÆtherDesk copy is
+the source of truth; `~/src/NeonCityWallpaper` is out of scope.
+
+- **Scene:** a seeded procedural 3D city (unique per machine, stable across
+  launches). The camera drifts slowly at mid-height down a tower canyon
+  toward the horizon. Three depth bands — near hero towers, mid city, far
+  silhouettes in atmospheric haze.
+- **Life, restrained:** spinner traffic on splines at several heights and
+  ground light streams; signs that flicker, cycle, and occasionally have a
+  dead tube; lit windows that thin out through the night; steam vents,
+  sweeping searchlights, an occasional advertising blimp. No constant-speed
+  decorative motion.
+- **Time: Live / Always night.** Live follows the local clock — neon-dominant
+  night, amber smog at dusk/dawn, grey wet day with neon dimmed but lit.
+  Always night pins the scene at 03:00.
+- **Weather: Live / Drifting (default) / Fixed.** Fixed uses the rain and fog
+  sliders. Drifting is a seeded slow schedule over five states — clear,
+  drizzle, rain, downpour, fog — with multi-minute transitions and no
+  network. Live uses Open-Meteo through a copy of WeatherAether's
+  location/weather code (including the `ipGeolocation` capability gate) and
+  maps conditions onto the five states.
+- **Architecture:** time + weather → city-atmosphere state → renderer. Shared
+  weather/location code is copied (wallpapers stay self-contained); a test
+  fails if the copies diverge. Fallback ladder: Three.js → today's Canvas
+  NeonCity retained as the Classic renderer → static image. Renderer:
+  Auto / Classic property.
+- **Properties:** time mode, weather mode, rain and fog (Fixed), neon
+  brightness, traffic density, renderer, location mode / manual location
+  (Live).
+- **Licence:** NeonCity stays MIT. Veles is the user's own agent, so the user
+  holds copyright of both NeonCity and the copied WeatherAether code; copied
+  files carry an MIT header with the user's copyright line.
+- **Gates:** node tests for the time/weather state machine, the copy-drift
+  test and the Lively portability test; the B3 performance harness with
+  budget ≤ 1.5 × the Classic renderer's CPU and flat memory over 10 minutes;
+  user visual sign-off of night, dusk, day and Always night in each weather
+  state.
+
 ---
 
 ## Part A — Distribution
@@ -250,11 +290,11 @@ All must pass for the branch to be complete:
 3. App Store target builds; Sparkle-absence check passes.
 4. StoreKit tests (`AetherDesk-AppStore` scheme) when the user's signing
    is available; otherwise reported as not run.
-5. B3 performance budget met (report attached to the ledger).
+5. B3 performance budget met for WeatherAether and NeonCity (reports in the ledger).
 6. Release **build** step succeeds in dry-run mode, including the v1.3
    handover harness.
 
-User gates: C5 manual display checklist, B5 visual sign-off, Sparkle key
+User gates: C5 manual display checklist, B5 and B6 visual sign-off, Sparkle key
 generation, and approval before any merge, push or publish.
 
 ## Out of scope
