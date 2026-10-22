@@ -28,7 +28,7 @@ struct PerformanceSettings: Codable, Equatable {
         fpsCap: Constants.Defaults.fpsCap,
         respectLowPowerMode: true,
         pauseWhenNotVisible: true,
-        pauseOnBatteryPower: false,
+        pauseOnBatteryPower: true,
         blockExternalNetwork: false,
         allowLANAccess: false
     )
@@ -42,7 +42,7 @@ struct PerformanceSettings: Codable, Equatable {
         fpsCap = try container.decodeIfPresent(Int.self, forKey: .fpsCap) ?? Constants.Defaults.fpsCap
         respectLowPowerMode = try container.decodeIfPresent(Bool.self, forKey: .respectLowPowerMode) ?? true
         pauseWhenNotVisible = try container.decodeIfPresent(Bool.self, forKey: .pauseWhenNotVisible) ?? true
-        pauseOnBatteryPower = try container.decodeIfPresent(Bool.self, forKey: .pauseOnBatteryPower) ?? false
+        pauseOnBatteryPower = try container.decodeIfPresent(Bool.self, forKey: .pauseOnBatteryPower) ?? true
         blockExternalNetwork = try container.decodeIfPresent(Bool.self, forKey: .blockExternalNetwork) ?? false
         allowLANAccess = try container.decodeIfPresent(Bool.self, forKey: .allowLANAccess) ?? false
     }
