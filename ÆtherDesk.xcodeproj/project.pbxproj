@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AE1400020000000000000003 /* DisplayHardwareInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400020000000000000005 /* DisplayHardwareInfo.swift */; };
+		AE1400020000000000000004 /* DisplayHardwareInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400020000000000000005 /* DisplayHardwareInfo.swift */; };
+		AE1400020000000000000001 /* DisplayIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400020000000000000002 /* DisplayIdentityTests.swift */; };
 		AE1400010000000000000001 /* PerformanceSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400010000000000000002 /* PerformanceSettingsTests.swift */; };
 		02F34DD0114CB6D2D8D4A5AA /* PropertyBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47F42893F860B8AB7274982B /* PropertyBridge.swift */; };
 		056491480ABADDB41BB323BC /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A1894E1192EEE4193D08C7C /* DisplayManager.swift */; };
@@ -117,6 +120,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AE1400020000000000000005 /* DisplayHardwareInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayHardwareInfo.swift; sourceTree = "<group>"; };
+		AE1400020000000000000002 /* DisplayIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayIdentityTests.swift; sourceTree = "<group>"; };
 		AE1400010000000000000002 /* PerformanceSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSettingsTests.swift; sourceTree = "<group>"; };
 		11029153DBF7B06D601A0121 /* WallpaperManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperManager.swift; sourceTree = "<group>"; };
 		1692B5A0F6D861FBA0F63351 /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
@@ -202,6 +207,7 @@
 			children = (
 				E04A987A0321686D87E070C7 /* ContentRuleListManager.swift */,
 				BD3692C9B165D8BD4C42D76C /* DisplayIdentity.swift */,
+				AE1400020000000000000005 /* DisplayHardwareInfo.swift */,
 				4A1894E1192EEE4193D08C7C /* DisplayManager.swift */,
 				1692B5A0F6D861FBA0F63351 /* LoginItem.swift */,
 				A5E7C5AADD72E202653F4602 /* NetworkPolicy.swift */,
@@ -266,6 +272,7 @@
 				8B3C7A945B36736A4D686B57 /* UpdateSettingsStoreTests.swift */,
 				48746DEFDD802BEA7AC6D0C9 /* WallpaperBundleTests.swift */,
 				DDFF4B67FD1986BF3B0E1612 /* WallpaperStoreTests.swift */,
+				AE1400020000000000000002 /* DisplayIdentityTests.swift */,
 				8F5D63B30CEEDFD5FCFD2F78 /* WallpaperValidatorTests.swift */,
 			);
 			path = Tests;
@@ -473,6 +480,7 @@
 				3E054905B2089220AD3B8217 /* ContentRuleListManager.swift in Sources */,
 				31A9D0C48C40EFECC5E2F624 /* ContentRuleListTests.swift in Sources */,
 				FCF6B6F2CE817C7076F3C96C /* DisplayIdentity.swift in Sources */,
+				AE1400020000000000000004 /* DisplayHardwareInfo.swift in Sources */,
 				FA07542485DF142FAF3F8B2D /* DisplayManager.swift in Sources */,
 				889AC11ACF497CAB71752982 /* GeolocationPermissionStore.swift in Sources */,
 				A5247DCE8494C149B22CDB1B /* ImageWallpaperRuntime.swift in Sources */,
@@ -499,6 +507,7 @@
 				06103CBEAB114D96FC33B3DE /* UpdateManager.swift in Sources */,
 				D0212750885F4D8D70F45743 /* UpdateSettingsStore.swift in Sources */,
 				AE1400010000000000000001 /* PerformanceSettingsTests.swift in Sources */,
+				AE1400020000000000000001 /* DisplayIdentityTests.swift in Sources */,
 				2475736F7796265F4AA6DE47 /* UpdateSettingsStoreTests.swift in Sources */,
 				FB237493DB8632BE381F2669 /* VideoWallpaperRuntime.swift in Sources */,
 				25EAD19BDB869C85675BDDF5 /* WallpaperBundle.swift in Sources */,
@@ -528,6 +537,7 @@
 				A7B2C858CF7828BAB1EE5700 /* Constants.swift in Sources */,
 				96D3D147C2C6D7213E2D1149 /* ContentRuleListManager.swift in Sources */,
 				5E6970D525372F855B6B6BDB /* DisplayIdentity.swift in Sources */,
+				AE1400020000000000000003 /* DisplayHardwareInfo.swift in Sources */,
 				056491480ABADDB41BB323BC /* DisplayManager.swift in Sources */,
 				C783F1DB2C30A3C1A28B788D /* GeolocationPermissionStore.swift in Sources */,
 				6F75FBD0915EEE6960821F7D /* ImageWallpaperRuntime.swift in Sources */,
