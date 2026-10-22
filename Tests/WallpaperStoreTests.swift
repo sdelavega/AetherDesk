@@ -143,6 +143,39 @@ import AppKit
         }
     }
 
+    @Test func concurrentSetsAndMigrationPreserveEveryAssignment() throws {
+        try withStore { store, defaults in
+            let displays = (0..<128).map { index in
+                DisplayHardwareInfo(displayID: CGDirectDisplayID(index + 1),
+                                    uuid: "screen-\(index)", vendor: UInt32(index + 1),
+                                    model: 2, serial: 0,
+                                    frame: CGRect(x: index * 1920, y: 0, width: 1920, height: 1080))
+            }
+            let bundles = displays.map { _ in UUID() }
+            try seed(Dictionary(uniqueKeysWithValues: displays.map {
+                (String($0.displayID), UUID().uuidString)
+            }), in: defaults)
+
+            DispatchQueue.concurrentPerform(iterations: displays.count * 2) { iteration in
+                let index = (iteration / 2) % displays.count
+                if iteration % 2 == 0 {
+                    store.setAssignment(bundleID: bundles[index], for: displays[index], among: displays)
+                } else {
+                    _ = store.loadAssignments(for: displays)
+                }
+            }
+
+            // Check the persisted payload as well as the in-memory result.
+            store.invalidateCache()
+            let loaded = store.loadAssignments(for: displays)
+            #expect(loaded.count == displays.count)
+            for (info, bundle) in zip(displays, bundles) {
+                #expect(loaded[info.displayID] == bundle)
+            }
+            #expect(try assignments(in: defaults).count == displays.count)
+        }
+    }
+
     @Test func invalidateCacheThenReloadFromDefaults() {
         withStore { store, _ in
             let info = display(), bundle = UUID()

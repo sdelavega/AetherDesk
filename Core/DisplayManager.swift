@@ -64,7 +64,7 @@ class DisplayManager {
     func hardwareInfo() -> [DisplayHardwareInfo] {
         displayIDs.map { displayID in
             DisplayHardwareInfo.live(displayID,
-                                     frame: screens[displayID]?.frame ?? CGDisplayBounds(displayID))
+                                     frame: CGDisplayBounds(displayID))
         }
     }
 

@@ -24,6 +24,7 @@ struct DisplayHardwareInfo: Equatable {
     let vendor: UInt32
     let model: UInt32
     let serial: UInt32
+    /// Quartz global display coordinates: origin at the main display's top-left, y increasing down.
     let frame: CGRect
 
     static func live(_ id: CGDirectDisplayID, frame: CGRect) -> DisplayHardwareInfo {
