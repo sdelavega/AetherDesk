@@ -276,6 +276,24 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 - [ ] **Step 2: Run; it should PASS on correct code.** Prove it bites: temporarily add `<script src="https://cdn.example/x.js">` to a temp copy and assert failure in a second test using that copy.
 - [ ] **Step 3: Gate PASS. Commit** `Test WeatherAether stays Lively-portable`.
 
+### Task 12a: Host capability gate for IP geolocation; licence metadata
+
+(Added 2026-10-22 at the user's approval, requested by the Lumenfall project, which vendors WeatherAether verbatim.)
+
+**Files:**
+- Modify: `Resources/Wallpapers/WeatherAether/js/weather.js` (`autoLocation`, `fetchIP`, `reverseGeocode`, `fallbackLoc`)
+- Modify: `WallpaperTypes/WebWallpaperRuntime.swift` (bridge `system` object)
+- Modify: `Resources/Wallpapers/{WeatherAether,GradientWave,MatrixRain}/LivelyInfo.json`
+- Test: `Tests/JS/location.test.mjs`
+
+**Interfaces:**
+- Produces: `window.aetherDesk.system.capabilities = { ipGeolocation: true }` set by the macOS host bridge; `function hasHostCapability(name: string) -> boolean` in `weather.js` (false when `window.aetherDesk` or `capabilities` is absent).
+
+- [ ] **Step 1: Write failing tests** (harness from Task 10): with the capability absent, auto mode tries `navigator.geolocation` → cached location → shows the notice "Set a city in this wallpaper's settings", and makes **no** request to `ipapi.co` or `api.bigdatacloud.net` (stub `fetch` records URLs); place label is the Open-Meteo geocoding name in manual mode, otherwise rounded coordinates or "Current location". With `ipGeolocation: true`, today's ipapi.co / BigDataCloud paths run unchanged.
+- [ ] **Step 2: Run, expect FAIL. Step 3: Implement.** The Swift bridge's `system` literal gains `capabilities: { ipGeolocation: true }`.
+- [ ] **Step 4:** Add `"License": "GPL-3.0-only"` to the three ÆtherDesk-authored `LivelyInfo.json` files (NeonCity already declares MIT; leave it).
+- [ ] **Step 5: Gate (`--with-js`) PASS. Commit** `Gate IP geolocation behind host capability; declare wallpaper licences`.
+
 ### Task 13: Performance measurement and budget
 
 **Files:**
