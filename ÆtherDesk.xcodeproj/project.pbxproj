@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AE1400080000000000000001 /* PropertyRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400080000000000000002 /* PropertyRoutingTests.swift */; };
 		A71400000000000000000001 /* WallpaperImporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71400000000000000000003 /* WallpaperImporterTests.swift */; };
 		A71400000000000000000002 /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71400000000000000000004 /* Fixtures.swift */; };
 		AE1400060000000000000003 /* SafeModeRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400060000000000000005 /* SafeModeRetryPolicy.swift */; };
@@ -134,6 +135,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AE1400080000000000000002 /* PropertyRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/PropertyRoutingTests.swift; sourceTree = SOURCE_ROOT; };
 		A71400000000000000000003 /* WallpaperImporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/WallpaperImporterTests.swift; sourceTree = SOURCE_ROOT; };
 		A71400000000000000000004 /* Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Support/Fixtures.swift; sourceTree = SOURCE_ROOT; };
 		AE1400060000000000000005 /* SafeModeRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeModeRetryPolicy.swift; sourceTree = "<group>"; };
@@ -307,6 +309,7 @@
 				AE1400050000000000000002 /* DisplayChangeCoalescerTests.swift */,
 				AE1400050000000000000004 /* DisplayGeometryCacheTests.swift */,
 				AE1400060000000000000002 /* SafeModeRetryPolicyTests.swift */,
+				AE1400080000000000000002 /* PropertyRoutingTests.swift */,
 				8F5D63B30CEEDFD5FCFD2F78 /* WallpaperValidatorTests.swift */,
 			);
 			path = Tests;
@@ -550,6 +553,7 @@
 				AE1400050000000000000001 /* DisplayChangeCoalescerTests.swift in Sources */,
 				AE1400050000000000000003 /* DisplayGeometryCacheTests.swift in Sources */,
 				AE1400060000000000000001 /* SafeModeRetryPolicyTests.swift in Sources */,
+				AE1400080000000000000001 /* PropertyRoutingTests.swift in Sources */,
 				2475736F7796265F4AA6DE47 /* UpdateSettingsStoreTests.swift in Sources */,
 				FB237493DB8632BE381F2669 /* VideoWallpaperRuntime.swift in Sources */,
 				25EAD19BDB869C85675BDDF5 /* WallpaperBundle.swift in Sources */,

@@ -19,6 +19,30 @@ import os.log
 import Foundation
 import IOKit.ps
 
+protocol WallpaperDisplaySource: AnyObject {
+    var displayIDs: [CGDirectDisplayID] { get }
+    func updateDisplayList()
+    func hardwareInfo() -> [DisplayHardwareInfo]
+    func screen(for displayID: CGDirectDisplayID) -> NSScreen?
+    func isPrimaryDisplay(_ displayID: CGDirectDisplayID) -> Bool
+}
+
+extension DisplayManager: WallpaperDisplaySource {}
+
+protocol WallpaperHosting: AnyObject {
+    var frame: NSRect { get }
+    var isVisible: Bool { get }
+    var occlusionState: NSWindow.OcclusionState { get }
+    func setFrame(_ frame: NSRect, display: Bool)
+    func orderBack(_ sender: Any?)
+    func orderOut(_ sender: Any?)
+    func close()
+    func setContentView(_ view: NSView)
+    func reassertDesktopLevel()
+}
+
+extension WallpaperHostWindow: WallpaperHosting {}
+
 /// Central orchestrator for wallpaper hosts and runtimes across all displays.
 ///
 /// Responsibilities:
@@ -28,15 +52,18 @@ import IOKit.ps
 ///   - fall back to a safe mode (static solid color) when a runtime throws
 ///   - broadcast "current wallpaper changed" so the UI can refresh
 final class WallpaperManager {
+    typealias RuntimeFactory = (WallpaperBundle, CGDirectDisplayID) throws -> WallpaperRuntime
 
     // MARK: State
 
-    private let displayManager = DisplayManager()
-    private let wallpaperStore = WallpaperStore()
-    private let propertyStore  = PropertyStore()
+    private let displayManager: WallpaperDisplaySource
+    private let wallpaperStore: WallpaperStore
+    private let propertyStore: PropertyStore
+    private let runtimeFactory: RuntimeFactory
+    private let hostFactory: (CGDirectDisplayID) -> WallpaperHosting?
     private var performanceSettings = AppSettingsStore.shared.loadPerformanceSettings()
 
-    private var hosts: [CGDirectDisplayID: WallpaperHostWindow] = [:]
+    private var hosts: [CGDirectDisplayID: WallpaperHosting] = [:]
     private var runtimes: [CGDirectDisplayID: WallpaperRuntime] = [:]
     private var currentBundles: [DisplayIdentity: WallpaperBundle] = [:]
     private var displaySnapshots: [DisplaySnapshot] = []
@@ -58,7 +85,19 @@ final class WallpaperManager {
 
     // MARK: Lifecycle
 
-    init() {
+    init(displayManager: WallpaperDisplaySource = DisplayManager(),
+         wallpaperStore: WallpaperStore = WallpaperStore(),
+         propertyStore: PropertyStore = PropertyStore(),
+         runtimeFactory: @escaping RuntimeFactory = WallpaperManager.makeRuntime,
+         hostFactory: ((CGDirectDisplayID) -> WallpaperHosting?)? = nil) {
+        self.displayManager = displayManager
+        self.wallpaperStore = wallpaperStore
+        self.propertyStore = propertyStore
+        self.runtimeFactory = runtimeFactory
+        self.hostFactory = hostFactory ?? { displayID in
+            guard let screen = displayManager.screen(for: displayID) else { return nil }
+            return WallpaperHostWindow(screen: screen)
+        }
         // DisplayManager.init() already calls updateDisplayList(); no need to
         // duplicate it here. start() will call it again if needed.
         displayChangeCoalescer.onFire = { [weak self] in
@@ -153,9 +192,8 @@ final class WallpaperManager {
 
         // Retain the requested bundle even if starting it immediately fails.
         currentBundles[identity] = bundle
-        let runtime = makeRuntime(for: bundle, displayID: displayID)
-
         do {
+            let runtime = try runtimeFactory(bundle, displayID)
             let overrides = propertyStore.load(for: bundle.id)
             if let webRuntime = runtime as? WebWallpaperRuntime {
                 webRuntime.setInitialOverrides(overrides)
@@ -281,8 +319,8 @@ final class WallpaperManager {
 
     // MARK: Runtime factory
 
-    private func makeRuntime(for bundle: WallpaperBundle,
-                             displayID: CGDirectDisplayID) -> WallpaperRuntime {
+    static func makeRuntime(for bundle: WallpaperBundle,
+                            displayID: CGDirectDisplayID) -> WallpaperRuntime {
         switch bundle.type {
         case .web:
             return WebWallpaperRuntime(bundle: bundle, displayID: displayID)
@@ -301,9 +339,8 @@ final class WallpaperManager {
 
     private func ensureHost(for displayID: CGDirectDisplayID) {
         if hosts[displayID] != nil { return }
-        guard let screen = displayManager.screen(for: displayID) else { return }
-        let host = WallpaperHostWindow(screen: screen)
-        host.setFrame(screen.frame, display: true)
+        guard let host = hostFactory(displayID) else { return }
+        host.setFrame(host.frame, display: true)
         host.orderBack(nil)
         hosts[displayID] = host
         NotificationCenter.default.addObserver(
