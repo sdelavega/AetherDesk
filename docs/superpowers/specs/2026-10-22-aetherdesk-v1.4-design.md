@@ -151,9 +151,19 @@ when available; Classic forces Canvas).
 - A measurement script drives the preview tool in a `WKWebView` through
   all nine states, day and night, sampling the web-content process's CPU
   and memory.
-- **Budget:** at the 30 fps cap, Three.js CPU ≤ 1.5 × the measured Canvas
-  baseline per state; memory flat (no monotonic growth) over a 10-minute
-  soak. Over-budget states are tuned before ship.
+- **Budget (absolute, per quality tier; revised 2026-10-23 at the user's
+  decision — the earlier "≤ 1.5 × Canvas" rule forced 8 fps rain and 0.45
+  resolution):** on the reference Mac at the 30 fps cap, per state and
+  phase, web-content CPU as % of one core and GPU utilisation:
+  - **Balanced** (mains power): mean CPU ≤ 6%, p95 ≤ 10%, GPU mean ≤ 15%,
+    with full-quality motion — precipitation and general motion at the
+    30 fps cap, render scale ≥ 0.75. Only states over budget are trimmed,
+    by particle count or cloud steps, never by motion cadence.
+  - **Eco** (battery or Low Power Mode): mean CPU ≤ 3%, GPU mean ≤ 8%;
+    reduced cadences allowed.
+  - Memory flat (no monotonic growth) over a 10-minute soak.
+  - The host bridge reports `system.onBattery` and sets `qualityMode` to
+    `eco` on battery or Low Power Mode, `balanced` otherwise, updated live.
 - Attempt to shrink the 522 KB vendored subset via tree-shaking; keep any
   reduction only if visual and behavioural tests still pass.
 
@@ -224,11 +234,11 @@ the source of truth; `~/src/NeonCityWallpaper` is out of scope.
   - Adaptive: if the 95th-percentile frame time exceeds 20 ms over 10 s,
     step render scale down (0.75 → 0.6 → 0.5); step back up only after 60 s
     under 12 ms.
-  - Host: the bridge's `system` gains `onBattery` and sets `qualityMode` to
-    `saver` on battery or Low Power Mode, `balanced` otherwise, updated live.
-  - Budget, on the reference Mac at 30 fps: CPU ≤ 1.5 × Classic, GPU
-    utilisation mean ≤ 15% (normal tier) and ≤ 8% (saver tier), memory flat
-    over 10 minutes.
+  - Host: uses the bridge's `system.onBattery` / `qualityMode` from B3
+    (`eco` selects the saver tier).
+  - Budget: the B3 absolute per-tier budget — normal tier as Balanced
+    (CPU mean ≤ 6%, p95 ≤ 10%, GPU ≤ 15%), saver tier as Eco (CPU ≤ 3%,
+    GPU ≤ 8%), memory flat over 10 minutes.
 - **Tabled (not in v1.4):** police presence (patrol spinners, light bars)
   that scales with real local police activity. Recorded at the user's
   request 2026-10-22; needs a data-source and privacy design first.

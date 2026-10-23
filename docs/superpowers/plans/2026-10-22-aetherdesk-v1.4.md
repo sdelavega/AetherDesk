@@ -302,12 +302,44 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 
 **Interfaces:**
 - Produces: `Tools/WeatherPerf/build.sh` → `build/WeatherPerf`; running it with `--renderer auto|classic --seconds 30 --out <json>` loads `Tools/WeatherAetherPreview.html` in an offscreen-but-visible `WKWebView` (1920×1080, 30 fps cap via the same rAF throttle the bridge injects), steps through the nine states × day/night, and samples the newest `com.apple.WebKit.WebContent` process's CPU (`ps -o %cpu=`) and RSS once per second. JSON: `{state, phase, renderer, cpuMean, cpuP95, rssStart, rssEnd}[]`. A `--soak 600` mode holds one state and records RSS every 10 s.
-- `scripts/check-weather-perf.sh` runs both renderers, fails if any state's `three.cpuMean > 1.5 × canvas.cpuMean`, or if the soak's RSS rises monotonically by more than 10% from minute 1 to minute 10; writes `build/weather-perf.md`.
+- `scripts/check-weather-perf.sh` runs both renderers, fails if any state's `three.cpuMean > 1.5 × canvas.cpuMean`, or if the soak's RSS rises monotonically by more than 10% from minute 1 to minute 10; writes `build/weather-perf.md`. (Superseded by Task 13y's absolute per-tier budget.)
 
 - [ ] **Step 1: Build and run** both renderers; record baseline numbers in the ledger.
 - [ ] **Step 2:** For each over-budget state, tune (particle counts, resolution scale, shadow/draw-call reductions) inside `three-renderer.js` without changing the atmospheric-state contract. Re-run.
 - [ ] **Step 3: Attempt bundle shrink:** narrow `Tools/WeatherAetherThreeEntry.js` exports to what `three-renderer.js` uses; rebuild with `Tools/build-weather-three.sh`; keep only if Tasks 10–12 tests and the perf check still pass. Record before/after size.
 - [ ] **Step 4: `scripts/check-weather-perf.sh` PASS; gate PASS. Commit** `Measure and enforce WeatherAether performance budget`.
+
+### Task 13y: Absolute per-tier budget; restore balanced motion quality
+
+(Added 2026-10-23: the user replaced the relative 1.5 × Canvas budget with absolute per-tier budgets — spec B3.)
+
+**Files:**
+- Modify: `Resources/Wallpapers/WeatherAether/js/three-renderer.js` (quality profiles), `js/renderer.js`
+- Modify: `LivelyCompatibility/PropertyBridge.swift` (`injectEnvironment`), `Core/WallpaperManager.swift` (re-inject on power changes)
+- Modify: `Tools/WeatherPerf/main.swift` (GPU sampling; `--quality balanced|eco`), `scripts/check-weather-perf.sh`, `Tests/JS/weather-perf-budget.test.js`
+- Test: `Tests/PowerEnvironmentTests.swift`, `Tests/JS/weather-render-cadence.test.js`
+
+**Interfaces:**
+- Produces:
+  - Bridge `system.onBattery: boolean`; `system.qualityMode: 'eco'|'balanced'` — `eco` when on battery power or Low Power Mode. `static func PropertyBridge.qualityMode(onBattery: Bool, lowPower: Bool) -> String`. Re-injected into running web wallpapers when the power source or Low Power Mode changes.
+  - WeatherAether picks its quality profile from `system.qualityMode` (falling back to `balanced` when absent, e.g. in Lively).
+  - Harness samples GPU once per second from `ioreg -r -d 1 -c IOAccelerator` (`PerformanceStatistics` → `Device Utilization %`; no sudo) and runs each state × phase per tier.
+  - `check-weather-perf.sh` budget: Balanced mean CPU ≤ 6.0, p95 ≤ 10.0, GPU mean ≤ 15.0; Eco mean CPU ≤ 3.0, GPU mean ≤ 8.0; soak RSS not rising > 10% minute 1 → 10. The Canvas run is kept as a recorded reference only, no longer a gate.
+
+- [ ] **Step 1: Write failing tests:** `qualityMode` mapping (4 combinations); balanced profile restores render scale ≥ 0.75, precipitation and general motion at the 30 fps cap (no 8 fps rain); eco keeps Task 13's reduced cadences; WeatherAether reads `system.qualityMode`; budget script passes/fails on synthetic JSON at each threshold.
+- [ ] **Step 2: Run, expect FAIL. Step 3: Implement.** Keep Task 13's efficiency wins (quiet-sky caching, independent precipitation deadline, foreground resolution scaling). Trim only over-budget Balanced states, by particle count or cloud steps — never motion cadence or render scale below 0.75.
+- [ ] **Step 4: Full measurement both tiers + 10-minute soak; record tables and the reference Mac model in the ledger and report.**
+- [ ] **Step 5: Gate (`--with-js`) and `scripts/check-weather-perf.sh` PASS. Commit** `Budget WeatherAether per quality tier and restore smooth motion`.
+
+### Task 13x: Fix lower-left triangle artifact
+
+(Reported 2026-10-22 by Lumenfall: Android WebView, 2560×1600 landscape, Three.js renderer, night, no location — a static dark-slate triangle from the bottom-left corner, ~20% of the width × ~15% of the height. Screenshot outside the repo; description is sufficient.)
+
+**Files:** `Resources/Wallpapers/WeatherAether/js/three-renderer.js` and/or `js/renderer.js`, `Tools/WeatherPerf` (reuse its WKWebView to render a frame), Test: `Tests/JS/` or a harness snapshot check.
+
+- [ ] **Step 1: Reproduce** at 2560×1600 and other aspect ratios (16:10, 21:9, 4:3, portrait) in both quality tiers; capture a frame and locate the cause.
+- [ ] **Step 2: Write a failing regression check** that pins the cause (e.g. a geometry/viewport invariant in node:vm, or a pixel check on a captured frame's lower-left region).
+- [ ] **Step 3: Fix. Step 4: Gate PASS. Commit** `Fix stray triangle in WeatherAether's lower-left corner`.
 
 ### Task 13a: NeonCity restructure and city-atmosphere state
 
@@ -360,9 +392,9 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
   - `function buildCity(seed: number) -> CityModel` — deterministic: same seed → identical tower count, footprints and heights.
   - `function initializeThreeCity(canvas, model) -> boolean`, `function renderThreeCity(t, cityState)`.
   - `selectRenderer` / `demoteRenderer` with the same truth table and context-loss behaviour as WeatherAether (Task 11); demotion target is `classic-renderer.js`, then a static gradient keyed to `CityState.phase`.
-  - `function qualityTier(system: {qualityMode: string, isLowPowerMode: boolean, onBattery: boolean}) -> {fps: 30|15, renderScale: number, countScale: 1|0.4, eventScale: 1|0.5}` — `saver` when `qualityMode==='saver'`, `onBattery` or `isLowPowerMode`; else normal (`30, 0.75, 1, 1`); saver = `15, 0.5, 0.4, 0.5`.
+  - `function qualityTier(system: {qualityMode: string, isLowPowerMode: boolean, onBattery: boolean}) -> {fps: 30|15, renderScale: number, countScale: 1|0.4, eventScale: 1|0.5}` — `saver` when `qualityMode==='eco'`, `onBattery` or `isLowPowerMode`; else normal (`30, 0.75, 1, 1`); saver = `15, 0.5, 0.4, 0.5`.
   - `function adaptRenderScale(current: number, p95FrameMs: number, msUnderBudget: number) -> number` — steps 0.75 → 0.6 → 0.5 when `p95FrameMs > 20`; steps up one notch only when `msUnderBudget ≥ 60000` with frames < 12 ms; never above the tier's renderScale.
-  - Host (Swift): `LivelyCompatibility/PropertyBridge.swift` `injectEnvironment` adds `onBattery` (reuse WallpaperManager's existing power-source detection) and sets `qualityMode` to `'saver'`/`'balanced'`; re-injected on power-source and Low Power Mode changes. Swift test for the mapping.
+  - Host: consumes Task 13y's `system.onBattery` / `system.qualityMode` (`'eco'` → saver tier); no Swift changes here.
   - Look reference: `docs/superpowers/references/neoncity-v3-mockup.html` (approved look; glow via additive sprites/emissive only — no post-processing passes). Add rim light so tower façades read at night.
 
 - [ ] **Step 1: Write failing tests:** `buildCity` determinism and three depth bands present (near/mid/far counts > 0); fallback truth table; `webglcontextlost` → classic renderer draws the next frame; `qualityTier` table; `adaptRenderScale` steps and hysteresis; the scene creates no EffectComposer/post-processing pass.
@@ -389,7 +421,7 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 - Modify: `scripts/check-weather-perf.sh` → also runs NeonCity; baseline renderer = Classic
 - Modify: `Tests/WeatherAetherPortabilityTests.swift` → parameterized over WeatherAether and NeonCity
 
-- [ ] **Step 1:** Extend the harness to sample GPU utilisation once per second from `ioreg -r -d 1 -c IOAccelerator` (`PerformanceStatistics` → `Device Utilization %`; no sudo) and to run NeonCity in both normal and saver tiers. Record baselines and the reference Mac model in the ledger. **Step 2:** Tune until: CPU ≤ 1.5 × Classic per state; GPU mean ≤ 15% normal, ≤ 8% saver; RSS flat over the 10-minute soak. **Step 3:** Portability test passes for both wallpapers.
+- [ ] **Step 1:** Run the harness (GPU sampling from Task 13y) for NeonCity in both tiers. Record baselines in the ledger. **Step 2:** Tune until the B3 per-tier budget holds: normal (Balanced) CPU mean ≤ 6%, p95 ≤ 10%, GPU ≤ 15%; saver (Eco) CPU ≤ 3%, GPU ≤ 8%; RSS flat over the 10-minute soak. **Step 3:** Portability test passes for both wallpapers.
 - [ ] **Step 4: Gate PASS, perf check PASS. Commit** `Enforce performance and portability for NeonCity`.
 
 **Phase B exit — user gates (B5, B6):** coordinator builds the OSS app and gives the user the WeatherAether preview (nine states, day and night) and the NeonCity preview (night, dusk, day and Always night × six weather states). Fix list → new tasks; approval recorded in the ledger.
