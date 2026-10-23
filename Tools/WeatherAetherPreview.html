@@ -101,14 +101,28 @@ hail:[
   {key:'slight-hail',label:'Thunderstorm with slight hail · 62%'},
   {key:'heavy-hail',label:'Thunderstorm with heavy hail · 100%'}
 ]};
+var previewParams=new URLSearchParams(window.location.search);
+var perfState=null;
+if(previewParams.get('perf')==='1'){
+  perfState=stateGroups.weather.find(function(state){return state.key===previewParams.get('state');});
+  if(!perfState)throw new Error('Unknown performance preview state');
+  var perfStyle=document.createElement('style');
+  perfStyle.textContent='body{padding:0}header,figcaption,.renderer-status{display:none}main{display:block}figure{width:100vw;height:100vh;border:0;border-radius:0;aspect-ratio:auto}';
+  document.head.appendChild(perfStyle);
+}
 var gallery=document.getElementById('gallery');
 var view=document.getElementById('view');
 var time=document.getElementById('time');
 var renderer=document.getElementById('renderer');
 var quality=document.getElementById('quality');
+if(previewParams.get('renderer')==='canvas')renderer.value='canvas';
+if(perfState){
+  view.value='weather';
+  time.value=previewParams.get('hour')==='22'?'22':'12';
+}
 function draw(){
   gallery.innerHTML='';
-  var states=stateGroups[view.value];
+  var states=perfState?[perfState]:stateGroups[view.value];
   for(var i=0;i<states.length;i++){
     var state=states[i];
     var figure=document.createElement('figure');

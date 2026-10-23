@@ -322,13 +322,13 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 **Interfaces:**
 - Produces:
   - `function deriveCityState(input: {now: Date, timeMode: 'live'|'night', weatherMode: 'live'|'drifting'|'fixed', fixed: {rain: number, fog: number}, live: {state: WeatherState, intensity: number}|null, seed: number}) -> CityState`
-  - `WeatherState` = `'clear'|'drizzle'|'rain'|'downpour'|'fog'`
+  - `WeatherState` = `'clear'|'drizzle'|'rain'|'downpour'|'fog'|'snow'`
   - `CityState` = `{ phase: 'night'|'dusk'|'day'|'dawn', phaseBlend: number, weather: WeatherState, rain: number /*0–1*/, fog: number /*0–1*/, neon: number /*0–1*/, windowsLit: number /*0–1*/, trafficDensity: number /*0–1*/ }`
-  - `function driftingWeather(seed: number, now: Date) -> {state: WeatherState, rain: number, fog: number}` — deterministic in (seed, now); state dwell ≥ 20 min; transitions blend over ≥ 3 min.
+  - `function driftingWeather(seed: number, now: Date) -> {state: WeatherState, rain: number, fog: number}` — deterministic in (seed, now); state dwell ≥ 20 min; transitions blend over ≥ 3 min; `snow` only when local month is December, January or February, with probability ≤ 10% per state change.
   - Phases for `timeMode:'live'`: night 21:00–05:00, dawn 05:00–07:00, day 07:00–18:00, dusk 18:00–21:00, local time. `timeMode:'night'` → phase `night` at 03:00 regardless of `now`.
 - LivelyProperties (keeping the file's existing object format): `timeMode` dropdown [Live, Always night] default Live; `weatherMode` dropdown [Drifting, Live, Fixed] default Drifting; existing `rainIntensity`, `fogDensity`, `neonBrightness`, `vehicleCount` (renamed text "Traffic Density", same key); `renderer` dropdown [Auto, Classic] default Auto; `locationMode`/`manualLocation` as in WeatherAether.
 
-- [ ] **Step 1: Write failing tests:** phase boundaries at 04:59/05:00/06:59/07:00/17:59/18:00/20:59/21:00; Always night at noon → `night`; `driftingWeather` deterministic for same (seed, now), never changes state within 20 min of a change, blends rain/fog continuously across a transition (no step > 0.05 per simulated second); `fixed` mode passes slider values through (rain 60 → 0.5 on a 0–120 slider; fog 30 → 0.3); `windowsLit` decreases monotonically from 21:00 to 04:00.
+- [ ] **Step 1: Write failing tests:** phase boundaries at 04:59/05:00/06:59/07:00/17:59/18:00/20:59/21:00; Always night at noon → `night`; `driftingWeather` deterministic for same (seed, now), never changes state within 20 min of a change, blends rain/fog continuously across a transition (no step > 0.05 per simulated second); never yields `snow` in June over 10,000 simulated draws, and yields it at least once in January; `fixed` mode passes slider values through (rain 60 → 0.5 on a 0–120 slider; fog 30 → 0.3); `windowsLit` decreases monotonically from 21:00 to 04:00.
 - [ ] **Step 2: Run, expect FAIL. Step 3: Implement**; move the current scene into `classic-renderer.js` reading `CityState` for rain, fog, neon, traffic. Classic visual output in Fixed + Always night with default sliders must match today's scene.
 - [ ] **Step 4: Gate (`--with-js`) PASS. Commit** `Restructure NeonCity around a city-atmosphere state`.
 
@@ -340,7 +340,7 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 - Test: `Tests/JS/shared-weather-drift.test.mjs`, `Tests/JS/neoncity-live-weather.test.mjs`
 
 **Interfaces:**
-- Produces: `function mapWmoToCityWeather(code: number, precipMm: number) -> {state: WeatherState, intensity: number}` — fog 45/48 → fog; drizzle 51–57 → drizzle; rain 61–63, 80–81 → rain; 65, 82, 95–99 → downpour; snow and freezing codes → rain (the city has no snow scene); 0–3 → clear.
+- Produces: `function mapWmoToCityWeather(code: number, precipMm: number) -> {state: WeatherState, intensity: number}` — fog 45/48 → fog; drizzle 51–55 → drizzle; rain 61–63, 80–81 → rain; 65, 82, 95–99 → downpour; snow 71–77, 85–86 → snow; freezing 56–57, 66–67 → rain; 0–3 → clear.
 - `scripts/sync-shared-weather.sh` copies the designated function bodies from WeatherAether into `weather-shared/` with the MIT header; the drift test re-derives the copies' bodies (header stripped) and fails on any difference from WeatherAether's.
 
 - [ ] **Step 1: Write failing tests:** mapping table above for every WMO code in `WMO_DESC`; drift test fails when a copy is edited; with `weatherMode: 'live'` and the `ipGeolocation` capability absent, no request to `ipapi.co` or `api.bigdatacloud.net` (same assertions as Task 12a); network failure in Live mode falls back to Drifting without a blank frame.
@@ -359,9 +359,13 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
   - `function buildCity(seed: number) -> CityModel` — deterministic: same seed → identical tower count, footprints and heights.
   - `function initializeThreeCity(canvas, model) -> boolean`, `function renderThreeCity(t, cityState)`.
   - `selectRenderer` / `demoteRenderer` with the same truth table and context-loss behaviour as WeatherAether (Task 11); demotion target is `classic-renderer.js`, then a static gradient keyed to `CityState.phase`.
+  - `function qualityTier(system: {qualityMode: string, isLowPowerMode: boolean, onBattery: boolean}) -> {fps: 30|15, renderScale: number, countScale: 1|0.4, eventScale: 1|0.5}` — `saver` when `qualityMode==='saver'`, `onBattery` or `isLowPowerMode`; else normal (`30, 0.75, 1, 1`); saver = `15, 0.5, 0.4, 0.5`.
+  - `function adaptRenderScale(current: number, p95FrameMs: number, msUnderBudget: number) -> number` — steps 0.75 → 0.6 → 0.5 when `p95FrameMs > 20`; steps up one notch only when `msUnderBudget ≥ 60000` with frames < 12 ms; never above the tier's renderScale.
+  - Host (Swift): `LivelyCompatibility/PropertyBridge.swift` `injectEnvironment` adds `onBattery` (reuse WallpaperManager's existing power-source detection) and sets `qualityMode` to `'saver'`/`'balanced'`; re-injected on power-source and Low Power Mode changes. Swift test for the mapping.
+  - Look reference: `docs/superpowers/references/neoncity-v3-mockup.html` (approved look; glow via additive sprites/emissive only — no post-processing passes). Add rim light so tower façades read at night.
 
-- [ ] **Step 1: Write failing tests:** `buildCity` determinism and three depth bands present (near/mid/far counts > 0); fallback truth table; `webglcontextlost` → classic renderer draws the next frame.
-- [ ] **Step 2: Run, expect FAIL. Step 3: Implement** the city: instanced tower meshes per depth band, shader-lit windows driven by `windowsLit`, exponential fog colour from `phase`, camera on a slow closed spline (one loop ≥ 10 min).
+- [ ] **Step 1: Write failing tests:** `buildCity` determinism and three depth bands present (near/mid/far counts > 0); fallback truth table; `webglcontextlost` → classic renderer draws the next frame; `qualityTier` table; `adaptRenderScale` steps and hysteresis; the scene creates no EffectComposer/post-processing pass.
+- [ ] **Step 2: Run, expect FAIL. Step 3: Implement** snow as soft swaying flakes (distinct from rain streaks), and the city: instanced tower meshes per depth band, shader-lit windows driven by `windowsLit`, exponential fog colour from `phase`, camera on a slow closed spline (one loop ≥ 10 min).
 - [ ] **Step 4: Gate PASS. Commit** `Render NeonCity in Three.js with classic fallback`.
 
 ### Task 13d: NeonCity life systems
@@ -380,14 +384,14 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 ### Task 13e: NeonCity performance and portability
 
 **Files:**
-- Modify: `Tools/WeatherPerf/main.swift` → takes `--wallpaper weather|neoncity` (NeonCity drives `Tools/NeonCityPreview.html` through 4 phases × 5 weather states)
+- Modify: `Tools/WeatherPerf/main.swift` → takes `--wallpaper weather|neoncity` (NeonCity drives `Tools/NeonCityPreview.html` through 4 phases × 6 weather states)
 - Modify: `scripts/check-weather-perf.sh` → also runs NeonCity; baseline renderer = Classic
 - Modify: `Tests/WeatherAetherPortabilityTests.swift` → parameterized over WeatherAether and NeonCity
 
-- [ ] **Step 1:** Run the harness for NeonCity; record baselines in the ledger. **Step 2:** Tune over-budget states (same budget as Task 13). **Step 3:** Portability test passes for both wallpapers.
+- [ ] **Step 1:** Extend the harness to sample GPU utilisation once per second from `ioreg -r -d 1 -c IOAccelerator` (`PerformanceStatistics` → `Device Utilization %`; no sudo) and to run NeonCity in both normal and saver tiers. Record baselines and the reference Mac model in the ledger. **Step 2:** Tune until: CPU ≤ 1.5 × Classic per state; GPU mean ≤ 15% normal, ≤ 8% saver; RSS flat over the 10-minute soak. **Step 3:** Portability test passes for both wallpapers.
 - [ ] **Step 4: Gate PASS, perf check PASS. Commit** `Enforce performance and portability for NeonCity`.
 
-**Phase B exit — user gates (B5, B6):** coordinator builds the OSS app and gives the user the WeatherAether preview (nine states, day and night) and the NeonCity preview (night, dusk, day and Always night × five weather states). Fix list → new tasks; approval recorded in the ledger.
+**Phase B exit — user gates (B5, B6):** coordinator builds the OSS app and gives the user the WeatherAether preview (nine states, day and night) and the NeonCity preview (night, dusk, day and Always night × six weather states). Fix list → new tasks; approval recorded in the ledger.
 
 ---
 

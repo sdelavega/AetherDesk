@@ -191,11 +191,12 @@ the source of truth; `~/src/NeonCityWallpaper` is out of scope.
   night, amber smog at dusk/dawn, grey wet day with neon dimmed but lit.
   Always night pins the scene at 03:00.
 - **Weather: Live / Drifting (default) / Fixed.** Fixed uses the rain and fog
-  sliders. Drifting is a seeded slow schedule over five states — clear,
-  drizzle, rain, downpour, fog — with multi-minute transitions and no
-  network. Live uses Open-Meteo through a copy of WeatherAether's
-  location/weather code (including the `ipGeolocation` capability gate) and
-  maps conditions onto the five states.
+  sliders. Drifting is a seeded slow schedule over six states — clear,
+  drizzle, rain, downpour, fog, snow — with multi-minute transitions and no
+  network; snow occurs in Drifting only in December–February, and rarely.
+  Live uses Open-Meteo through a copy of WeatherAether's location/weather
+  code (including the `ipGeolocation` capability gate) and maps conditions
+  onto the six states; snow codes show as snow.
 - **Architecture:** time + weather → city-atmosphere state → renderer. Shared
   weather/location code is copied (wallpapers stay self-contained); a test
   fails if the copies diverge. Fallback ladder: Three.js → today's Canvas
@@ -207,11 +208,35 @@ the source of truth; `~/src/NeonCityWallpaper` is out of scope.
 - **Licence:** NeonCity stays MIT. Veles is the user's own agent, so the user
   holds copyright of both NeonCity and the copied WeatherAether code; copied
   files carry an MIT header with the user's copyright line.
+- **Look reference:** `docs/superpowers/references/neoncity-v3-mockup.html`
+  (throwaway mock-up approved by the user 2026-10-22: "exactly what I was
+  envisioning"). Neon blade signs, warm varied windows, amber-smog dusk,
+  visible snow. It loads Three.js from a CDN and is never shipped. Known gap
+  to fix in the real build: tower bodies need rim light so façades read at
+  night.
+- **Power (user requirement: "make sure it doesn't kill anyone's battery"):**
+  - Glow uses additive sprites and emissive materials only — no full-screen
+    post-processing passes.
+  - Normal tier: ≤ 30 fps, render scale 0.75 of device pixels.
+  - Saver tier, used on battery power or in Low Power Mode (when the app's
+    pause-on-battery default is turned off): 15 fps, render scale 0.5,
+    particle and traffic counts × 0.4, life events halved.
+  - Adaptive: if the 95th-percentile frame time exceeds 20 ms over 10 s,
+    step render scale down (0.75 → 0.6 → 0.5); step back up only after 60 s
+    under 12 ms.
+  - Host: the bridge's `system` gains `onBattery` and sets `qualityMode` to
+    `saver` on battery or Low Power Mode, `balanced` otherwise, updated live.
+  - Budget, on the reference Mac at 30 fps: CPU ≤ 1.5 × Classic, GPU
+    utilisation mean ≤ 15% (normal tier) and ≤ 8% (saver tier), memory flat
+    over 10 minutes.
+- **Tabled (not in v1.4):** police presence (patrol spinners, light bars)
+  that scales with real local police activity. Recorded at the user's
+  request 2026-10-22; needs a data-source and privacy design first.
 - **Gates:** node tests for the time/weather state machine, the copy-drift
-  test and the Lively portability test; the B3 performance harness with
-  budget ≤ 1.5 × the Classic renderer's CPU and flat memory over 10 minutes;
+  test and the Lively portability test; the B3 performance harness extended
+  with GPU sampling, enforcing the power budget above;
   user visual sign-off of night, dusk, day and Always night in each weather
-  state.
+  state, after a throwaway mock-up review.
 
 ---
 
