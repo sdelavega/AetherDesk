@@ -39,6 +39,7 @@ function applyRendererPreference(){
       next='canvas';
     }
   }
+  if(next===S.renderer)return;
   S.renderer=next;
   S.useThreeRenderer=next==='three';
   var canvas=document.getElementById('wa-webgl');
@@ -50,18 +51,19 @@ function applyRendererPreference(){
     resizeThreeAtmosphere(cssW(),cssH());
     rebuildParticles();
   }
+  syncRendererAnimation();
   reportWeatherRendererStatus();
 }
 
-function demoteRenderer(reason){
-  if(S.renderer==='static'||S.rendererFailureReason===reason)return;
-  var gpuFailure=S.useThreeRenderer||!!S.pendingRendererDemotion;
-  if(!gpuFailure||reason.indexOf('Canvas: ')===0)S.ctx=null;
+function demoteRenderer(origin,reason){
+  if(S.renderer==='static'||(origin==='three'&&S.threeUnavailable))return;
+  var gpuFailure=origin==='three';
+  if(!gpuFailure)S.ctx=null;
   S.rendererFailureReason=reason;
   S.pendingRendererDemotion=null;
+  S.useThreeRenderer=false;
   if(gpuFailure){
     S.threeUnavailable=true;
-    S.useThreeRenderer=false;
     S.renderer=S.ctx?'canvas':'static';
   }else{
     S.renderer='static';
@@ -75,5 +77,6 @@ function demoteRenderer(reason){
   }else{
     applyStaticAtmosphere(S.atmosphere);
   }
+  syncRendererAnimation();
   reportWeatherRendererStatus();
 }

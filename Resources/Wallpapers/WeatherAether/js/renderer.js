@@ -620,14 +620,18 @@ function drawBgCelestial(ctx,w,h,t){
 // wallpaper covered by a full-screen app) and resumes it when visible again.
 // This prevents unnecessary CPU/GPU usage when the wallpaper isn't visible.
 // Uses the Page Visibility API (document.hidden / 'visibilitychange').
+function syncRendererAnimation(){
+  if(document.hidden||S.renderer==='static'){
+    if(S.animationFrameId!==null)cancelAnimationFrame(S.animationFrameId);
+    S.animationFrameId=null;
+    S.lastFrameTime=0;
+  }else if(S.animationFrameId===null){
+    S.animationFrameId=requestAnimationFrame(render);
+  }
+}
+
 function setupVisibility(){
-  document.addEventListener('visibilitychange',function(){
-    if(document.hidden){
-      if(S.animationFrameId){cancelAnimationFrame(S.animationFrameId);S.animationFrameId=null;}
-    }else{
-      if(!S.animationFrameId){S.lastFrameTime=0;S.animationFrameId=requestAnimationFrame(render);}
-    }
-  });
+  document.addEventListener('visibilitychange',syncRendererAnimation);
 }
 
 function resizeCanvas(){
@@ -650,33 +654,29 @@ function resizeCanvas(){
 // renderUI() when data changes. Separating data updates from frame rendering
 // keeps the render loop lean and avoids DOM thrashing every 33ms.
 function render(timestamp){
+  S.animationFrameId=null;
+  if(S.pendingRendererDemotion)demoteRenderer('three',S.pendingRendererDemotion);
+  if(S.renderer==='static')return;
   if(!timestamp)timestamp=performance.now();
   var dt=S.lastFrameTime?Math.min((timestamp-S.lastFrameTime)/1000,0.1):0.016;
   S.lastFrameTime=timestamp;
-  if(S.pendingRendererDemotion)demoteRenderer(S.pendingRendererDemotion);
   var w=cssW(),h=cssH(),ctx=S.ctx;
-  if(S.renderer==='static'){
-    applyStaticAtmosphere(S.atmosphere);
-  }else{
+  try{
     if(S.useThreeRenderer){
+      ctx.clearRect(0,0,w,h);
       try{
-        ctx.clearRect(0,0,w,h);
         var atmosphereChanged=renderThreeAtmosphere(timestamp);
         renderThreePresentation(timestamp,atmosphereChanged);
       }catch(error){
-        demoteRenderer(String(error&&error.message?error.message:error));
+        demoteRenderer('three',String(error&&error.message?error.message:error));
       }
     }
-    try{
-      if(!S.useThreeRenderer)drawAtmosphericSky(ctx,w,h);
-      drawBgCelestial(ctx,w,h,timestamp);
-      updateParticles(dt);
-      drawParticles(ctx);
-    }catch(error){
-      demoteRenderer('Canvas: '+String(error&&error.message?error.message:error));
-    }
+    if(!S.useThreeRenderer)drawAtmosphericSky(ctx,w,h);
+    drawBgCelestial(ctx,w,h,timestamp);
+    updateParticles(dt);
+    drawParticles(ctx);
+  }catch(error){
+    demoteRenderer('canvas',String(error&&error.message?error.message:error));
   }
-  if(!document.hidden){
-    S.animationFrameId=requestAnimationFrame(render);
-  }
+  syncRendererAnimation();
 }

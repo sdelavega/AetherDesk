@@ -336,6 +336,7 @@ function applyWeather(d){
   }
   var nb=wmoBucket(cur.weather_code);
   S.atmosphere=deriveAtmosphericState(d);
+  if(S.renderer==='static')applyStaticAtmosphere(S.atmosphere);
   S.skyPaintCache=null;
   var particleProfileKey=String(cur.weather_code);
   if(nb!==S.weatherBucket||S.particleType===null||S.particleProfileKey!==particleProfileKey){

@@ -76,7 +76,7 @@ function init(){
   if(preview){
     S.label='Preview — '+S.previewCondition.replace(/-/g,' ').replace(/\b\w/g,function(letter){return letter.toUpperCase();});
     applyWeather(buildPreviewWeather());
-    S.animationFrameId=requestAnimationFrame(render);
+    syncRendererAnimation();
     return;
   }
   var cachedLoc=loadCachedLocation();
@@ -84,7 +84,7 @@ function init(){
   var cachedW=loadCachedWeather();
   if(cachedW){applyWeather(cachedW);}
   else{renderFallbackUI();showPill('waiting for weather\u2026');}
-  S.animationFrameId=requestAnimationFrame(render);
+  syncRendererAnimation();
   // Eagerly refresh the cached coordinates ONLY in auto mode, where the cached
   // location is the user's last real location and showing it fast is the point.
   // In manual mode the cached coordinates may belong to a different place, and

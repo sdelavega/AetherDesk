@@ -114,6 +114,7 @@ var S={
   animationFrameId:null,refreshTimeout:null,lastFrameTime:0,fetchSeq:0,locSeq:0,
   lightningAlpha:0,lightningBolt:null,lightningBoltAlpha:0,lightningCooldown:5,fogAlpha:0,motionTime:0,windGust:1,
   canvas:null,ctx:null,iconCache:{},skyPaintCache:null,moonTexture:null,
+  renderer:null,rendererFailureReason:null,threeUnavailable:false,pendingRendererDemotion:null,
   useThreeRenderer:false,threeAtmosphere:null,threeClouds:null,threeRain:null,threeFreezing:null,threeSnow:null,threeHail:null
 };
 
