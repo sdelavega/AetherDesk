@@ -317,6 +317,7 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 - Create: `Resources/Wallpapers/NeonCity/js/classic-renderer.js` (today's `index.html` script, moved verbatim apart from reading the new state)
 - Create: `Resources/Wallpapers/NeonCity/js/city-state.js`, `js/main.js`
 - Modify: `Resources/Wallpapers/NeonCity/index.html`, `LivelyProperties.json`
+- Create: `Resources/Wallpapers/NeonCity/LICENSE.txt` — standard MIT text with `Copyright (c) 2026 Stephen de la Vega` (Veles is the author's own agent; requested by Lumenfall, which vendors the folder verbatim)
 - Test: `Tests/JS/neoncity-state.test.mjs`
 
 **Interfaces:**
