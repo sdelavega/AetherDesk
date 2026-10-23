@@ -17,9 +17,13 @@
 
 set -euo pipefail
 
+with_js=false
 for flag in "$@"; do
     case "$flag" in
-        --with-js|--with-appstore)
+        --with-js)
+            with_js=true
+            ;;
+        --with-appstore)
             printf '%s: not yet configured\n' "$flag"
             ;;
         *)
@@ -31,6 +35,14 @@ done
 
 cd "$(dirname "$0")/.."
 mkdir -p build
+
+if "$with_js"; then
+    if ! command -v node >/dev/null 2>&1; then
+        printf 'Test gate failed: --with-js requires Node.js (node was not found).\n' >&2
+        exit 1
+    fi
+    node --test Tests/JS/ 2>&1 | tee build/gate-js.log
+fi
 
 xcodebuild test -project ÆtherDesk.xcodeproj -scheme AetherDesk \
     -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \

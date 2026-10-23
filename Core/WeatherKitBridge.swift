@@ -280,35 +280,7 @@ final class WeatherKitBridge {
     /// represented by Open-Meteo's WMO codes. Provider-only distinctions fold
     /// into the nearest shared state; they never create a WeatherKit-only animation.
     private func wmoCode(for condition: WeatherCondition) -> Int {
-        switch condition {
-        case .clear:                                    return 0   // clear sky
-        case .mostlyClear:                             return 1   // mainly clear
-        case .partlyCloudy:                            return 2   // partly cloudy
-        case .mostlyCloudy, .cloudy:                   return 3   // overcast
-        case .foggy:                                   return 45  // fog
-        case .smoky:                                   return 4   // smoke
-        case .haze:                                    return 5   // haze
-        case .blowingDust:                             return 7   // dust raised by wind
-        case .drizzle:                                 return 51  // light drizzle
-        case .freezingDrizzle:                         return 56  // light freezing drizzle
-        case .rain:                                    return 61  // slight rain
-        case .heavyRain:                               return 65  // heavy rain
-        case .freezingRain:                            return 66  // light freezing rain
-        case .wintryMix, .sleet:                       return 66  // shared freezing-precipitation treatment
-        case .flurries, .blowingSnow, .sunFlurries:   return 71  // slight snow fall
-        case .snow:                                    return 73  // moderate snow fall
-        case .heavySnow, .blizzard:                    return 75  // heavy snow fall
-        case .sunShowers:                              return 80  // slight rain showers
-        case .hail:                                    return 96  // thunderstorm + hail
-        case .isolatedThunderstorms,
-             .scatteredThunderstorms,
-             .thunderstorms:                           return 95  // thunderstorm
-        case .strongStorms,
-             .tropicalStorm, .hurricane:               return 95  // storm, without inventing hail
-        case .breezy, .windy,
-             .hot, .frigid:                            return 1   // no direct WMO equivalent
-        @unknown default:                              return 0
-        }
+        WeatherConditionMap.wmoCode(forRawCondition: condition.rawValue)
     }
 }
 #endif
