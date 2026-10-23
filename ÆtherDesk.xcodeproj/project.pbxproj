@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A71400000000000000000001 /* WallpaperImporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71400000000000000000003 /* WallpaperImporterTests.swift */; };
+		A71400000000000000000002 /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71400000000000000000004 /* Fixtures.swift */; };
 		AE1400060000000000000003 /* SafeModeRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400060000000000000005 /* SafeModeRetryPolicy.swift */; };
 		AE1400060000000000000004 /* SafeModeRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400060000000000000005 /* SafeModeRetryPolicy.swift */; };
 		AE1400060000000000000001 /* SafeModeRetryPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400060000000000000002 /* SafeModeRetryPolicyTests.swift */; };
@@ -132,6 +134,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A71400000000000000000003 /* WallpaperImporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/WallpaperImporterTests.swift; sourceTree = SOURCE_ROOT; };
+		A71400000000000000000004 /* Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Support/Fixtures.swift; sourceTree = SOURCE_ROOT; };
 		AE1400060000000000000005 /* SafeModeRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeModeRetryPolicy.swift; sourceTree = "<group>"; };
 		AE1400060000000000000002 /* SafeModeRetryPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeModeRetryPolicyTests.swift; sourceTree = "<group>"; };
 		AE1400050000000000000007 /* DisplayChangeCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayChangeCoalescer.swift; sourceTree = "<group>"; };
@@ -295,6 +299,8 @@
 				AE1400010000000000000002 /* PerformanceSettingsTests.swift */,
 				8B3C7A945B36736A4D686B57 /* UpdateSettingsStoreTests.swift */,
 				48746DEFDD802BEA7AC6D0C9 /* WallpaperBundleTests.swift */,
+				A71400000000000000000003 /* WallpaperImporterTests.swift */,
+				A71400000000000000000004 /* Fixtures.swift */,
 				DDFF4B67FD1986BF3B0E1612 /* WallpaperStoreTests.swift */,
 				AE1400020000000000000002 /* DisplayIdentityTests.swift */,
 				AE1400040000000000000002 /* DisplayReconcilerTests.swift */,
@@ -548,6 +554,8 @@
 				FB237493DB8632BE381F2669 /* VideoWallpaperRuntime.swift in Sources */,
 				25EAD19BDB869C85675BDDF5 /* WallpaperBundle.swift in Sources */,
 				96291AC8AA603E2FFA099EDA /* WallpaperBundleTests.swift in Sources */,
+				A71400000000000000000001 /* WallpaperImporterTests.swift in Sources */,
+				A71400000000000000000002 /* Fixtures.swift in Sources */,
 				751BEC45317E454AA0D27BBB /* WallpaperHostWindow.swift in Sources */,
 				4E41097EEB639D4C0A63DA82 /* WallpaperImporter.swift in Sources */,
 				B0F0004FBDB0E951B442BB79 /* WallpaperManager.swift in Sources */,
