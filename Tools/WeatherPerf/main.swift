@@ -230,6 +230,7 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
 
     func identifyPID() throws -> Int32 {
         let current = try webContentPIDs()
+        print("New WebContent processes: \(current.subtracting(initialPIDs).sorted())")
         // Standalone diagnostic only: use WebKit's process accessor if available.
         // Do not ship this private selector in the app. Verify it against ps.
         if webView.responds(to: NSSelectorFromString("_webProcessIdentifier")),
@@ -267,14 +268,24 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         guard info["renderer"] as? String == (options.renderer == "auto" ? "three" : "canvas"),
               info["width"] as? Int == 1920, info["height"] as? Int == 1080,
               info["hidden"] as? Bool == false else { throw PerfError("Preview did not render at 1920x1080: \(info)") }
+        print("Live preview: \(info)")
         return try identifyPID()
     }
 
     func snapshot() throws -> [String: Any] {
         guard childFrame != nil, var value = try evaluate("""
-        ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfFrames})
+        ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfFrames,
+          actualRenderer:S.renderer,quality:S.threeAtmosphere?S.threeAtmosphere.quality:null,
+          skyMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMetrics:null,
+          motionMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMotionMetrics:null,
+          paintAge:performance.now()-(S.threeAtmosphere&&S.useThreeRenderer?S.threeAtmosphere.lastPresentationFrame:S.lastFrameTime)})
         """) as? [String: Any] else { throw PerfError("Missing preview frame") }
-        value["renderer"] = rendererStatus ?? "unknown"
+        let expected = options.renderer == "auto" ? "three" : "canvas"
+        guard rendererStatus == expected, value["actualRenderer"] as? String == expected,
+              let paintAge = value["paintAge"] as? Double, paintAge >= 0, paintAge < 2000 else {
+            throw PerfError("Renderer changed or stopped painting: \(value)")
+        }
+        value["renderer"] = rendererStatus
         return value
     }
 
@@ -285,6 +296,7 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         for state in selectedStates {
             for phase in options.soak == nil ? ["day", "night"] : ["night"] {
                 let pid = try load(state: state, phase: phase)
+                fflush(stdout)
                 let initial = try sample(pid)
                 let before = try snapshot()["frames"] as? Int ?? 0
                 let start = ProcessInfo.processInfo.systemUptime
@@ -303,6 +315,7 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                         rows.append(["seconds": elapsed, "rss": lastRSS, "renderer": options.renderer, "state": state, "phase": phase])
                         try writeJSON(rows, to: options.out)
                         print("soak \(elapsed)s RSS \(Int(lastRSS)) KiB")
+                        fflush(stdout)
                     }
                 }
                 let after = try snapshot()["frames"] as? Int ?? 0

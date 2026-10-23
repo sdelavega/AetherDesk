@@ -65,7 +65,7 @@ try{
   soak.forEach((row,i)=>requireValid(row.seconds===i*10&&finite(row.rss)&&row.rss>0&&row.renderer==='auto'&&row.state==='thunder'&&row.phase==='night','invalid soak sample'));
   let passed=true;
   const lines=['# WeatherAether performance budget','',
-    '1920×1080 CSS pixels; balanced quality; production 30 fps rAF throttle; 5 s warmup, 30 samples at 1 Hz per row. CPU is ps %cpu (one core); RSS is KiB. Auto must remain Three.js; classic must remain Canvas. Offline deterministic previews; live frame rate checked at 15–35 fps.','',
+    '1920×1080 CSS pixels; balanced quality; production 30 fps rAF throttle; 5 s warmup, 30 samples at 1 Hz per row. CPU is ps %cpu (one core); RSS is KiB. Auto must remain Three.js; classic must remain Canvas. Offline deterministic previews; live rAF callback rate checked at 15–35 Hz. Quality passes may paint less frequently.','',
     '| State | Phase | Three CPU mean | p95 | Canvas CPU mean | p95 | Ratio | Three RSS start → end (KiB) | Canvas RSS start → end (KiB) | Result |',
     '|---|---|---:|---:|---:|---:|---:|---:|---:|---|'];
   for(const state of states)for(const phase of ['day','night']){

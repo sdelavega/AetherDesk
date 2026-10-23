@@ -658,6 +658,11 @@ function render(timestamp){
   if(S.pendingRendererDemotion)demoteRenderer('three',S.pendingRendererDemotion);
   if(S.renderer==='static')return;
   if(!timestamp)timestamp=performance.now();
+  if(S.useThreeRenderer&&S.threeAtmosphere&&
+      !claimThreeFrame(S.threeAtmosphere,'nextForegroundFrame',timestamp,getThreeMotionFps(S.threeAtmosphere,S.atmosphere))){
+    syncRendererAnimation();
+    return;
+  }
   var dt=S.lastFrameTime?Math.min((timestamp-S.lastFrameTime)/1000,0.1):0.016;
   S.lastFrameTime=timestamp;
   var w=cssW(),h=cssH(),ctx=S.ctx;

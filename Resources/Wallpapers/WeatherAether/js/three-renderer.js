@@ -18,8 +18,8 @@
 
 var THREE_ATMOSPHERE_REVISION='precipitation-modulation-1';
 var THREE_QUALITY_PROFILES={
-  eco:{name:'eco',pixelRatio:0.55,fps:15,motionFps:30,steps:4,rainCount:80,freezingCount:80,snowCount:70,hailCount:100},
-  balanced:{name:'balanced',pixelRatio:0.85,fps:24,motionFps:60,steps:7,rainCount:160,freezingCount:160,snowCount:130,hailCount:190},
+  eco:{name:'eco',pixelRatio:0.4,fps:6,motionFps:15,rainFps:6,steps:4,rainCount:80,freezingCount:80,snowCount:70,hailCount:100},
+  balanced:{name:'balanced',pixelRatio:0.45,fps:8,motionFps:15,rainFps:8,steps:5,rainCount:120,freezingCount:120,snowCount:100,hailCount:140},
   showcase:{name:'showcase',pixelRatio:1.15,fps:30,motionFps:60,steps:9,rainCount:240,freezingCount:240,snowCount:200,hailCount:280}
 };
 
@@ -381,8 +381,8 @@ function reportWeatherRendererStatus(){
     renderer:S.renderer||(S.useThreeRenderer?'three':'canvas'),
     revision:THREE_ATMOSPHERE_REVISION,
     quality:S.threeAtmosphere?S.threeAtmosphere.quality.name:getThreeQualityProfile().name,
-    targetFps:S.threeAtmosphere?S.threeAtmosphere.quality.fps:getThreeQualityProfile().fps,
-    motionTargetFps:S.threeAtmosphere?S.threeAtmosphere.quality.motionFps:getThreeQualityProfile().motionFps,
+    targetFps:S.threeAtmosphere?(S.threeAtmosphere.targetFps||S.threeAtmosphere.quality.fps):getThreeQualityProfile().fps,
+    motionTargetFps:S.threeAtmosphere?getThreeMotionFps(S.threeAtmosphere,atmosphere):getThreeQualityProfile().motionFps,
     steps:S.threeAtmosphere?S.threeAtmosphere.quality.steps:getThreeQualityProfile().steps,
     volume:volume,
     rain:!!(S.threeRain&&S.threeRain.active),
@@ -768,6 +768,12 @@ function getThreeCloudShading(atmosphere,track){
 
 function resizeThreeAtmosphere(w,h){
   if(!S.useThreeRenderer||!S.threeAtmosphere)return;
+  // The transparent celestial/fog overlay is composited every frame too.
+  // Give both layers the same pixel budget while retaining CSS coordinates.
+  var pixelRatio=Math.min(window.devicePixelRatio||1,S.threeAtmosphere.quality.pixelRatio);
+  S.canvas.width=Math.max(1,Math.round(w*pixelRatio));
+  S.canvas.height=Math.max(1,Math.round(h*pixelRatio));
+  S.ctx.setTransform(pixelRatio,0,0,pixelRatio,0,0);
   S.threeAtmosphere.renderer.setSize(w,h,false);
   S.threeAtmosphere.camera.aspect=w/Math.max(1,h);
   S.threeAtmosphere.camera.updateProjectionMatrix();
@@ -920,6 +926,12 @@ function recordThreePerformance(stats,timestamp,submitTime,state,drawCalls){
   return result;
 }
 
+function getThreeMotionFps(state,atmosphere){
+  var quality=state.quality,condition=atmosphere&&atmosphere.condition;
+  if(quality.rainFps&&(condition==='rain'||condition==='freezing'))return Math.min(quality.rainFps,quality.motionFps);
+  return quality.motionFps;
+}
+
 function claimThreeFrame(state,key,timestamp,fps){
   var interval=1000/fps;
   var deadline=state[key]||timestamp;
@@ -932,7 +944,13 @@ function claimThreeFrame(state,key,timestamp,fps){
 function renderThreeAtmosphere(timestamp){
   var state=S.threeAtmosphere;
   if(!S.useThreeRenderer||!state)return;
-  if(!claimThreeFrame(state,'nextAtmosphereFrame',timestamp,state.quality.fps))return false;
+  var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  // These backgrounds have neither cloud motion nor stars. Cache them while
+  // the foreground and precipitation continue at their own animation cadence.
+  var quietSky=(atmosphere.condition==='clear'&&atmosphere.isDay)||
+    atmosphere.condition==='fog'||atmosphere.condition==='snow';
+  state.targetFps=quietSky?2:state.quality.fps;
+  if(!claimThreeFrame(state,'nextAtmosphereFrame',timestamp,state.targetFps))return false;
   updateThreeAtmosphere(timestamp);
   updateThreeClouds(timestamp);
   var submitStart=performance.now();
@@ -955,14 +973,17 @@ function renderThreePresentation(timestamp,atmosphereChanged){
   var state=S.threeAtmosphere;
   if(!S.useThreeRenderer||!state)return;
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
+  var precipitation=S.props.showParticles&&
+    ['rain','thunder','freezing','snow','hail'].indexOf(atmosphere.condition)!==-1;
+  // Re-present a cached sky only when particles move or the background changed.
+  if(!precipitation&&!atmosphereChanged)return;
+  var targetFps=precipitation?getThreeMotionFps(state,atmosphere):state.quality.fps;
+  var presentationDue=claimThreeFrame(state,'nextPresentationFrame',timestamp,targetFps);
+  if(!presentationDue&&!atmosphereChanged)return;
   updateThreeRain(timestamp,atmosphere);
   updateThreeFreezing(timestamp,atmosphere);
   updateThreeSnow(timestamp,atmosphere);
   updateThreeHail(timestamp,atmosphere);
-  var targetFps=(rendersThreeRain()||rendersThreeFreezing()||rendersThreeSnow()||rendersThreeHail())?state.quality.motionFps:state.quality.fps;
-  if(atmosphereChanged){
-    state.nextPresentationFrame=timestamp+1000/targetFps;
-  }else if(!claimThreeFrame(state,'nextPresentationFrame',timestamp,targetFps))return;
   var submitStart=performance.now();
   state.renderer.setRenderTarget(null);
   state.renderer.render(state.presentationScene,state.camera);
