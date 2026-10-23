@@ -1,3 +1,19 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Stephen de la Vega
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 'use strict';
 
 var THREE_ATMOSPHERE_REVISION='precipitation-modulation-1';
@@ -355,13 +371,12 @@ function threeColor(c){
 }
 
 function reportWeatherRendererStatus(){
-  if(window.parent===window)return;
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   var volume=false;
   if(S.threeAtmosphere){
     volume=S.threeAtmosphere.material.uniforms.uCloudVolumeEnabled.value>0.5;
   }
-  window.parent.postMessage({
+  var status={
     type:'weather-aether-renderer-status',
     renderer:S.useThreeRenderer?'three':'canvas',
     revision:THREE_ATMOSPHERE_REVISION,
@@ -379,7 +394,19 @@ function reportWeatherRendererStatus(){
     metrics:S.threeAtmosphere?S.threeAtmosphere.latestMetrics||null:null,
     motionMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMotionMetrics||null:null,
     error:S.threeShaderError||null
-  },'*');
+  };
+  var nativeLog=window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.aetherDesk;
+  if(nativeLog){
+    // Log renderer transitions once; frame metrics continue to the preview only.
+    var summary=JSON.stringify({renderer:status.renderer,revision:status.revision,quality:status.quality,error:status.error});
+    if(summary!==reportWeatherRendererStatus.lastNativeStatus){
+      try{
+        nativeLog.postMessage({action:'log',message:'reportWeatherRendererStatus '+summary});
+        reportWeatherRendererStatus.lastNativeStatus=summary;
+      }catch(e){}
+    }
+  }
+  if(window.parent!==window)window.parent.postMessage(status,'*');
 }
 
 function initializeThreeAtmosphere(){
