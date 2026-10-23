@@ -61,9 +61,9 @@ function buildPreviewWeather(){
 //      location has moved.
 function init(){
   S.canvas=document.getElementById('wa-sky');
-  S.ctx=S.canvas.getContext('2d');
-  initializeThreeAtmosphere();
-  if(!S.useThreeRenderer)setTimeout(reportWeatherRendererStatus,0);
+  try{S.ctx=S.canvas.getContext('2d');}
+  catch(error){S.ctx=null;console.warn('Weather Aether: Canvas unavailable.',error);}
+  applyRendererPreference();
   var preview=readPreviewConfig();
   var now=wallpaperNow();
   var hr=now.getHours();

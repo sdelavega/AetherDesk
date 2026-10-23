@@ -101,6 +101,7 @@ function rebuildClouds(w,h,atmosphere){
 }
 
 function rebuildParticles(){
+  if(S.renderer==='static')return;
   S.particles=[];
   S.stars=[];
   S.particleType=null;
@@ -634,7 +635,8 @@ function resizeCanvas(){
   var w=window.innerWidth,h=window.innerHeight;
   S.canvas.width=w*dpr;S.canvas.height=h*dpr;
   S.canvas.style.width=w+'px';S.canvas.style.height=h+'px';
-  S.ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(S.ctx)S.ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(S.renderer==='static')applyStaticAtmosphere(S.atmosphere);
   resizeThreeAtmosphere(w,h);
   S.skyPaintCache=null;
   rebuildParticles();
@@ -651,17 +653,29 @@ function render(timestamp){
   if(!timestamp)timestamp=performance.now();
   var dt=S.lastFrameTime?Math.min((timestamp-S.lastFrameTime)/1000,0.1):0.016;
   S.lastFrameTime=timestamp;
+  if(S.pendingRendererDemotion)demoteRenderer(S.pendingRendererDemotion);
   var w=cssW(),h=cssH(),ctx=S.ctx;
-  if(S.useThreeRenderer){
-    ctx.clearRect(0,0,w,h);
-    var atmosphereChanged=renderThreeAtmosphere(timestamp);
-    renderThreePresentation(timestamp,atmosphereChanged);
+  if(S.renderer==='static'){
+    applyStaticAtmosphere(S.atmosphere);
   }else{
-    drawAtmosphericSky(ctx,w,h);
+    if(S.useThreeRenderer){
+      try{
+        ctx.clearRect(0,0,w,h);
+        var atmosphereChanged=renderThreeAtmosphere(timestamp);
+        renderThreePresentation(timestamp,atmosphereChanged);
+      }catch(error){
+        demoteRenderer(String(error&&error.message?error.message:error));
+      }
+    }
+    try{
+      if(!S.useThreeRenderer)drawAtmosphericSky(ctx,w,h);
+      drawBgCelestial(ctx,w,h,timestamp);
+      updateParticles(dt);
+      drawParticles(ctx);
+    }catch(error){
+      demoteRenderer('Canvas: '+String(error&&error.message?error.message:error));
+    }
   }
-  drawBgCelestial(ctx,w,h,timestamp);
-  updateParticles(dt);
-  drawParticles(ctx);
   if(!document.hidden){
     S.animationFrameId=requestAnimationFrame(render);
   }

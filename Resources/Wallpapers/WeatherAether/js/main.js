@@ -107,7 +107,7 @@ var S={
   props:{
     locationMode:'auto',manualLocation:'',
     units:'imperial',forecastOpacity:0.9,
-    animationSpeed:1.0,showParticles:true,accentColor:'#6fb8ff'
+    animationSpeed:1.0,showParticles:true,accentColor:'#6fb8ff',renderer:'auto'
   },
   particles:[],stars:[],clouds:[],cloudSprites:[],cloudLightingKey:null,particleType:null,particleProfileKey:null,weatherBucket:'clear',
   atmosphere:null,
