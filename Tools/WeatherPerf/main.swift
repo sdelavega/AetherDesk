@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import AppKit
+import Darwin
 import WebKit
 
 struct PerfError: Error, CustomStringConvertible {
@@ -26,6 +27,7 @@ let states = ["clear", "partly", "overcast", "fog", "moderate-rain", "freezing",
 
 struct Options {
     var renderer = "auto"
+    var quality = "balanced"
     var seconds = 30
     var soak: Int?
     var warmup = 5
@@ -42,6 +44,7 @@ struct Options {
             let value = args.removeFirst()
             switch flag {
             case "--renderer": renderer = value
+            case "--quality": quality = value
             case "--seconds": seconds = Int(value) ?? 0
             case "--soak": soak = Int(value) ?? 0
             case "--warmup": warmup = Int(value) ?? -1
@@ -51,10 +54,10 @@ struct Options {
             default: throw PerfError("Unknown option: \(flag)")
             }
         }
-        guard ["auto", "classic"].contains(renderer), seconds > 0, warmup >= 1,
+        guard ["auto", "classic"].contains(renderer), ["balanced", "eco"].contains(quality), seconds > 0, warmup >= 1,
               soak == nil || (soak! >= 10 && soak! % 10 == 0),
               state == nil || states.contains(state!) else {
-            throw PerfError("Use --renderer auto|classic --seconds N --out file [--soak N (multiple of 10)] [--state NAME] [--warmup N] [--root path]")
+            throw PerfError("Use --renderer auto|classic --quality balanced|eco --seconds N --out file [--soak N (multiple of 10)] [--state NAME] [--warmup N] [--root path]")
         }
     }
 }
@@ -80,11 +83,56 @@ func webContentPIDs() throws -> Set<Int32> {
     })
 }
 
-func sample(_ pid: Int32) throws -> (cpu: Double, rss: Double) {
-    let fields = try ps(["-p", String(pid), "-o", "%cpu=,rss="]).split(whereSeparator: { $0.isWhitespace })
-    guard fields.count == 2, let cpu = Double(fields[0]), let rss = Double(fields[1]),
-          cpu.isFinite, rss.isFinite, cpu >= 0, rss > 0 else { throw PerfError("Invalid ps sample for PID \(pid)") }
-    return (cpu, rss) // ps RSS is KiB; CPU is percent of one logical core.
+func sample(_ pid: Int32) throws -> (cpuSeconds: Double, uptime: TimeInterval, rss: Double) {
+    let text = try ps(["-p", String(pid), "-o", "rss="]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let rss = Double(text), rss.isFinite, rss > 0 else { throw PerfError("Invalid RSS for PID \(pid)") }
+    var usage = rusage_info_v2()
+    let result = withUnsafeMutablePointer(to: &usage) { pointer in
+        pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+            proc_pid_rusage(pid, RUSAGE_INFO_V2, $0)
+        }
+    }
+    guard result == 0 else { throw PerfError("proc_pid_rusage failed for pinned PID \(pid)") }
+    var timebase = mach_timebase_info_data_t()
+    guard mach_timebase_info(&timebase) == KERN_SUCCESS, timebase.denom > 0 else {
+        throw PerfError("Cannot convert CPU Mach time to seconds")
+    }
+    // User and system counters use Mach time units; uptime is monotonic seconds.
+    let cpuSeconds = (Double(usage.ri_user_time) + Double(usage.ri_system_time))
+        * Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
+    return (cpuSeconds, ProcessInfo.processInfo.systemUptime, rss)
+}
+
+// IOAccelerator reports whole-device activity, including other applications.
+// With multiple accelerators, retain the highest utilization each second.
+func sampleGPU() throws -> Double {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
+    process.arguments = ["-a", "-r", "-d", "1", "-c", "IOAccelerator"]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { throw PerfError("ioreg failed") }
+    let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
+    var values = [Double]()
+    func visit(_ object: Any) {
+        if let dictionary = object as? [String: Any] {
+            if let statistics = dictionary["PerformanceStatistics"] as? [String: Any],
+               let number = statistics["Device Utilization %"] as? NSNumber {
+                let value = number.doubleValue
+                if value.isFinite, value >= 0, value <= 100 { values.append(value) }
+            }
+            for value in dictionary.values { visit(value) }
+        } else if let array = object as? [Any] {
+            for value in array { visit(value) }
+        }
+    }
+    visit(plist)
+    guard let value = values.max() else { throw PerfError("IOAccelerator has no valid Device Utilization % sample") }
+    return value
 }
 
 func pump(until deadline: TimeInterval) {
@@ -115,11 +163,15 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     var rendererStatus: String?
     var pinnedPID: Int32?
     let initialPIDs: Set<Int32>
+    let dataStore = WKWebsiteDataStore.nonPersistent()
 
     init(options: Options) throws {
         self.options = options
         initialPIDs = try webContentPIDs()
         super.init()
+    }
+
+    func prepareView() throws {
         let controller = WKUserContentController()
         controller.add(self, name: "weatherPerf")
         // Read the production throttle verbatim so the benchmark cannot drift.
@@ -132,6 +184,8 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let bootstrap = """
         (function(){
           var suspended=false;
+          window.aetherDesk={system:{qualityMode:'\(options.quality)',onBattery:\(options.quality == "eco"),fpsCap:30},
+            properties:{get:function(){return {};},onUpdate:function(){}},onVisibility:function(){}};
           \(throttle)
           var throttledRAF=window.requestAnimationFrame;
           window.__perfFrames=0;var lastTimestamp=-1;
@@ -159,7 +213,7 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         controller.addUserScript(WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         let config = WKWebViewConfiguration()
         config.userContentController = controller
-        config.websiteDataStore = .nonPersistent()
+        config.websiteDataStore = dataStore
         // A second layer blocks network subresources, not just fetch/XHR.
         let rules = """
         [{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}},
@@ -289,46 +343,101 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         return value
     }
 
+    func unloadView() {
+        webView?.stopLoading()
+        webView?.navigationDelegate = nil
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "weatherPerf")
+        window?.contentView = nil
+        window?.close()
+        webView = nil
+        window = nil
+        childFrame = nil
+        pinnedPID = nil
+        failure = nil
+    }
+
     func run() throws {
-        defer { webView.stopLoading(); window.orderOut(nil); webView.configuration.userContentController.removeScriptMessageHandler(forName: "weatherPerf") }
+        defer { unloadView() }
         var rows = [[String: Any]]()
         let selectedStates = options.soak == nil ? options.state.map { [$0] } ?? states : [options.state ?? "thunder"]
         for state in selectedStates {
             for phase in options.soak == nil ? ["day", "night"] : ["night"] {
+                unloadView()
+                var baselineGPU = [Double]()
+                let baselineStart = ProcessInfo.processInfo.systemUptime
+                print("Idle GPU baseline: \(state)/\(phase), no harness web view loaded, 15 s")
+                fflush(stdout)
+                for elapsed in 1...15 {
+                    pump(until: baselineStart + Double(elapsed))
+                    baselineGPU.append(try sampleGPU())
+                }
+                let baselineMean = baselineGPU.reduce(0, +) / Double(baselineGPU.count)
+                try prepareView()
                 let pid = try load(state: state, phase: phase)
                 fflush(stdout)
-                let initial = try sample(pid)
                 let before = try snapshot()["frames"] as? Int ?? 0
-                let start = ProcessInfo.processInfo.systemUptime
+                let initial = try sample(pid)
+                let start = initial.uptime
                 let duration = options.soak ?? options.seconds
-                let interval = options.soak == nil ? 1 : 10
+                var previous = initial
+                var cpuDeltas = [Double]()
+                var cpuIntervals = [Double]()
                 var cpu = [Double]()
+                var gpu = [Double]()
                 var lastRSS = initial.rss
-                if options.soak != nil { rows.append(["seconds": 0, "rss": initial.rss, "renderer": options.renderer, "state": state, "phase": phase]) }
-                for elapsed in stride(from: interval, through: duration, by: interval) {
+                if options.soak != nil { rows.append(["seconds": 0, "rss": initial.rss, "renderer": options.renderer, "quality": options.quality, "state": state, "phase": phase]) }
+                for elapsed in 1...duration {
                     pump(until: start + Double(elapsed))
                     if let failure { throw PerfError(failure) }
                     let value = try sample(pid)
-                    cpu.append(value.cpu)
+                    let delta = value.cpuSeconds - previous.cpuSeconds
+                    let interval = value.uptime - previous.uptime
+                    guard delta.isFinite, delta >= 0, interval.isFinite, interval > 0 else {
+                        throw PerfError("Invalid CPU-time interval for pinned PID \(pid)")
+                    }
+                    cpuDeltas.append(delta)
+                    cpuIntervals.append(interval)
+                    cpu.append(100 * delta / interval)
+                    previous = value
+                    gpu.append(try sampleGPU())
                     lastRSS = value.rss
-                    if options.soak != nil {
-                        rows.append(["seconds": elapsed, "rss": lastRSS, "renderer": options.renderer, "state": state, "phase": phase])
+                    if options.soak != nil, elapsed % 10 == 0 {
+                        _ = try snapshot()
+                        rows.append(["seconds": elapsed, "rss": lastRSS, "renderer": options.renderer, "quality": options.quality,
+                                     "state": state, "phase": phase, "gpuMean": gpu.reduce(0, +) / Double(gpu.count), "gpuSamples": gpu.count,
+                                     "gpuBaselineMean": baselineMean, "gpuBaselineSamples": baselineGPU.count,
+                                     "gpuMarginalMean": gpu.reduce(0, +) / Double(gpu.count) - baselineMean])
                         try writeJSON(rows, to: options.out)
                         print("soak \(elapsed)s RSS \(Int(lastRSS)) KiB")
                         fflush(stdout)
                     }
                 }
-                let after = try snapshot()["frames"] as? Int ?? 0
+                let info = try snapshot()
+                let after = info["frames"] as? Int ?? 0
                 let fps = Double(after - before) / (ProcessInfo.processInfo.systemUptime - start)
                 guard fps >= 15, fps <= 35 else { throw PerfError("Invalid live frame rate \(fps); occluded or unthrottled view") }
+                if options.renderer == "auto" {
+                    guard let quality = info["quality"] as? [String: Any], quality["name"] as? String == options.quality else {
+                        throw PerfError("Unexpected quality profile: \(info)")
+                    }
+                }
                 if options.soak == nil {
                     let sorted = cpu.sorted()
-                    let mean = cpu.reduce(0, +) / Double(cpu.count)
+                    let cpuTime = previous.cpuSeconds - initial.cpuSeconds
+                    let cpuWindow = previous.uptime - initial.uptime
+                    let mean = 100 * cpuTime / cpuWindow
                     let p95 = sorted[max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)]
-                    rows.append(["state": state, "phase": phase, "renderer": options.renderer,
-                                 "cpuMean": mean, "cpuP95": p95, "rssStart": initial.rss, "rssEnd": lastRSS])
+                    let gpuMean = gpu.reduce(0, +) / Double(gpu.count)
+                    rows.append(["state": state, "phase": phase, "renderer": options.renderer, "quality": options.quality,
+                                 "cpuMean": mean, "cpuP95": p95, "cpuMethod": "proc_pid_rusage",
+                                 "cpuDeltas": cpuDeltas, "cpuIntervals": cpuIntervals,
+                                 "cpuTimeSeconds": cpuTime, "cpuWindowSeconds": cpuWindow,
+                                 "gpuMean": gpuMean, "gpuSamples": gpu.count,
+                                 "gpuBaselineMean": baselineMean, "gpuBaselineSamples": baselineGPU.count,
+                                 "gpuMarginalMean": gpuMean - baselineMean,
+                                 "rssStart": initial.rss, "rssEnd": lastRSS])
                     try writeJSON(rows, to: options.out)
-                    print("\(options.renderer) \(state) \(phase): CPU \(String(format: "%.2f", mean))% p95 \(p95)% RSS \(Int(initial.rss))→\(Int(lastRSS)) KiB; \(String(format: "%.1f", fps)) fps")
+                    print("\(options.quality)/\(options.renderer) \(state) \(phase): CPU \(String(format: "%.2f", mean))% p95 \(p95)% GPU \(String(format: "%.2f", gpuMean))% RSS \(Int(initial.rss))→\(Int(lastRSS)) KiB; \(String(format: "%.1f", fps)) fps")
                 }
                 fflush(stdout)
             }

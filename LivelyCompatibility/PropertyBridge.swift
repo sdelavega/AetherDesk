@@ -57,6 +57,10 @@ final class PropertyBridge: NSObject {
                      max(Constants.Defaults.minFPS, newValue))
     }
 
+    static func qualityMode(onBattery: Bool, lowPower: Bool) -> String {
+        onBattery || lowPower ? "eco" : "balanced"
+    }
+
     // MARK: Setup
 
     func setWebView(_ webView: WKWebView?) {
@@ -183,10 +187,12 @@ final class PropertyBridge: NSObject {
         // readonly property", aborting the environment update. The cap is already
         // correct from the bootstrap (and a reload rebuilds the webview with the
         // current cap), so re-sending it here is both unnecessary and harmful.
+        let onBattery = WallpaperManager.isOnBatteryPower
         let systemDict: [String: Any] = [
             "isLowPowerMode": isLowPower,
             "isOnline":       true,
-            "qualityMode":    "balanced"
+            "onBattery":      onBattery,
+            "qualityMode":    Self.qualityMode(onBattery: onBattery, lowPower: isLowPower)
         ]
         let env: [String: Any] = ["display": displayDict, "system": systemDict]
         let envJSON = jsonFragment(env)

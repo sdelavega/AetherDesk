@@ -81,6 +81,7 @@ final class WallpaperManager {
     private(set) var isSafeMode = false
     private var fallbackBundle: WallpaperBundle?
     private var occludedDisplays: Set<CGDirectDisplayID> = []
+    private var powerSource: CFRunLoopSource?
     // Session bundles survive disconnects; snapshots describe only active displays.
 
     // MARK: Lifecycle
@@ -107,6 +108,7 @@ final class WallpaperManager {
     }
 
     deinit {
+        if let powerSource { CFRunLoopSourceInvalidate(powerSource) }
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
@@ -369,6 +371,11 @@ final class WallpaperManager {
     // MARK: Observers
 
     private func registerObservers() {
+        powerSource = IOPSNotificationCreateRunLoopSource({ context in
+            guard let context else { return }
+            Unmanaged<WallpaperManager>.fromOpaque(context).takeUnretainedValue().powerStateChanged()
+        }, Unmanaged.passUnretained(self).toOpaque())?.takeRetainedValue()
+        if let powerSource { CFRunLoopAddSource(CFRunLoopGetMain(), powerSource, .commonModes) }
         let nc = NotificationCenter.default
 
         nc.addObserver(self,
@@ -557,6 +564,9 @@ final class WallpaperManager {
     }
 
     @objc private func powerStateChanged() {
+        for runtime in runtimes.values {
+            (runtime as? WebWallpaperRuntime)?.refreshEnvironment()
+        }
         applyPowerPerformancePolicy()
         NotificationCenter.default.post(name: Constants.Notifications.lowPowerModeDidChange,
                                         object: nil)
@@ -642,7 +652,7 @@ final class WallpaperManager {
         }
 
         if performanceSettings.pauseOnBatteryPower,
-           isOnBatteryPower {
+           Self.isOnBatteryPower {
             pauseAll()
             return
         }
@@ -666,7 +676,7 @@ final class WallpaperManager {
     /// `pauseOnBatteryPower` enabled, would freeze the wallpaper permanently on
     /// a desktop. `IOPSGetProvidingPowerSourceType` reports "AC Power" on those
     /// machines and only "Battery Power" on a portable actually running unplugged.
-    private var isOnBatteryPower: Bool {
+    static var isOnBatteryPower: Bool {
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return false }
         let type = IOPSGetProvidingPowerSourceType(snapshot).takeUnretainedValue() as String
         return type == (kIOPSBatteryPowerValue as String)

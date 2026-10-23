@@ -34,7 +34,7 @@ function fixture({ canvas2d = true, webgl = true, failInit = false, search = '' 
   }
   class Scene { add() {} remove() {} }
   class Geometry { setAttribute() {} setDrawRange() {} dispose() {} }
-  class Material { constructor(options) { Object.assign(this, options); } }
+  class Material { constructor(options) { Object.assign(this, options); } dispose() {} }
   class Mesh {
     constructor(geometry, material) { Object.assign(this, { geometry, material, position: new Vector(), rotation: {}, scale: new Vector() }); }
   }
@@ -46,6 +46,10 @@ function fixture({ canvas2d = true, webgl = true, failInit = false, search = '' 
     }
     setPixelRatio() {} getPixelRatio() { return 1; } setSize() {}
     getDrawingBufferSize() { return { x: 800, y: 600 }; }
+    setRenderTarget() {} render() {}
+    readRenderTargetPixels(target, x, y, width, height, pixels) {
+      for (let i = 0; i < pixels.length; i += 4) { pixels[i] = i / 4; pixels[i + 3] = 255; }
+    }
   }
   let initialProperties;
   const c = loadWeatherAether([
@@ -69,7 +73,7 @@ function fixture({ canvas2d = true, webgl = true, failInit = false, search = '' 
         WebGLRenderer: Renderer, Scene, PerspectiveCamera: Camera, ShaderMaterial: Material,
         Color: Vector, Vector2: Vector, Vector3: Vector, PlaneGeometry: Geometry,
         Mesh, Points: Mesh, BufferGeometry: Geometry, Float32BufferAttribute: class {},
-        WebGLRenderTarget: class { constructor() { this.texture = {}; } setSize() {} }
+        WebGLRenderTarget: class { constructor() { this.texture = {}; } setSize() {} dispose() {} }
       } : undefined
     }
   });

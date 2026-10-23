@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AE1400130000000000000001 /* PowerEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400130000000000000002 /* PowerEnvironmentTests.swift */; };
 		AE1400120000000000000001 /* WeatherAetherPortabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */; };
 		AE1400100000000000000003 /* WeatherConditionMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400100000000000000005 /* WeatherConditionMap.swift */; };
 		AE1400100000000000000004 /* WeatherConditionMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400100000000000000005 /* WeatherConditionMap.swift */; };
@@ -139,6 +140,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AE1400130000000000000002 /* PowerEnvironmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/PowerEnvironmentTests.swift; sourceTree = SOURCE_ROOT; };
 		AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/WeatherAetherPortabilityTests.swift; sourceTree = SOURCE_ROOT; };
 		AE1400100000000000000005 /* WeatherConditionMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/WeatherConditionMap.swift; sourceTree = SOURCE_ROOT; };
 		AE1400100000000000000002 /* WeatherConditionMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/WeatherConditionMapTests.swift; sourceTree = SOURCE_ROOT; };
@@ -319,6 +321,7 @@
 				AE1400060000000000000002 /* SafeModeRetryPolicyTests.swift */,
 				AE1400080000000000000002 /* PropertyRoutingTests.swift */,
 				AE1400100000000000000002 /* WeatherConditionMapTests.swift */,
+				AE1400130000000000000002 /* PowerEnvironmentTests.swift */,
 				AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */,
 				8F5D63B30CEEDFD5FCFD2F78 /* WallpaperValidatorTests.swift */,
 			);
@@ -565,6 +568,7 @@
 				AE1400060000000000000001 /* SafeModeRetryPolicyTests.swift in Sources */,
 				AE1400080000000000000001 /* PropertyRoutingTests.swift in Sources */,
 				AE1400100000000000000001 /* WeatherConditionMapTests.swift in Sources */,
+				AE1400130000000000000001 /* PowerEnvironmentTests.swift in Sources */,
 				AE1400120000000000000001 /* WeatherAetherPortabilityTests.swift in Sources */,
 				2475736F7796265F4AA6DE47 /* UpdateSettingsStoreTests.swift in Sources */,
 				FB237493DB8632BE381F2669 /* VideoWallpaperRuntime.swift in Sources */,

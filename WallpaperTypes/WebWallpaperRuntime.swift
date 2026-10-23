@@ -376,6 +376,10 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         propertyBridge.updateProperty(key, value: value)
     }
 
+    func refreshEnvironment() {
+        propertyBridge.injectEnvironment()
+    }
+
     func displayGeometryDidChange() {
         propertyBridge.injectEnvironment()
     }
@@ -644,7 +648,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             window._aetherDeskProperties = window._aetherDeskProperties || {};
             window.aetherDesk = {
                 display: { id: \(displayID), width: 0, height: 0, scaleFactor: 1, isPrimary: false },
-                system:  { isLowPowerMode: false, isOnline: navigator.onLine, qualityMode: 'balanced', capabilities: { ipGeolocation: true } },
+                system:  { isLowPowerMode: \(ProcessInfo.processInfo.isLowPowerModeEnabled), onBattery: \(WallpaperManager.isOnBatteryPower), isOnline: navigator.onLine, qualityMode: '\(PropertyBridge.qualityMode(onBattery: WallpaperManager.isOnBatteryPower, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled))', capabilities: { ipGeolocation: true } },
                 properties: {
                     get: function() { return window._aetherDeskProperties || {}; },
                     onUpdate: function(cb) { callbacks.property = cb; }
