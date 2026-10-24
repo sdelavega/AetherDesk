@@ -16,6 +16,14 @@ It reads Lively's bundle format directly, so a lot of community wallpapers just 
 
 **GitHub Releases (OSS build):** Prefer the open-source configuration? Grab the latest release from the [Releases page](https://github.com/sdelavega/AetherDesk/releases). It's signed and notarized by me, so macOS will open it without complaint — no right-click tricks, no disabling Gatekeeper, no terminal incantations. Just download and run.
 
+**Homebrew (OSS build):**
+
+```bash
+brew install --cask sdelavega/tap/aetherdesk
+```
+
+The OSS build uses Sparkle for updates. Choose **Check for Updates…** from the menu bar or enable automatic checks in **Preferences › General**. An update check sends only the app version and macOS version to `sdelavega.github.io`, nothing else. System profiling is disabled. You can disable automatic checks in **Preferences › General**; the App Store build receives updates through Apple.
+
 Found something broken? [Open an issue.](https://github.com/sdelavega/AetherDesk/issues) Steps to reproduce, what you expected, what actually happened — that's all you need. Console output is a bonus but never required.
 
 ---
@@ -95,7 +103,7 @@ Persistence is split into two stores: `WallpaperStore` for display-to-wallpaper 
 
 ## Building From Source
 
-Clone the repo and open `ÆtherDesk.xcodeproj` directly in Xcode. No package managers, no code generation step, no third-party dependencies — just AppKit, WebKit, AVFoundation, StoreKit, and the usual Apple stack.
+Clone the repo and open `ÆtherDesk.xcodeproj` directly in Xcode. Xcode resolves Sparkle 2 through Swift Package Manager for the OSS target. No code generation step is needed; the App Store target does not link Sparkle.
 
 ```bash
 git clone https://github.com/sdelavega/AetherDesk.git
@@ -105,7 +113,7 @@ open ÆtherDesk.xcodeproj
 
 There are two schemes and they're meaningfully different:
 
-**`AetherDesk` (OSS, default):** Unsandboxed, pulls weather data from open-meteo, runs on macOS 14+. This is what you get if you just hit Run.
+**`AetherDesk` (OSS, default):** Unsandboxed, pulls weather data from open-meteo, runs on macOS 14+. Includes Sparkle updates. This is what you get if you just hit Run.
 
 **`AetherDesk-AppStore`:** Sandboxed, macOS 14+, with WeatherKit behind the Premium in-app purchase. Running it from Xcode uses `AetherDesk.storekit` for local purchase testing, so you can buy, restore, and refund (Debug › StoreKit › Manage Transactions) without App Store Connect. WeatherKit itself requires a paid Apple Developer Program membership and the WeatherKit capability on your App ID; without them the weather wallpaper falls back to open-meteo, and the scheme won't archive cleanly.
 

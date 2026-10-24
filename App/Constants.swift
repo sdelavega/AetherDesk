@@ -41,20 +41,11 @@ enum Constants {
 
         static let memoryWarningThresholdMB: Int = 200
 
-        /// Seconds after launch before the first automatic update check fires.
-        static let updateCheckInitialDelay: TimeInterval = 30
-
-        /// Seconds between periodic update checks (24 hours).
-        static let updateCheckInterval: TimeInterval = 86_400
-
         /// Maximum response body size (bytes) for wallpaper native fetch proxy.
         static let maxNativeFetchResponseBytes: Int64 = 5_000_000 // 5 MB
 
         /// Maximum number of concurrent native fetch tasks per wallpaper.
         static let maxConcurrentNativeFetches: Int = 8
-
-        /// Maximum allowed size (bytes) for an update archive downloaded from GitHub.
-        static let maxUpdateArchiveBytes: Int64 = 200 * 1024 * 1024 // 200 MB
     }
 
     enum Directories {
@@ -72,10 +63,6 @@ enum Constants {
         /// failed). `userInfo["displayID"]` carries the affected display so
         /// the manager can demote just that one.
         static let runtimeDidFail = Notification.Name("ÆtherDesk.runtimeDidFail")
-
-        /// Posted by UpdateManager when a newer release is found during a quiet
-        /// (periodic) check. `object` is the `UpdateManager.GitHubRelease` value.
-        static let updateAvailable = Notification.Name("ÆtherDesk.updateAvailable")
 
         /// Posted by WallpaperImporter after a bundle is deleted from disk.
         /// `userInfo["bundleID"]` carries the deleted bundle's UUID string so

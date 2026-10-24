@@ -128,11 +128,11 @@ private final class PreferencesViewController: NSViewController {
     private let launchAtLoginCheckbox = NSButton(
         checkboxWithTitle: "Launch at login", target: nil, action: nil)
     private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
-    #if !AETHERDESK_STORE
+    #if !AETHERDESK_STORE && !AETHERDESK_TESTS
     private let autoCheckUpdatesCheckbox = NSButton(
         checkboxWithTitle: "Automatically check for updates", target: nil, action: nil)
-    private let autoInstallUpdatesCheckbox = NSButton(
-        checkboxWithTitle: "Automatically install updates", target: nil, action: nil)
+    private let autoDownloadUpdatesCheckbox = NSButton(
+        checkboxWithTitle: "Automatically download updates", target: nil, action: nil)
     #endif
     private let fpsPopup = NSPopUpButton()
     private let lowPowerCheckbox = NSButton(checkboxWithTitle: "Respect Low Power Mode",
@@ -171,16 +171,16 @@ private final class PreferencesViewController: NSViewController {
         launchAtLoginStatusLabel.stringValue = LoginItem.statusDescription
         container.addSubview(launchAtLoginStatusLabel)
 
-        #if !AETHERDESK_STORE
+        #if !AETHERDESK_STORE && !AETHERDESK_TESTS
         autoCheckUpdatesCheckbox.translatesAutoresizingMaskIntoConstraints = false
         autoCheckUpdatesCheckbox.target = self
         autoCheckUpdatesCheckbox.action = #selector(updateSettingsChanged(_:))
         container.addSubview(autoCheckUpdatesCheckbox)
 
-        autoInstallUpdatesCheckbox.translatesAutoresizingMaskIntoConstraints = false
-        autoInstallUpdatesCheckbox.target = self
-        autoInstallUpdatesCheckbox.action = #selector(updateSettingsChanged(_:))
-        container.addSubview(autoInstallUpdatesCheckbox)
+        autoDownloadUpdatesCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        autoDownloadUpdatesCheckbox.target = self
+        autoDownloadUpdatesCheckbox.action = #selector(updateSettingsChanged(_:))
+        container.addSubview(autoDownloadUpdatesCheckbox)
         #endif
 
         let revealButton = NSButton(title: "Reveal wallpaper folder",
@@ -195,7 +195,7 @@ private final class PreferencesViewController: NSViewController {
         note.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(note)
 
-        #if !AETHERDESK_STORE
+        #if !AETHERDESK_STORE && !AETHERDESK_TESTS
         loadUpdateSettingsIntoControls()
         #endif
 
@@ -207,15 +207,15 @@ private final class PreferencesViewController: NSViewController {
             launchAtLoginStatusLabel.leadingAnchor.constraint(equalTo: launchAtLoginCheckbox.leadingAnchor, constant: 20),
             launchAtLoginStatusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
         ])
-        #if !AETHERDESK_STORE
+        #if !AETHERDESK_STORE && !AETHERDESK_TESTS
         NSLayoutConstraint.activate([
             autoCheckUpdatesCheckbox.topAnchor.constraint(equalTo: launchAtLoginStatusLabel.bottomAnchor, constant: 16),
             autoCheckUpdatesCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
 
-            autoInstallUpdatesCheckbox.topAnchor.constraint(equalTo: autoCheckUpdatesCheckbox.bottomAnchor, constant: 6),
-            autoInstallUpdatesCheckbox.leadingAnchor.constraint(equalTo: autoCheckUpdatesCheckbox.leadingAnchor, constant: 20),
+            autoDownloadUpdatesCheckbox.topAnchor.constraint(equalTo: autoCheckUpdatesCheckbox.bottomAnchor, constant: 6),
+            autoDownloadUpdatesCheckbox.leadingAnchor.constraint(equalTo: autoCheckUpdatesCheckbox.leadingAnchor, constant: 20),
 
-            revealButton.topAnchor.constraint(equalTo: autoInstallUpdatesCheckbox.bottomAnchor, constant: 16),
+            revealButton.topAnchor.constraint(equalTo: autoDownloadUpdatesCheckbox.bottomAnchor, constant: 16),
         ])
         #else
         NSLayoutConstraint.activate([
@@ -232,25 +232,21 @@ private final class PreferencesViewController: NSViewController {
         return container
     }
 
-    #if !AETHERDESK_STORE
+    #if !AETHERDESK_STORE && !AETHERDESK_TESTS
     private func loadUpdateSettingsIntoControls() {
-        let settings = UpdateSettingsStore.shared.load()
-        autoCheckUpdatesCheckbox.state  = settings.automaticallyCheckForUpdates ? .on : .off
-        autoInstallUpdatesCheckbox.state = settings.automaticallyInstallUpdates ? .on : .off
-        autoInstallUpdatesCheckbox.isEnabled = settings.automaticallyCheckForUpdates
+        let updater = SoftwareUpdater.shared
+        autoCheckUpdatesCheckbox.state  = updater.automaticallyChecks ? .on : .off
+        autoDownloadUpdatesCheckbox.state = updater.automaticallyDownloads ? .on : .off
+        autoDownloadUpdatesCheckbox.isEnabled = updater.automaticallyChecks
     }
 
     @objc private func updateSettingsChanged(_ sender: Any) {
         let checkOn = autoCheckUpdatesCheckbox.state == .on
-        autoInstallUpdatesCheckbox.isEnabled = checkOn
-        if !checkOn { autoInstallUpdatesCheckbox.state = .off }
-        var settings = UpdateSettingsStore.shared.load()
-        settings.automaticallyCheckForUpdates = checkOn
-        settings.automaticallyInstallUpdates  = autoInstallUpdatesCheckbox.state == .on
-        // Toggling settings signals the user is re-engaging — clear any skip.
-        settings.skippedVersion = nil
-        UpdateSettingsStore.shared.save(settings)
-        UpdateManager.shared.updateTimerForSettingsChange()
+        autoDownloadUpdatesCheckbox.isEnabled = checkOn
+        if !checkOn { autoDownloadUpdatesCheckbox.state = .off }
+        let updater = SoftwareUpdater.shared
+        updater.automaticallyChecks = checkOn
+        updater.automaticallyDownloads = autoDownloadUpdatesCheckbox.state == .on
     }
     #endif
 

@@ -63,6 +63,18 @@ if "$with_appstore"; then
         -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \
         -derivedDataPath "${DERIVED_DATA:-build/gate}" 2>&1 | tee build/gate-oss-release.log
 
+    oss_app="${DERIVED_DATA:-build/gate}/Build/Products/Release/ÆtherDesk.app"
+    if [[ ! -d "$oss_app/Contents/Frameworks/Sparkle.framework" ]]; then
+        printf 'Test gate failed: OSS app is missing Sparkle.framework.\n' >&2
+        exit 1
+    fi
+    /usr/bin/otool -L "$oss_app/Contents/MacOS/ÆtherDesk" > build/gate-oss-linked-libraries.txt
+    if ! grep -Fq '@rpath/Sparkle.framework/' build/gate-oss-linked-libraries.txt; then
+        printf 'Test gate failed: OSS executable does not link Sparkle.\n' >&2
+        exit 1
+    fi
+    printf 'OSS build check passed: Sparkle.framework is embedded and linked.\n'
+
     oss_resources="${DERIVED_DATA:-build/gate}/Build/Products/Release/ÆtherDesk.app/Contents/Resources"
     if [[ ! -f "$oss_resources/Acknowledgements.txt" || ! -d "$oss_resources/Wallpapers" ]]; then
         printf 'Test gate failed: OSS app is missing Acknowledgements.txt or Wallpapers/.\n' >&2
