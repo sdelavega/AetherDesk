@@ -60,23 +60,28 @@
 // original renderer units, preserving every Classic drawing calculation.
 const CFG = { rainIntensity:60, fogDensity:30, neonBrightness:100, vehicleCount:8 };
 let started=false;
+let neonSlider=CFG.neonBrightness, lastNeonBuild=-Infinity;
 function applyState(state, properties){
+  const now=performance.now(), sliderChanged=properties.neonBrightness!==neonSlider;
   const next={rainIntensity:state.rain*120, fogDensity:state.fog*100,
-    neonBrightness:Math.round(state.neon*properties.neonBrightness),
+    neonBrightness:Math.round(state.neon*properties.neonBrightness/5)*5,
     vehicleCount:Math.round(state.trafficDensity*properties.vehicleCount)};
-  const rainChanged=Math.floor(next.rainIntensity*(W/1920)*(H/1080)*2.4)!==rain.length;
+  // Coalesce time-driven changes; explicit slider changes stay responsive.
+  if(started&&!sliderChanged&&now-lastNeonBuild<60000) next.neonBrightness=CFG.neonBrightness;
+  neonSlider=properties.neonBrightness;
   const trafficChanged=next.vehicleCount!==CFG.vehicleCount;
   const neonChanged=next.neonBrightness!==CFG.neonBrightness;
   Object.assign(CFG,next);
   if(!started) return;
-  if(rainChanged) initRain();
-  if(trafficChanged) initVehicles();
+  rainCount=Math.floor(CFG.rainIntensity*(W/1920)*(H/1080)*2.4);
+  if(trafficChanged) updateVehicleCount();
   if(neonChanged){
     // Time-driven brightness changes must not regenerate the city layout.
     const animationSeed=seed;
     seed=cityLayoutSeed;
     buildCity();
     seed=animationSeed;
+    lastNeonBuild=now;
     signsDirty=true;
   }
 }
@@ -137,6 +142,7 @@ function resize(){
   HZ=Math.floor(H*0.78); // horizon at 78% — city fills top 78%, foreground just 22%
   cityLayoutSeed=seed;
   buildCity(); initRain(); initVehicles();
+  lastNeonBuild=performance.now();
   signsDirty=true; fogFrame=0; reflFrame=0;
   cacheVignette();
 }
@@ -473,28 +479,33 @@ function drawAntennas(ctx,t){
 
 // ── Rain system ───────────────────────────────────────────────────────────────
 // Simulates rainfall as a pool of drop objects. Each drop has a position,
-// speed, length, and horizontal drift. initRain() rebuilds the pool when
-// rainIntensity changes. The drop count scales proportionally to screen area
-// so intensity feels consistent across different monitor sizes.
+// speed, length, and horizontal drift. initRain() sizes the pool to the slider
+// maximum on resize; density changes only alter the active prefix. Drop counts
+// scale proportionally to screen area across different monitor sizes.
 //
 // Performance: all drops are batched into a single canvas path and stroked
 // in one call — one GPU stroke for ~200 drops instead of 200 individual calls.
 // Per-drop alpha variation was removed in favour of a single mid-value (0.22);
 // the visual difference is imperceptible at this scale.
-let rain=[];
+let rain=[], rainCount=0;
 function initRain(){
   rain=[];
-  const n=Math.floor(CFG.rainIntensity*(W/1920)*(H/1080)*2.4);
-  for(let i=0;i<n;i++) rain.push(mkDrop(true));
+  rainCount=Math.floor(CFG.rainIntensity*(W/1920)*(H/1080)*2.4);
+  const n=Math.floor(120*(W/1920)*(H/1080)*2.4);
+  for(let i=0;i<rainCount;i++) rain.push(mkDrop(true));
+  // Reserving inactive drops must not change the original animation sequence.
+  const animationSeed=seed;
+  for(let i=rainCount;i<n;i++) rain.push(mkDrop(true));
+  seed=animationSeed;
 }
 function mkDrop(rand){return{x:rng()*W,y:rand?rng()*H:-rR(5,20),spd:rR(15,32),len:rR(8,20),drift:rR(-0.3,1.0)};}
-function updateRain(){const s=dt/33.33;for(const d of rain){d.y+=d.spd*s;d.x+=d.drift*s;if(d.y>H+d.len)Object.assign(d,mkDrop(false));}}
+function updateRain(){const s=dt/33.33;for(let i=0;i<rainCount;i++){const d=rain[i];d.y+=d.spd*s;d.x+=d.drift*s;if(d.y>H+d.len)Object.assign(d,mkDrop(false));}}
 function drawRain(ctx){
   // All drops share one path → one GPU stroke call instead of ~180 individual calls.
   // Per-drop alpha variation removed (was 0.10–0.36); 0.22 is the midpoint.
   ctx.save(); ctx.strokeStyle='rgba(155,200,238,0.22)'; ctx.lineWidth=0.52;
   ctx.beginPath();
-  for(const d of rain){ ctx.moveTo(d.x,d.y); ctx.lineTo(d.x+d.drift*0.6,d.y+d.len); }
+  for(let i=0;i<rainCount;i++){ const d=rain[i]; ctx.moveTo(d.x,d.y); ctx.lineTo(d.x+d.drift*0.6,d.y+d.len); }
   ctx.stroke();
   ctx.restore();
 }
@@ -536,6 +547,10 @@ function drawSplashes(ctx){
 // position — to avoid teleporting.
 let vehicles=[];
 function initVehicles(){vehicles=[];for(let i=0;i<CFG.vehicleCount;i++) vehicles.push(mkVehicle(true));}
+function updateVehicleCount(){
+  if(vehicles.length>CFG.vehicleCount) vehicles.length=CFG.vehicleCount;
+  while(vehicles.length<CFG.vehicleCount) vehicles.push(mkVehicle(false));
+}
 function mkVehicle(rand){
   const dir=rng()<0.5?1:-1, spd=rR(0.5,2.2)*dir;
   const size=rR(1.2,2.8), color=pick(NEONS), tlen=Math.ceil(rR(20,58));

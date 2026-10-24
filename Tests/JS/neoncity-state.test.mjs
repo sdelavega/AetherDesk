@@ -1,6 +1,18 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Stephen de la Vega
-// See Resources/Wallpapers/NeonCity/LICENSE.txt for the MIT license.
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Stephen de la Vega
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -16,6 +28,7 @@ function classicHarness() {
   const frames = [];
   const timers = [];
   let canvasID = 0, gradientID = 0;
+  let elapsed = 0;
   const canvas = () => {
     const id = `canvas${canvasID++}`;
     const context = new Proxy({}, {
@@ -36,9 +49,9 @@ function classicHarness() {
   const output = canvas();
   const now = local(12);
   class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } }
-  return { trace, frames, timers, now, stubs: {
+  return { trace, frames, timers, now, advance: milliseconds => { elapsed = milliseconds; }, stubs: {
     Date: Clock, screen: { width: 1920, height: 1080 },
-    performance: { timeOrigin: 1234567890 }, innerWidth: 1920, innerHeight: 1080,
+    performance: { timeOrigin: 1234567890, now: () => elapsed }, innerWidth: 1920, innerHeight: 1080,
     document: { getElementById: () => output, createElement: canvas },
     addEventListener() {}, requestAnimationFrame: callback => frames.push(callback),
     setInterval: callback => timers.push(callback)
@@ -46,11 +59,19 @@ function classicHarness() {
 }
 
 const traceDigest = trace => createHash('sha256').update(JSON.stringify(trace)).digest('hex');
-function loadCity(files = ['js/city-state.js'], stubs = {}) {
+function loadCity(files = ['js/city-state.js'], stubs = {}, inspectClassic = false) {
   const context = vm.createContext({ ...stubs });
   context.window = context;
   for (const file of files) {
-    vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context, { filename: file });
+    let source = readFileSync(new URL(file, root), 'utf8');
+    if (inspectClassic && file === 'js/classic-renderer.js') {
+      // Inspect the closure in tests without adding a production debug API.
+      source = source.replace(/\}\)\(\);\s*$/, `window.classicProbe = {
+        get rain() { return rain; }, get vehicles() { return vehicles; },
+        get neon() { return CFG.neonBrightness; }, drawRain
+      };})();`);
+    }
+    vm.runInContext(source, context, { filename: file });
   }
   return context;
 }
@@ -221,6 +242,7 @@ test('Classic state changes preserve city geometry and avoid redundant redraws',
   context.ClassicCityRenderer.applyState(night, properties);
   assert.equal(harness.trace.length, count);
   harness.trace.length = 0;
+  harness.advance(60000);
   context.ClassicCityRenderer.applyState({ ...night, neon: 0.7 }, properties);
   assert.deepEqual(harness.trace.filter(row => row[0] === 'canvas1' && ['arc','lineTo','fillRect'].includes(row[1])), geometry);
   harness.trace.length = 0;
@@ -229,6 +251,97 @@ test('Classic state changes preserve city geometry and avoid redundant redraws',
   assert.equal(harness.trace.filter(row => row[0] === 'canvas0' && row[1] === 'drawImage').length, 4);
   const rainPath = harness.trace.findIndex(row => row[0] === 'canvas0' && row[1] === 'strokeStyle' && row[2] === 'rgba(155,200,238,0.22)');
   assert.equal(harness.trace[rainPath + 3][1], 'stroke');
+});
+
+test('three-minute Drifting blends preserve the rain pool and monotonically change drawn drops', () => {
+  const boundary = Date.UTC(2026, 0, 12, 12);
+  for (const direction of [1, -1]) {
+    const harness = classicHarness();
+    const context = loadCity(['js/city-state.js', 'js/classic-renderer.js'], harness.stubs, true);
+    let seed = 0;
+    for (; seed < 10000; seed++) {
+      const before = context.driftingWeather(seed, new Date(boundary));
+      const after = context.driftingWeather(seed, new Date(boundary + 180000));
+      if ((after.rain - before.rain) * direction > 0.2) break;
+    }
+    assert.ok(seed < 10000, 'found a substantial blend in this direction');
+    const weatherAt = second => state(context, new Date(boundary + second * 1000), {
+      timeMode: 'night', weatherMode: 'drifting', seed
+    });
+    const properties = { neonBrightness: 100, vehicleCount: 8 };
+    context.ClassicCityRenderer.start(weatherAt(0), properties);
+    const pool = context.classicProbe.rain;
+    const positions = Array.from(pool, drop => ({ drop, x: drop.x, y: drop.y }));
+    let firstCount, previousCount;
+    for (let second = 0; second <= 180; second++) {
+      harness.advance(second * 1000);
+      const weather = weatherAt(second);
+      context.ClassicCityRenderer.applyState(weather, properties);
+      assert.equal(context.classicProbe.rain, pool, 'density must retain the pool');
+      for (const [index, { drop, x, y }] of positions.entries()) {
+        assert.equal(pool[index], drop, 'density must retain each drop');
+        assert.equal(drop.x, x, 'state update must not reset x');
+        assert.equal(drop.y, y, 'state update must not reset y');
+      }
+      harness.trace.length = 0;
+      context.classicProbe.drawRain(context.document.getElementById('c').getContext('2d'));
+      const count = harness.trace.filter(row => row[1] === 'moveTo').length;
+      assert.equal(count, Math.floor(weather.rain * 120 * 2.4));
+      if (previousCount !== undefined) assert.ok((count - previousCount) * direction >= 0);
+      firstCount ??= count;
+      previousCount = count;
+    }
+    assert.ok((previousCount - firstCount) * direction > 0);
+    assert.equal(pool.length, Math.floor(120 * 2.4), 'pool covers the slider maximum');
+  }
+});
+
+test('traffic density changes preserve every surviving vehicle and its position', () => {
+  const harness = classicHarness();
+  const context = loadCity(['js/city-state.js', 'js/classic-renderer.js'], harness.stubs, true);
+  const night = state(context, local(3));
+  const properties = { neonBrightness: 100, vehicleCount: 20 };
+  context.ClassicCityRenderer.start({ ...night, trafficDensity: 0.2 }, properties);
+  for (const density of [0.5, 1, 0.6, 0.1, 0, 0.4]) {
+    const previous = Array.from(context.classicProbe.vehicles, vehicle => ({ vehicle, x: vehicle.x, y: vehicle.y }));
+    context.ClassicCityRenderer.applyState({ ...night, trafficDensity: density }, properties);
+    const current = context.classicProbe.vehicles;
+    assert.equal(current.length, Math.round(density * properties.vehicleCount));
+    for (let index = 0; index < Math.min(previous.length, current.length); index++) {
+      assert.equal(current[index], previous[index].vehicle);
+      assert.equal(current[index].x, previous[index].x);
+      assert.equal(current[index].y, previous[index].y);
+    }
+  }
+});
+
+test('dusk neon uses slider steps and never rebuilds the city within 60 seconds', () => {
+  const harness = classicHarness();
+  const context = loadCity(['js/city-state.js', 'js/classic-renderer.js'], harness.stubs, true);
+  const properties = { neonBrightness: 100, vehicleCount: 8 };
+  const start = local(18).getTime();
+  context.ClassicCityRenderer.start(state(context, new Date(start)), properties);
+  let lastBuild = 0, builds = 0;
+  // Sweep dusk normally, then compress the same sweep to exercise the cooldown.
+  for (const duration of [10800, 180]) {
+    for (let second = 1; second <= duration; second++) {
+      const elapsed = (duration === 180 ? 10800 : 0) + second;
+      harness.advance(elapsed * 1000);
+      harness.trace.length = 0;
+      context.ClassicCityRenderer.applyState(state(context, new Date(start + second / duration * 10800000)), properties);
+      const rebuilt = harness.trace.some(row => row[0] === 'canvas1' && row[1] === 'clearRect');
+      if (rebuilt) {
+        assert.ok(elapsed - lastBuild >= 60, `city rebuilt after ${elapsed - lastBuild}s`);
+        lastBuild = elapsed;
+        builds++;
+      }
+      assert.equal(context.classicProbe.neon % 5, 0, 'state brightness follows the slider step');
+    }
+  }
+  assert.ok(builds > 0, 'brightness reaches the baked city');
+  harness.advance(12000000);
+  context.ClassicCityRenderer.applyState(state(context, local(21)), properties);
+  assert.equal(context.classicProbe.neon, 100, 'latest target eventually applies');
 });
 
 test('Lively properties retain the object format and requested dropdown defaults', () => {
