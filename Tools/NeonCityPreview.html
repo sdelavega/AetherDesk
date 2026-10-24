@@ -1,0 +1,67 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     Copyright (C) 2026 Stephen de la Vega
+
+     This program is free software: you can redistribute it and/or modify
+     it under the terms of the GNU General Public License as published by
+     the Free Software Foundation, either version 3 of the License, or
+     (at your option) any later version.
+
+     This program is distributed in the hope that it will be useful,
+     but WITHOUT ANY WARRANTY; without even the implied warranty of
+     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+     GNU General Public License for more details.
+
+     You should have received a copy of the GNU General Public License
+     along with this program. If not, see <https://www.gnu.org/licenses/>. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NeonCity preview</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#071122;color:#e1f5f4;font:13px system-ui}
+header{padding:18px 24px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}h1{font-size:18px;margin:0}
+label{display:flex;align-items:center;gap:8px}select,input{accent-color:#9af5df}select{font:inherit;background:#152432;color:inherit;border:1px solid #375061;border-radius:6px;padding:6px}
+iframe{display:block;border:0;width:100vw;height:calc(100vh - 100px)}output{color:#9af5df}#status{padding:6px 24px;color:#9af5df;font:11px monospace}
+</style>
+</head>
+<body>
+<header><h1>NeonCity</h1>
+<label>Hour <input id="hour" type="range" min="0" max="23.9" step="0.1" value="3"><output id="clock">03:00</output></label>
+<label>Phase <select id="phase"><option value="">From hour</option><option>night</option><option>dawn</option><option>day</option><option>dusk</option></select></label>
+<label>Weather <select id="weather"><option>clear</option><option selected>drizzle</option><option>rain</option><option>downpour</option><option>fog</option><option>snow</option></select></label>
+<label>Quality <select id="quality"><option value="balanced">Normal</option><option value="eco">Saver</option></select></label>
+<label>Renderer <select id="renderer"><option value="auto">Auto</option><option value="classic">Classic</option></select></label>
+</header>
+<div id="status" role="status">Loading…</div>
+<iframe id="city" title="Local NeonCity wallpaper preview"></iframe>
+<script>
+'use strict';
+const frame = document.getElementById('city');
+const controls = ['hour', 'phase', 'weather', 'quality', 'renderer'];
+const params = new URLSearchParams(location.search);
+for (const id of controls) if (params.has(id)) document.getElementById(id).value = params.get(id);
+function draw(event = null) {
+  const phase = document.getElementById('phase'), hourControl = document.getElementById('hour');
+  const phaseHours = { night: 3, dawn: 6, day: 12, dusk: 19.5 };
+  if ((!event || event.target.id === 'phase') && phaseHours[phase.value] !== undefined) hourControl.value = phaseHours[phase.value];
+  if (event && event.target.id === 'hour') phase.value = '';
+  const query = new URLSearchParams({ seed: '7319' });
+  for (const id of controls) query.set(id, document.getElementById(id).value);
+  const hour = Number(query.get('hour'));
+  document.getElementById('clock').textContent = String(Math.floor(hour)).padStart(2, '0') + ':' + String(Math.round(hour % 1 * 60)).padStart(2, '0');
+  frame.src = '../Resources/Wallpapers/NeonCity/index.html?' + query;
+}
+for (const id of controls) document.getElementById(id).addEventListener('change', draw);
+setInterval(() => {
+  try {
+    const status = frame.contentWindow.NeonCityStatus;
+    if (status) document.getElementById('status').textContent = status.renderer.toUpperCase() + ' · ' + status.tier.fps + ' fps cap · scale ' + status.renderScale +
+      (status.p95FrameMs === undefined ? '' : ' · p95 submit ' + status.p95FrameMs.toFixed(1) + ' ms') + (status.failure ? ' · ' + status.failure : '');
+  } catch (_) { document.getElementById('status').textContent = 'Open from a local server if this browser isolates file frames.'; }
+}, 1000);
+draw();
+</script>
+</body>
+</html>

@@ -8,12 +8,17 @@
 <title>Neon City</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#000}
-  canvas{display:block;width:100%;height:100%}
+  html,body{width:100%;height:100%;overflow:hidden;background:#071122}
+  canvas{position:absolute;inset:0;display:none;width:100%;height:100%}
+  body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,#01040b88 100%)}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="c" aria-label="Classic neon city"></canvas>
+<canvas id="city-webgl" aria-label="Neon city skyline with changing weather"></canvas>
+<script src="vendor/three-city.min.js"></script>
+<script src="js/three-city.js"></script>
+<script src="js/static-fallback.js"></script>
 <script src="js/city-state.js"></script>
 <script src="js/classic-renderer.js"></script>
 <script src="js/weather-shared/weather.js"></script>

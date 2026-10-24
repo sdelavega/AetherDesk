@@ -66,10 +66,10 @@ function loadCity(files = ['js/city-state.js'], stubs = {}, inspectClassic = fal
     let source = readFileSync(new URL(file, root), 'utf8');
     if (inspectClassic && file === 'js/classic-renderer.js') {
       // Inspect the closure in tests without adding a production debug API.
-      source = source.replace(/\}\)\(\);\s*$/, `window.classicProbe = {
+      source = source.replace('} catch (_)', `window.classicProbe = {
         get rain() { return rain; }, get vehicles() { return vehicles; },
         get neon() { return CFG.neonBrightness; }, drawRain
-      };})();`);
+      };} catch (_)`);
     }
     vm.runInContext(source, context, { filename: file });
   }
@@ -196,40 +196,44 @@ test('Classic matches the original Fixed + Always night drawing trace', () => {
 });
 
 test('property routing, defaults, refresh cadence and Live input reach the renderer', () => {
-  const calls = [], timers = [];
-  const context = loadCity(['js/city-state.js', 'js/main.js'], {
+  const calls = [], timers = [], frames = [];
+  const canvas = { style: {} };
+  const context = loadCity(['js/city-state.js', 'js/three-city.js', 'js/static-fallback.js', 'js/main.js'], {
+    URLSearchParams, location: { search: '' },
+    document: { body: { style: {} }, getElementById: () => canvas },
+    performance: { now: () => 0 }, requestAnimationFrame: callback => frames.push(callback),
     // Weather acquisition is exercised through the page in neoncity-live-weather.test.mjs.
     createNeonCityWeather: () => ({ configure() {} }),
     screen: { width: 1920, height: 1080 },
-    ClassicCityRenderer: { applyState: (state, props) => calls.push({ state, props: { ...props } }),
-      start: (state, props) => calls.push({ state, props: { ...props } }) },
+    ClassicCityRenderer: { draw: (t, state, props) => calls.push({ state, props: { ...props } }) },
     setInterval: (callback, delay) => timers.push({ callback, delay })
   });
+  let timestamp = 0;
+  const paint = () => { frames.shift()(timestamp); timestamp += 40; };
+  const property = (name, value) => { context.livelyPropertyListener(name, value); paint(); };
+  paint();
   assert.equal(calls.at(-1).props.timeMode, 'live');
   assert.equal(calls.at(-1).props.weatherMode, 'drifting');
   assert.equal(calls.at(-1).props.renderer, 'auto');
   assert.equal(timers.length, 1);
   assert.equal(timers[0].delay, 1000);
-  context.livelyPropertyListener('timeMode', 1);
-  context.livelyPropertyListener('weatherMode', 2);
+  property('timeMode', 1); property('weatherMode', 2);
   assert.equal(calls.at(-1).state.phase, 'night');
   assert.equal(calls.at(-1).state.rain, 0.5);
   assert.equal(calls.at(-1).state.fog, 0.3);
-  context.livelyPropertyListener('rainIntensity', 120);
+  property('rainIntensity', 120);
   assert.equal(calls.at(-1).state.rain, 1);
-  context.livelyPropertyListener('weatherMode', 'Live');
-  context.setCityLiveWeather({ state: 'downpour', intensity: 0.9 });
+  property('weatherMode', 'Live');
+  context.setCityLiveWeather({ state: 'downpour', intensity: 0.9 }); paint();
   assert.equal(calls.at(-1).state.weather, 'downpour');
   assert.equal(calls.at(-1).state.rain, 0.9);
-  context.livelyPropertyListener('timeMode', 'Always night');
-  context.livelyPropertyListener('renderer', 'Classic');
-  context.livelyPropertyListener('locationMode', 1);
-  context.livelyPropertyListener('manualLocation', 'Seattle');
+  property('timeMode', 'Always night'); property('renderer', 'Classic');
+  property('locationMode', 1); property('manualLocation', 'Seattle');
   assert.equal(calls.at(-1).props.renderer, 'classic');
   assert.equal(calls.at(-1).props.locationMode, 'manual');
   assert.equal(calls.at(-1).props.manualLocation, 'Seattle');
   const count = calls.length;
-  timers[0].callback();
+  timers[0].callback(); paint();
   assert.equal(calls.length, count + 1);
 });
 

@@ -3,6 +3,7 @@
 // See ../LICENSE.txt for the MIT license.
 (function(){
 'use strict';
+try {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Neon City — ÆtherDesk bundled wallpaper
@@ -111,6 +112,7 @@ const hexToRgba=(hex,a)=>{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.sli
 // attached to the DOM). They share dimensions with the main output canvas and
 // are blitted to it each frame in the compositing order described above.
 const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+if(!ctx) throw new Error('Canvas 2D is unavailable');
 // Static city background — rebuilt only on resize or property change
 const cityC=document.createElement('canvas'), cX=cityC.getContext('2d');
 // Neon signs — rebuilt only when a sign flickers on/off
@@ -705,8 +707,7 @@ function redrawSigns(){
 //   signs:       when signsDirty (flicker state changed)
 // All other layers (city, vignette) are static until resize.
 let last=0, dt=1000/30;
-function frame(t){
-  requestAnimationFrame(frame);
+function drawFrame(t){
   if(last) dt = dt*0.85 + Math.min(t-last,100)*0.15;
   last=t;
   updateRain(); updateVehicles(); updateFlicker(t); spawnSplash();
@@ -730,8 +731,18 @@ function frame(t){
   c.drawImage(vigC,0,0);
 }
 
+function frame(t){
+  requestAnimationFrame(frame);
+  drawFrame(t);
+}
+
 window.ClassicCityRenderer={
   applyState,
+  draw(t,state,properties){
+    applyState(state,properties);
+    if(!started){started=true;resize();}
+    drawFrame(t);
+  },
   start(state,properties){
     if(started) return;
     applyState(state,properties);
@@ -740,4 +751,7 @@ window.ClassicCityRenderer={
     requestAnimationFrame(frame);
   }
 };
+} catch (_) {
+  window.ClassicCityRenderer=null;
+}
 })();

@@ -26,6 +26,8 @@ struct PerfError: Error, CustomStringConvertible {
 let states = ["clear", "partly", "overcast", "fog", "moderate-rain", "freezing", "snow", "thunder", "hail"]
 
 struct Options {
+    var wallpaper = "weather"
+    var phase = "night"
     var renderer = "auto"
     var quality = "balanced"
     var seconds = 30
@@ -46,6 +48,8 @@ struct Options {
             guard !args.isEmpty else { throw PerfError("Missing value for \(flag)") }
             let value = args.removeFirst()
             switch flag {
+            case "--wallpaper": wallpaper = value
+            case "--phase": phase = value
             case "--renderer": renderer = value
             case "--quality": quality = value
             case "--seconds": seconds = Int(value) ?? 0
@@ -63,8 +67,11 @@ struct Options {
         guard ["auto", "classic"].contains(renderer), ["balanced", "eco"].contains(quality), seconds > 0, warmup >= 1,
               soak == nil || (soak! >= 10 && soak! % 10 == 0),
               width > 0, height > 0,
-              state == nil || states.contains(state!) || (capture != nil && state == "no-location") else {
-            throw PerfError("Use --renderer auto|classic --quality balanced|eco --seconds N --out file [--soak N (multiple of 10)] [--state NAME] [--warmup N] [--root path] [--capture PNG --width N --height N --state no-location|NAME]")
+              ["weather", "neoncity"].contains(wallpaper), ["night", "dawn", "day", "dusk"].contains(phase),
+              wallpaper != "neoncity" || capture != nil,
+              state == nil || (wallpaper == "neoncity" ? ["clear", "drizzle", "rain", "downpour", "fog", "snow"].contains(state!) :
+                states.contains(state!) || (capture != nil && state == "no-location")) else {
+            throw PerfError("Use --renderer auto|classic --quality balanced|eco --seconds N --out file [--soak N (multiple of 10)] [--state NAME] [--warmup N] [--root path] [--capture PNG --width N --height N --state no-location|NAME] [--wallpaper weather|neoncity --phase night|dawn|day|dusk]")
         }
     }
 }
@@ -338,6 +345,13 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                                    URLQueryItem(name: "minimal", value: "1")]
             }
         }
+        if options.wallpaper == "neoncity" {
+            url = URLComponents(url: options.root.appendingPathComponent("Resources/Wallpapers/NeonCity/index.html"), resolvingAgainstBaseURL: false)!
+            let hour = ["night": "3", "dawn": "6", "day": "12", "dusk": "19.5"][options.phase]!
+            url.queryItems = [URLQueryItem(name: "renderer", value: options.renderer),
+                              URLQueryItem(name: "quality", value: options.quality), URLQueryItem(name: "hour", value: hour),
+                              URLQueryItem(name: "weather", value: state), URLQueryItem(name: "seed", value: "7319")]
+        }
         webView.loadFileURL(url.url!, allowingReadAccessTo: options.root)
         let deadline = ProcessInfo.processInfo.systemUptime + 30
         while !loaded && failure == nil && ProcessInfo.processInfo.systemUptime < deadline { pump(until: ProcessInfo.processInfo.systemUptime + 0.05) }
@@ -352,6 +366,23 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     }
 
     func snapshot() throws -> [String: Any] {
+        if options.wallpaper == "neoncity" {
+            guard childFrame != nil, var value = try evaluate("""
+            ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfFrames,
+              actualRenderer:NeonCityStatus.renderer,quality:NeonCityStatus.tier,renderScale:NeonCityStatus.renderScale,
+              phase:currentCityState.phase,weather:currentCityState.weather,shaderError:NeonCityStatus.failure,
+              drawingWidth:document.getElementById('city-webgl').width,drawingHeight:document.getElementById('city-webgl').height,
+              paintAge:performance.now()-NeonCityStatus.lastPaint})
+            """) as? [String: Any] else { throw PerfError("Missing NeonCity frame") }
+            let expected = options.renderer == "auto" ? "three" : "canvas"
+            guard value["actualRenderer"] as? String == expected, value["shaderError"] is NSNull,
+                  value["phase"] as? String == options.phase,
+                  let paintAge = value["paintAge"] as? Double, paintAge >= 0, paintAge < 2000 else {
+                throw PerfError("NeonCity changed renderer or stopped painting: \(value)")
+            }
+            value["renderer"] = expected
+            return value
+        }
         guard childFrame != nil, var value = try evaluate("""
         ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfFrames,
           actualRenderer:S.renderer,quality:S.threeAtmosphere?S.threeAtmosphere.quality:null,
@@ -390,10 +421,12 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         defer { unloadView() }
         if let path = options.capture {
             try prepareView()
-            _ = try load(state: options.state ?? "no-location", phase: "night")
+            _ = try load(state: options.state ?? (options.wallpaper == "neoncity" ? "drizzle" : "no-location"), phase: options.phase)
             let info = try snapshot()
-            guard info["isDay"] as? Bool == false else { throw PerfError("Capture must be at night") }
-            if options.state == nil || options.state == "no-location" {
+            if options.wallpaper == "weather" {
+                guard info["isDay"] as? Bool == false else { throw PerfError("Weather capture must be at night") }
+            }
+            if options.wallpaper == "weather" && (options.state == nil || options.state == "no-location") {
                 guard info["latitude"] is NSNull, info["longitude"] is NSNull,
                       info["hasWeather"] as? Bool == false else { throw PerfError("Capture has a location or weather") }
             }
@@ -406,9 +439,21 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                 defer { completed = true }
                 do {
                     if let error { throw error }
-                    guard let image, let tiff = image.tiffRepresentation,
-                          let bitmap = NSBitmapImageRep(data: tiff),
-                          let png = bitmap.representation(using: .png, properties: [:]) else {
+                    guard let image,
+                          let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: self.options.width,
+                            pixelsHigh: self.options.height, bitsPerSample: 8, samplesPerPixel: 4,
+                            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+                          let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+                        throw PerfError("Snapshot did not produce a bitmap")
+                    }
+                    // WKSnapshot uses Retina backing pixels; --width/--height
+                    // describe the delivered PNG as well as the CSS viewport.
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = context
+                    context.imageInterpolation = .high
+                    image.draw(in: NSRect(x: 0, y: 0, width: self.options.width, height: self.options.height))
+                    NSGraphicsContext.restoreGraphicsState()
+                    guard let png = bitmap.representation(using: .png, properties: [:]) else {
                         throw PerfError("Snapshot did not produce a PNG")
                     }
                     let url = URL(fileURLWithPath: path)

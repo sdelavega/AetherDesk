@@ -26,10 +26,12 @@ function city({ host, geolocation, cached, fail = false } = {}) {
   const requests = [], frames = [], timers = new Map(), elements = new Map();
   let id = 0, failing = fail;
   const storage = new Map(cached ? [['wa.lastLoc', JSON.stringify(cached)]] : []);
-  const context = vm.createContext({ URL, AbortSignal, console, Date,
+  elements.set('c', { style: {} }); elements.set('city-webgl', { style: {} });
+  const context = vm.createContext({ URL, URLSearchParams, AbortSignal, console, Date,
+    location: { search: '?renderer=classic' }, requestAnimationFrame() {},
     screen: { width: 1920, height: 1080 }, navigator: { geolocation }, aetherDesk: host,
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, val) => storage.set(key, val) },
-    document: { getElementById: key => elements.get(key), body: { appendChild: el => elements.set(el.id, el) },
+    document: { getElementById: key => elements.get(key), body: { style: {}, appendChild: el => elements.set(el.id, el) },
       createElement: () => ({ style: {}, textContent: '', hidden: false, setAttribute() {} }) },
     setTimeout: (fn, ms) => { timers.set(++id, { fn, ms }); return id; },
     clearTimeout: key => timers.delete(key), setInterval() {},
@@ -51,6 +53,11 @@ function city({ host, geolocation, cached, fail = false } = {}) {
     if (file.endsWith('classic-renderer.js')) continue;
     vm.runInContext(readFileSync(new URL(`NeonCity/${file}`, root), 'utf8'), context, { filename: file });
   }
+  // Observe the atmosphere delivered to the frame dispatcher; rendering itself
+  // is covered by neoncity-fallback and the Classic drawing-trace tests.
+  const refresh = context.refreshCityState;
+  context.refreshCityState = () => { const state = refresh(); frames.push(plain(state)); return state; };
+  context.refreshCityState();
   return { context, requests, frames, timers, elements, fail: (value = true) => { failing = value; } };
 }
 
