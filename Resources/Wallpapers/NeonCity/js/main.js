@@ -45,14 +45,15 @@ function livelyPropertyListener(name, val) {
   } else {
     cityProperties[name] = String(val);
   }
+  if (['weatherMode', 'locationMode', 'manualLocation'].includes(name)) cityWeather.configure(cityProperties);
   refreshCityState();
 }
 
-// Weather acquisition is supplied by the later Live-weather integration.
 // Missing Live data follows the same deterministic Drifting schedule.
 window.setCityLiveWeather = function(weather) {
   cityLiveWeather = weather;
   refreshCityState();
 };
+const cityWeather = createNeonCityWeather(window.setCityLiveWeather);
 window.ClassicCityRenderer.start(refreshCityState(), cityProperties);
 setInterval(refreshCityState, 1000);

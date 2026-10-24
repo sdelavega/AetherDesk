@@ -198,6 +198,8 @@ test('Classic matches the original Fixed + Always night drawing trace', () => {
 test('property routing, defaults, refresh cadence and Live input reach the renderer', () => {
   const calls = [], timers = [];
   const context = loadCity(['js/city-state.js', 'js/main.js'], {
+    // Weather acquisition is exercised through the page in neoncity-live-weather.test.mjs.
+    createNeonCityWeather: () => ({ configure() {} }),
     screen: { width: 1920, height: 1080 },
     ClassicCityRenderer: { applyState: (state, props) => calls.push({ state, props: { ...props } }),
       start: (state, props) => calls.push({ state, props: { ...props } }) },
