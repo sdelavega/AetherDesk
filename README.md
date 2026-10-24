@@ -146,7 +146,7 @@ The cask removes the OSS app's Application Support folder, preferences and ASCII
 
 ## Honest Caveats
 
-The OSS build is unsandboxed by design. The App Store / TestFlight build is fully sandboxed. Display restore at launch works well; hot-plug restore (unplug and replug a display mid-session) is on the list. The codebase is AppKit-first and deliberately light on abstraction — it's a focused utility, not a framework.
+The OSS build is unsandboxed by design. The App Store / TestFlight build is fully sandboxed. The codebase is AppKit-first and deliberately light on abstraction — it's a focused utility, not a framework.
 
 ---
 

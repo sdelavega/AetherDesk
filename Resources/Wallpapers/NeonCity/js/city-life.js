@@ -32,10 +32,11 @@ function createLife(seed, model) {
     { x: 29, y: 76, z0: -700, z1: 100, speed: .014 }
   ];
   const vehiclePool = [], vehicles = [], signs = [], events = [];
-  for (let i = 0; i < CITY_VEHICLE_COUNT; i++) {
+  for (let i = 0; i < 20; i++) {
     const lane = i % lanes.length, phase = random();
     const vehicle = { lane, phase, t: phase, speed: lanes[lane].speed * (.7 + random() * .6) };
-    vehiclePool.push(vehicle); vehicles.push(vehicle);
+    vehiclePool.push(vehicle);
+    if (i < CITY_VEHICLE_COUNT) vehicles.push(vehicle);
   }
   for (const site of signSites(model)) {
     signs.push({ ...site, on: true, dead: false, flicker: random() < .12,
@@ -72,7 +73,8 @@ function createLife(seed, model) {
     life.brightness = cityState.neon;
     life.motionScale = day ? .7 : 1;
     elapsed += dt; signClock += dt * frequency;
-    const count = Math.round(cityClamp(cityState.trafficDensity) * CITY_VEHICLE_COUNT * tier.countScale);
+    const count = Math.round(cityClamp(cityState.trafficDensity) * tier.countScale *
+      (cityState.vehicleCount ?? CITY_VEHICLE_COUNT));
     vehicles.length = count;
     for (let i = 0; i < vehiclePool.length; i++) {
       const vehicle = vehiclePool[i];

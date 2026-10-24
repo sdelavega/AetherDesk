@@ -16,7 +16,25 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { loadWeatherAether } from './harness.mjs';
+
+test('both wallpaper pages version every local script and link for v1.4', () => {
+  for (const wallpaper of ['WeatherAether', 'NeonCity']) {
+    const html = readFileSync(new URL(`../../Resources/Wallpapers/${wallpaper}/index.html`, import.meta.url), 'utf8');
+    const assets = [...html.matchAll(/<(?:script|link)\b[^>]*\b(?:src|href)="([^"]+)"/g)].map(match => match[1]);
+    assert.ok(assets.length > 0);
+    for (const asset of assets) {
+      if (/^(?:[a-z]+:|\/\/)/i.test(asset)) continue;
+      assert.equal(new URL(asset, 'https://wallpaper.invalid/').search, '?v=1.4.0', `${wallpaper}: ${asset}`);
+    }
+  }
+});
+
+test('WeatherAether has a dark CSS body background before any script runs', () => {
+  const html = readFileSync(new URL('../../Resources/Wallpapers/WeatherAether/index.html', import.meta.url), 'utf8');
+  assert.match(html, /body\s*\{[^}]*background:\s*#071122\b/);
+});
 
 function fixture({ canvas2d = true, webgl = true, failInit = false, search = '' } = {}) {
   const events = new Map();

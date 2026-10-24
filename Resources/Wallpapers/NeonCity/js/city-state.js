@@ -11,6 +11,14 @@ function qualityTier(system) {
   return system.qualityMode === 'eco' || system.isLowPowerMode || system.onBattery ?
     CITY_QUALITY.saver : CITY_QUALITY.normal;
 }
+
+function adaptRenderScale(current, p95FrameMs, msUnderBudget) {
+  const scales = [.5, .6, .75];
+  const index = scales.indexOf(current);
+  if (p95FrameMs > 20) return scales[Math.max(0, index - 1)];
+  if (p95FrameMs < 12 && msUnderBudget >= 60000) return scales[Math.min(scales.length - 1, index + 1)];
+  return current;
+}
 const CITY_PALETTES = {
   night: { sky: '#02050e', horizon: '#102342', fog: '#071122', light: '#89b8dd', ambient: 0.8 },
   dawn: { sky: '#092347', horizon: '#eaa259', fog: '#6d5039', light: '#f5b982', ambient: 1.4 },
@@ -90,5 +98,6 @@ function deriveCityState(input) {
   const trafficDensity = phase === 'night' ? 1 : phase === 'day' ? 0.55 :
     phase === 'dawn' ? cityMix(1, 0.55, phaseBlend) : cityMix(0.55, 1, phaseBlend);
   return { phase, phaseBlend, weather: weather.state, rain: weather.rain, fog: weather.fog,
-    neon, windowsLit, trafficDensity };
+    neon, windowsLit, trafficDensity,
+    vehicleCount: Math.max(0, Math.min(20, Number(input.vehicleCount ?? 8))) };
 }

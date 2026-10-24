@@ -79,7 +79,7 @@ test('actual page scripts draw Classic and a static gradient with three-city.js 
     });
     context.window = context;
     for (const [, file] of source('index.html').matchAll(/<script src="([^"]+)"/g)) {
-      if (file === 'js/three-city.js') continue;
+      if (file.split('?')[0] === 'js/three-city.js') continue;
       vm.runInContext(source(file), context, { filename: file });
     }
     assert.equal(context.NeonCityStatus.renderer, canvasAvailable ? 'canvas' : 'static');
@@ -157,11 +157,14 @@ test('initialization, render, and Canvas failures descend to a phase gradient', 
   assert.equal(render.counts().classicFrames, 1);
   const failed = runtime({ webgl: false, classicThrows: true }); failed.start(); failed.tick(0);
   assert.equal(failed.context.NeonCityStatus.renderer, 'static');
+  const gradients = new Set();
   for (const phase of ['night', 'dawn', 'day', 'dusk']) {
     failed.context.phase = phase;
     failed.run('applyStaticAtmosphere({phase})');
     assert.match(failed.context.document.body.style.background, /linear-gradient/);
+    gradients.add(failed.context.document.body.style.background);
   }
+  assert.equal(gradients.size, 4, 'all phase gradients are pairwise distinct');
 });
 
 test('tier changes apply live, cap cadence, and never recover above saver scale', () => {
@@ -175,17 +178,71 @@ test('tier changes apply live, cap cadence, and never recover above saver scale'
   assert.equal(r.context.NeonCityStatus.tier.fps, 30);
 });
 
-test('R26 keeps the normal scale floor under load and applies saver scale live', () => {
-  const r = runtime(); let clock = 0;
+test('adaptive scale respects strict frame-time and recovery boundaries', () => {
+  const r = runtime();
+  for (const [current, p95, duration, expected] of [
+    [.75, 20, 0, .75], [.75, 20.1, 0, .6], [.6, 20.1, 0, .5], [.5, 20.1, 0, .5],
+    [.5, 12, 60000, .5], [.5, 11.9, 59999, .5], [.5, 11.9, 60000, .6],
+    [.6, 11.9, 60000, .75], [.75, 11.9, 60000, .75]
+  ]) assert.equal(r.context.adaptRenderScale(current, p95, duration), expected);
+});
+
+test('measured ten-second p95 windows step down and recover after sixty continuous seconds', () => {
+  const r = runtime(); let clock = 0, cost = 20.1;
   r.context.performance.now = () => clock;
-  r.context.threeFrame = () => { clock += 25; };
-  r.start(); r.tick(0); r.tick(10000); r.tick(20000);
+  r.context.threeFrame = () => { clock += cost; };
+  r.start(); r.tick(0); r.tick(9999);
   assert.equal(r.context.NeonCityStatus.renderScale, .75);
-  assert.equal(r.context.NeonCityStatus.p95FrameMs, 25);
-  r.context.aetherDesk.system.onBattery = true; r.tick(30000);
+  r.tick(10040);
+  assert.ok(Math.abs(r.context.NeonCityStatus.p95FrameMs - cost) < 1e-9);
+  assert.equal(r.context.NeonCityStatus.renderScale, .6);
+  r.tick(20040);
   assert.equal(r.context.NeonCityStatus.renderScale, .5);
-  r.context.aetherDesk.system.onBattery = false; r.tick(40000);
+  cost = 11.9;
+  for (let t = 30040; t <= 70040; t += 10000) r.tick(t);
+  assert.equal(r.context.NeonCityStatus.renderScale, .5);
+  r.tick(80040);
+  assert.equal(r.context.NeonCityStatus.renderScale, .6);
+  for (let t = 90040; t <= 140040; t += 10000) r.tick(t);
   assert.equal(r.context.NeonCityStatus.renderScale, .75);
+});
+
+test('recovery resets on a slow window and never exceeds the tier ceiling', () => {
+  const r = runtime(); let clock = 0, cost = 25;
+  r.context.performance.now = () => clock;
+  r.context.threeFrame = () => { clock += cost; };
+  r.start(); r.tick(0); r.tick(10000); r.tick(20000);
+  cost = 10;
+  for (let t = 30000; t <= 70000; t += 10000) r.tick(t);
+  cost = 12; r.tick(80000); r.tick(90000);
+  cost = 10;
+  for (let t = 100000; t <= 140000; t += 10000) r.tick(t);
+  assert.equal(r.context.NeonCityStatus.renderScale, .5);
+  r.tick(150000);
+  assert.equal(r.context.NeonCityStatus.renderScale, .6);
+  r.context.aetherDesk.system.onBattery = true;
+  for (let t = 180000; t <= 280000; t += 10000) r.tick(t);
+  assert.equal(r.context.NeonCityStatus.renderScale, .5);
+  r.context.aetherDesk.system.onBattery = false; r.tick(290000);
+  assert.equal(r.context.NeonCityStatus.renderScale, .75);
+});
+
+test('Traffic Density property changes Three-mode vehicle counts across both tiers', () => {
+  const r = runtime();
+  vm.runInContext(source('js/city-life.js'), r.context);
+  r.run('window.testLife = createLife(7319, buildCity(7319))');
+  r.context.threeFrame = () => r.run('testLife.update(0, currentCityState)');
+  r.start(); r.run("livelyPropertyListener('timeMode', 'night')");
+  let t = 0;
+  for (const onBattery of [false, true]) {
+    r.context.aetherDesk.system.onBattery = onBattery;
+    for (const value of [8, 0, 20, 5, 8]) {
+      r.run(`livelyPropertyListener('vehicleCount', ${value})`); r.tick(t += 100);
+      assert.equal(r.context.NeonCityStatus.renderer, 'three');
+      assert.equal(r.context.testLife.vehicles.length, Math.round((onBattery ? .4 : 1) * value));
+      assert.ok(Array.from(r.context.testLife.vehicles).every(vehicle => vehicle && Number.isFinite(vehicle.t)));
+    }
+  }
 });
 
 test('production initializer wires context loss and shader failure, and disposes failed initialization', () => {

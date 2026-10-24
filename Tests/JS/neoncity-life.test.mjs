@@ -191,6 +191,11 @@ test('production scene moves pooled instances, switches live counts and extingui
   draw(0);
   assert.deepEqual(colors.map(mesh => mesh.instanceColor.version), versions, 'unchanged signs do not upload colors again');
   assert.equal(city.lifeView.body.count, 8); assert.equal(city.lifeView.lamps.count, 32);
+  for (const vehicleCount of [0, 20, 5, 8]) {
+    state.vehicleCount = vehicleCount; draw(0);
+    assert.equal(city.lifeView.body.count, vehicleCount);
+    assert.equal(city.lifeView.lamps.count, vehicleCount * 4);
+  }
   assert.ok(city.lifeView.streamCount > 0);
   const alpha = city.lifeView.tracks.geometry.attributes.cityAlpha;
   assert.ok(alpha.isInstancedBufferAttribute);

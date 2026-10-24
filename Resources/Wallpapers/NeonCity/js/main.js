@@ -29,7 +29,7 @@ if (['classic', 'canvas'].includes(cityPreview.get('renderer'))) cityProperties.
 let cityLiveWeather = null, currentCityState;
 let cityRenderer = 'static', cityThreeFailed = false, cityCanvasFailed = false;
 let cityThreeInitialized = false, cityDisposePending = false, cityLastFrame = -Infinity;
-let citySampleStart = null, citySamples = [];
+let citySampleStart = null, citySamples = [], cityMsUnderBudget = 0;
 window.NeonCityStatus = { renderer: 'static', lastPaint: 0, failure: null,
   tier: qualityTier({}), renderScale: .75, neonBrightness: 100 };
 
@@ -42,7 +42,7 @@ function refreshCityState() {
   const state = deriveCityState({ now, timeMode: cityProperties.timeMode,
     weatherMode: cityProperties.weatherMode,
     fixed: { rain: cityProperties.rainIntensity, fog: cityProperties.fogDensity },
-    live: cityLiveWeather, seed: cityWeatherSeed });
+    live: cityLiveWeather, seed: cityWeatherSeed, vehicleCount: cityProperties.vehicleCount });
   if (CITY_WEATHER[cityPreview.get('weather')]) {
     state.weather = cityPreview.get('weather'); Object.assign(state, CITY_WEATHER[state.weather]);
   }
@@ -86,10 +86,11 @@ function cityAnimationFrame(t) {
   if (tier.fps !== status.tier.fps) {
     // A new power tier starts a fresh measurement window.
     citySampleStart = null; citySamples = [];
+    cityMsUnderBudget = 0; status.p95FrameMs = undefined;
+    status.renderScale = tier.renderScale;
   }
   status.tier = tier;
-  // R26 fixes saver scale and forbids reducing normal below 0.75.
-  status.renderScale = tier.renderScale;
+  status.renderScale = Math.min(status.renderScale, tier.renderScale);
   status.neonBrightness = cityProperties.neonBrightness;
   const interval = 1000 / tier.fps, frameElapsed = t - cityLastFrame, tolerance = 2;
   if (frameElapsed < interval - tolerance) return;
@@ -116,6 +117,11 @@ function cityAnimationFrame(t) {
     citySamples.sort((a, b) => a - b);
     const p95 = citySamples[Math.max(0, Math.ceil(citySamples.length * .95) - 1)];
     status.p95FrameMs = p95;
+    cityMsUnderBudget = status.p95FrameMs < 12 ? cityMsUnderBudget + t - citySampleStart : 0;
+    const scale = Math.min(tier.renderScale,
+      adaptRenderScale(status.renderScale, status.p95FrameMs, cityMsUnderBudget));
+    if (scale !== status.renderScale) cityMsUnderBudget = 0;
+    status.renderScale = scale;
     citySampleStart = t; citySamples = [];
   }
 }

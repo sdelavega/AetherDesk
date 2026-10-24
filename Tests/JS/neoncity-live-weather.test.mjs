@@ -50,7 +50,7 @@ function city({ host, geolocation, cached, fail = false } = {}) {
   // Use the actual page's script order; the renderer is replaced with a frame observer.
   const html = readFileSync(new URL('NeonCity/index.html', root), 'utf8');
   for (const [, file] of html.matchAll(/<script src="([^"]+)"/g)) {
-    if (file.endsWith('classic-renderer.js')) continue;
+    if (file.split('?')[0].endsWith('classic-renderer.js')) continue;
     vm.runInContext(readFileSync(new URL(`NeonCity/${file}`, root), 'utf8'), context, { filename: file });
   }
   // Observe the atmosphere delivered to the frame dispatcher; rendering itself

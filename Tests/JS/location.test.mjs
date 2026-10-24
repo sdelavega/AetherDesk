@@ -125,3 +125,14 @@ test('stale cache fallback does not overwrite newer location', () => {
   assert.equal(context.fallbackLoc(1), false);
   assert.equal(context.S.lat, undefined);
 });
+
+test('all coordinate and reverse-geocoding fallbacks use Current location', async () => {
+  const { context } = locationContext({ host: enabled });
+  assert.equal(context.coordinateLabel(NaN, NaN), 'Current location');
+  for (const data of [null, {}]) {
+    context.fetch = async () => ({ ok: true, json: async () => data });
+    assert.equal(await context.reverseGeocode(1, 2), 'Current location');
+  }
+  context.fetch = async () => { throw Error('offline'); };
+  assert.equal(await context.reverseGeocode(1, 2), 'Current location');
+});
