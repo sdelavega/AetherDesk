@@ -29,7 +29,7 @@ if (['classic', 'canvas'].includes(cityPreview.get('renderer'))) cityProperties.
 let cityLiveWeather = null, currentCityState;
 let cityRenderer = 'static', cityThreeFailed = false, cityCanvasFailed = false;
 let cityThreeInitialized = false, cityDisposePending = false, cityLastFrame = -Infinity;
-let citySampleStart = null, citySamples = [], cityUnderBudget = 0;
+let citySampleStart = null, citySamples = [];
 window.NeonCityStatus = { renderer: 'static', lastPaint: 0, failure: null,
   tier: qualityTier({}), renderScale: .75, neonBrightness: 100 };
 
@@ -84,14 +84,17 @@ function cityAnimationFrame(t) {
   cityFrameSystem.isLowPowerMode = system && system.isLowPowerMode;
   const tier = qualityTier(cityFrameSystem);
   if (tier.fps !== status.tier.fps) {
-    // A new power tier starts a fresh measurement window. Recovery still needs a full minute.
-    citySampleStart = null; citySamples = []; cityUnderBudget = 0;
+    // A new power tier starts a fresh measurement window.
+    citySampleStart = null; citySamples = [];
   }
   status.tier = tier;
-  status.renderScale = Math.min(status.renderScale, tier.renderScale);
+  // R26 fixes saver scale and forbids reducing normal below 0.75.
+  status.renderScale = tier.renderScale;
   status.neonBrightness = cityProperties.neonBrightness;
-  if (t - cityLastFrame < 1000 / tier.fps - .5) return;
-  cityLastFrame = t;
+  const interval = 1000 / tier.fps, frameElapsed = t - cityLastFrame, tolerance = 2;
+  if (frameElapsed < interval - tolerance) return;
+  // WebKit timestamps can be quantized; preserve the deadline even on an early callback.
+  cityLastFrame = Number.isFinite(frameElapsed) ? cityLastFrame + Math.floor((frameElapsed + tolerance) / interval) * interval : t;
   if (cityDisposePending) {
     if (typeof disposeThreeCity === 'function') disposeThreeCity();
     cityThreeInitialized = false; cityDisposePending = false;
@@ -112,11 +115,7 @@ function cityAnimationFrame(t) {
   if (t - citySampleStart >= 10000) {
     citySamples.sort((a, b) => a - b);
     const p95 = citySamples[Math.max(0, Math.ceil(citySamples.length * .95) - 1)];
-    const windowMs = t - citySampleStart;
-    cityUnderBudget = p95 < 12 ? cityUnderBudget + windowMs : 0;
-    const next = Math.min(tier.renderScale, adaptRenderScale(status.renderScale, p95, cityUnderBudget));
-    if (next !== status.renderScale) cityUnderBudget = 0;
-    status.renderScale = next; status.p95FrameMs = p95;
+    status.p95FrameMs = p95;
     citySampleStart = t; citySamples = [];
   }
 }

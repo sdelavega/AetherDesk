@@ -41,6 +41,11 @@ iframe{display:block;border:0;width:100vw;height:calc(100vh - 100px)}output{colo
 const frame = document.getElementById('city');
 const controls = ['hour', 'phase', 'weather', 'quality', 'renderer'];
 const params = new URLSearchParams(location.search);
+if (params.get('perf') === '1') {
+  document.querySelector('header').style.display = 'none';
+  document.getElementById('status').hidden = true;
+  frame.style.height = '100vh';
+}
 for (const id of controls) if (params.has(id)) document.getElementById(id).value = params.get(id);
 function draw(event = null) {
   const phase = document.getElementById('phase'), hourControl = document.getElementById('hour');

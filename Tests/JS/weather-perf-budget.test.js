@@ -30,17 +30,40 @@ function cpuWindow(row,mean,p95=mean){
   row.cpuWindowSeconds=30;row.cpuTimeSeconds=30*mean/100;
   row.cpuMean=mean;row.cpuP95=p95;
 }
-function check(edit){
+function check(edit,wallpaper='weather'){
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'weather-perf-'));
   const data={};
   for(const quality of ['balanced','eco','classic'])data[quality]=states.flatMap(state=>['day','night'].map(phase=>({state,phase,renderer:quality==='classic'?'classic':'auto',quality:quality==='classic'?'balanced':quality,gpuMean:quality==='eco'?72:80,gpuSamples:30,gpuBaselineMean:60,gpuBaselineSamples:15,gpuMarginalMean:quality==='eco'?12:20,rssStart:100,rssEnd:100})));
   data.soak=Array.from({length:61},(_,i)=>({seconds:i*10,rss:100,renderer:'auto',quality:'balanced',state:'thunder',phase:'night'}));
   for(const tier of ['classic','balanced','eco'])for(const row of data[tier])cpuWindow(row,tier==='balanced'?7:tier==='eco'?4.25:2,10);
+  if(wallpaper==='neoncity'){
+    for(const quality of ['balanced','eco','classic'])data[quality]=['clear','drizzle','rain','downpour','fog','snow'].flatMap(state=>['night','dawn','day','dusk'].map(phase=>({...data[quality][0],state,phase,wallpaper:'neoncity',viewportWidth:1920,viewportHeight:1080,drawingWidth:quality==='eco'?960:1440,drawingHeight:quality==='eco'?540:810,fps:quality==='eco'?15:30,renderScale:quality==='eco'?0.5:0.75,tier:{fps:quality==='eco'?15:30,renderScale:quality==='eco'?0.5:0.75,countScale:quality==='eco'?0.4:1,eventScale:quality==='eco'?0.5:1}})));
+    data.soak.forEach(row=>{row.state='rain';row.wallpaper='neoncity';});
+  }
   edit(data);
   for(const key of Object.keys(data))fs.writeFileSync(path.join(dir,key+'.json'),JSON.stringify(data[key]));
-  try{return spawnSync('bash',['scripts/check-weather-perf.sh','--evaluate',dir],{encoding:'utf8'});}
+  try{return spawnSync('bash',['scripts/check-weather-perf.sh','--evaluate',dir,...(wallpaper==='neoncity'?['--wallpaper','neoncity']:[])],{encoding:'utf8'});}
   finally{fs.rmSync(dir,{recursive:true,force:true});}
 }
+test('NeonCity R26 accepts both tiers at their limits and Classic as reference',()=>{
+  const result=check(data=>{for(const row of data.classic)cpuWindow(row,100,100);},'neoncity');
+  assert.equal(result.status,0,result.stderr+result.stdout);
+  assert.match(result.stdout,/NeonCity performance budget/);
+  assert.match(result.stdout,/rain\/night\/balanced/);
+});
+test('NeonCity gates every tier budget across the full phase/weather matrix',()=>{
+  for(const [tier,key,limit] of [['balanced','cpuMean',7],['balanced','cpuP95',10],['balanced','gpuMarginalMean',20],['eco','cpuMean',4.25],['eco','gpuMarginalMean',12]]){
+    const result=check(data=>{const row=data[tier].at(-1);if(key==='cpuMean')cpuWindow(row,limit+0.01,10);else if(key==='cpuP95')cpuWindow(row,7,limit+0.01);else{row.gpuMean=row.gpuBaselineMean+limit+0.01;row.gpuMarginalMean=limit+0.01;}},'neoncity');
+    assert.equal(result.status,1,result.stderr+result.stdout);
+    assert.match(result.stdout,/snow.*dusk.*FAIL/);
+  }
+});
+test('NeonCity rejects incomplete matrices, wrong soak, stopped motion and reduced quality',()=>{
+  for(const edit of [data=>data.eco.pop(),data=>{data.balanced[0].phase='midnight';},data=>{data.balanced[0].wallpaper='weather';},data=>{data.soak[60].state='thunder';},data=>{data.soak[60].rss=111;},data=>{data.balanced[0].fps=20;},data=>{data.balanced[0].renderScale=0.5;},data=>{data.eco[0].tier.countScale=0.2;},data=>{data.balanced[0].drawingWidth=2880;},data=>{data.eco[0].drawingHeight=1080;},data=>{data.balanced[0].viewportWidth=1280;}]){
+    const result=check(edit,'neoncity');
+    assert.notEqual(result.status,0,result.stderr+result.stdout);
+  }
+});
 test('native CPU counter units agree with getrusage seconds',()=>{
   const source=fs.readFileSync('Tools/WeatherPerf/main.swift','utf8').split('// IOAccelerator reports')[0];
   const result=spawnSync('/usr/bin/swift',['-e',source+`

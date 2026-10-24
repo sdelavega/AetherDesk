@@ -43,19 +43,19 @@ test('vehicle count follows rounded traffic density and live quality countScale'
   const { life, context } = runtime();
   for (const density of [0, .01, .27, .55, .99, 1]) {
     life.update(0, { ...night, trafficDensity: density });
-    assert.equal(life.vehicles.length, Math.round(density * 20));
+    assert.equal(life.vehicles.length, Math.round(density * 8));
   }
   context.NeonCityStatus.tier = context.qualityTier({ onBattery: true });
-  life.update(0, night); assert.equal(life.vehicles.length, 8);
+  life.update(0, night); assert.equal(life.vehicles.length, 3);
   context.NeonCityStatus.tier = context.qualityTier({});
-  life.update(0, night); assert.equal(life.vehicles.length, 20);
+  life.update(0, night); assert.equal(life.vehicles.length, 8);
 });
 
 test('missing quality tier uses normal life counts', () => {
   const { life, context } = runtime();
   context.NeonCityStatus = {};
   life.update(0, night);
-  assert.equal(life.vehicles.length, 20);
+  assert.equal(life.vehicles.length, 8);
 });
 
 test('shared sign sites enumerate eligible towers in stable order', () => {
@@ -74,7 +74,7 @@ test('individual speeds stay within ±30% of lane speed and ease at lane ends', 
     assert.ok(vehicle.speed >= speed * .7 && vehicle.speed <= speed * 1.3);
     speeds.add(vehicle.speed / speed);
   }
-  assert.ok(speeds.size > 10);
+  assert.ok(speeds.size > life.vehicles.length / 2);
   const vehicle = life.vehicles[0];
   vehicle.phase = 0; life.update(0, night); const start = vehicle.t;
   life.update(.01, night); const atEnd = vehicle.t - start;
@@ -134,7 +134,7 @@ test('saver eventScale halves event frequency; daytime reduces traffic, glow, sp
   const ratio = starts(saver.life) / starts(normal.life);
   assert.ok(ratio > .47 && ratio < .53, `saver ratio ${ratio}`);
   assert.ok(starts(day.life) < starts(normal.life) * .3);
-  assert.equal(day.life.vehicles.length, 11);
+  assert.equal(day.life.vehicles.length, 4);
   assert.ok(day.life.brightness < normal.life.brightness);
   assert.ok(day.life.motionScale < normal.life.motionScale);
 });
@@ -147,7 +147,7 @@ test('production scene moves pooled instances, switches live counts and extingui
     return () => {};
   } });
   const canvas = () => ({ getContext: () => drawing, addEventListener() {} });
-  const context = vm.createContext({ innerWidth: 1280, innerHeight: 720, document: { createElement: canvas } });
+  const context = vm.createContext({ innerWidth: 1280, innerHeight: 720, devicePixelRatio: 2, document: { createElement: canvas } });
   context.window = context;
   for (const file of ['vendor/three-city.min.js', 'js/city-state.js', 'js/city-life.js', 'js/three-city.js']) {
     vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context);
@@ -162,8 +162,15 @@ test('production scene moves pooled instances, switches live counts and extingui
   vm.runInContext(`window.NeonCityStatus = {tier:qualityTier({}),renderScale:.75,neonBrightness:100};
     if(!initializeThreeCity(canvas, buildCity(7319))) throw Error('scene initialization failed');`, context);
   const city = vm.runInContext('threeCity', context);
+  assert.ok(city.haloMesh?.isInstancedMesh, 'sign halos share one draw');
+  assert.equal(city.haloMesh.count, city.halos.length);
+  assert.equal(city.signBatches.length, 1, 'all sign art shares one draw');
+  const tiles = city.signBatches[0].mesh.geometry.attributes.cityTile;
+  assert.ok(tiles.isInstancedBufferAttribute);
+  assert.deepEqual([...new Set(tiles.array)].filter(tile => tile < 8).sort(), [0, 1, 2, 3, 4, 5, 6, 7], 'all eight local art variants remain');
+  assert.ok(tiles.array.includes(8), 'static neon trim shares the atlas draw');
   const sceneSigns = Array.from(city.signBatches).flatMap(batch => Array.from(batch.signs));
-  assert.equal(city.life.signs.length, city.signBatches.reduce((n, batch) => n + batch.mesh.count, 0));
+  assert.equal(city.life.signs.length, city.signBatches.reduce((n, batch) => n + batch.signs.length, 0));
   assert.deepEqual(sceneSigns.map(sign => sign.lifeIndex).sort((a, b) => a - b),
     Array.from({ length: city.life.signs.length }, (_, i) => i));
   const sites = context.signSites(context.buildCity(7319));
@@ -177,8 +184,17 @@ test('production scene moves pooled instances, switches live counts and extingui
   const state = { ...night, weather: 'clear', rain: 0, fog: .08, windowsLit: .5 };
   const draw = t => context.renderThreeCity(t, state);
   draw(0);
-  assert.equal(city.lifeView.body.count, 20); assert.equal(city.lifeView.lamps.count, 80);
-  assert.ok(city.lifeView.streams.count > 0);
+  assert.equal(city.renderer.getPixelRatio(), .75, 'normal scale is relative to CSS pixels on Retina too');
+  const colors = [...Array.from(city.signBatches, batch => batch.mesh), city.poolMesh, city.haloMesh];
+  assert.ok([...colors, city.lifeView.body, city.lifeView.lamps].every(mesh => mesh.visible && mesh.material.visible), 'signs, glows and traffic remain drawable');
+  const versions = colors.map(mesh => mesh.instanceColor.version);
+  draw(0);
+  assert.deepEqual(colors.map(mesh => mesh.instanceColor.version), versions, 'unchanged signs do not upload colors again');
+  assert.equal(city.lifeView.body.count, 8); assert.equal(city.lifeView.lamps.count, 32);
+  assert.ok(city.lifeView.streamCount > 0);
+  const alpha = city.lifeView.tracks.geometry.attributes.cityAlpha;
+  assert.ok(alpha.isInstancedBufferAttribute);
+  assert.deepEqual([...new Set(Array.from(alpha.array, value => Number(value.toFixed(2))))].sort(), [.35, .6]);
   const positions = city.lifeView.body.instanceMatrix.array;
   const initial = Array.from(positions);
   const resources = [city.scene.children.length, city.lifeView.body.geometry, city.lifeView.body.material, positions];
@@ -189,16 +205,39 @@ test('production scene moves pooled instances, switches live counts and extingui
   assert.equal(city.lifeView.body.material, resources[2]);
   assert.equal(city.lifeView.body.instanceMatrix.array, resources[3]);
   assert.ok(city.lifeView.beam.visible && city.lifeView.blimp.visible && city.lifeView.steam.count > 0);
+  state.phase = 'day'; state.neon = .35; state.windowsLit = .1;
+  for (let i = 91; i <= 450; i++) draw(i * 34);
+  const presentation = () => [city.uniforms.uLit.value, city.uniforms.uNeon.value, city.scene.fog.density,
+    city.ambient.intensity, ...city.scene.background.toArray(), ...city.scene.fog.color.toArray(),
+    ...city.rim.color.toArray(), ...city.skyUniforms.zenith.value.toArray(), ...city.skyUniforms.horizon.value.toArray()];
+  const settled = presentation(); draw(451 * 34);
+  assert.deepEqual(presentation(), settled, 'settled presentation does not change uniforms invisibly');
+  assert.ok(Math.abs(city.uniforms.uNeon.value - .35) < 1e-5);
+  assert.ok(Math.abs(city.uniforms.uLit.value - .044) < 1e-5);
+  for (const channel of ['r', 'g', 'b']) assert.ok(Math.abs(city.scene.background[channel] - city.phaseColors.day.sky[channel]) < 1e-5);
+  state.phase = 'night'; state.neon = 1; state.windowsLit = .5;
   for (let i = 0; i < city.pools.length; i++) if (city.life.signs[city.pools[i].lifeIndex].dead) {
     assert.equal(city.poolMesh.instanceColor.array[i * 3], 0);
     assert.equal(city.poolMesh.instanceColor.array[i * 3 + 1], 0);
     assert.equal(city.poolMesh.instanceColor.array[i * 3 + 2], 0);
   }
-  for (const halo of city.halos) if (city.life.signs[halo.lifeIndex].dead) assert.equal(halo.material.opacity, 0);
-  context.NeonCityStatus.tier = context.qualityTier({ onBattery: true }); draw(4000);
-  assert.equal(city.lifeView.body.count, 8); assert.equal(city.lifeView.lamps.count, 32);
-  state.trafficDensity = 0; draw(4100);
-  assert.equal(city.lifeView.body.count, 0); assert.equal(city.lifeView.streams.count, 0);
+  for (let i = 0; i < city.halos.length; i++) if (city.life.signs[city.halos[i].lifeIndex].dead) {
+    assert.deepEqual(Array.from(city.haloMesh.instanceColor.array.slice(i * 3, i * 3 + 3)), [0, 0, 0]);
+  }
+  context.NeonCityStatus.tier = context.qualityTier({ onBattery: true });
+  context.NeonCityStatus.renderScale = .5; draw(16000);
+  assert.equal(city.renderer.getPixelRatio(), .5);
+  assert.equal(city.lifeView.body.count, 3); assert.equal(city.lifeView.lamps.count, 12);
+  state.trafficDensity = 0; draw(16100);
+  assert.equal(city.lifeView.body.count, 0); assert.equal(city.lifeView.streamCount, 0);
+  const tracks = city.lifeView.tracks.instanceMatrix.array;
+  for (let i = 0; i < city.lifeView.tracks.count; i++) {
+    assert.deepEqual([tracks[i * 16], tracks[i * 16 + 5], tracks[i * 16 + 10]], [0, 0, 0], 'inactive tracks have no visible geometry');
+  }
+  state.weather = 'snow'; draw(16200);
+  assert.ok(city.snow.visible && !city.rain.visible && city.snow.geometry.drawRange.count > 0);
+  const flake = city.particleData[0], x = city.snow.geometry.attributes.position.array[0];
+  assert.ok(Math.abs(x - (flake.x + city.camera.position.x + Math.sin(16200 * .0006 + flake.phase) * 2.5)) < 1e-5, 'snow retains its original drift path');
   assert.ok(rendered > 90);
 });
 

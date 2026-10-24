@@ -17,7 +17,7 @@
 import Foundation
 import Testing
 
-private let portableWallpapers = ["WeatherAether"]
+private let portableWallpapers = ["WeatherAether", "NeonCity"]
 
 @Suite("WeatherAether portability") struct WeatherAetherPortabilityTests {
     private func wallpaperURL(_ name: String) -> URL {
@@ -74,7 +74,11 @@ private let portableWallpapers = ["WeatherAether"]
             #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent(decoded).path),
                     "Missing local resource: \(value)")
         }
-        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("vendor/THREE-LICENSE.txt").path))
+        let bundle = name == "NeonCity" ? "three-city.min.js" : "three-weather.min.js"
+        for resource in ["vendor/\(bundle)", "vendor/THREE-LICENSE.txt"] + (name == "NeonCity" ? ["LICENSE.txt"] : []) {
+            let data = try Data(contentsOf: directory.appendingPathComponent(resource))
+            #expect(!data.isEmpty, "Empty bundled resource: \(resource)")
+        }
         if case .rejected(let reason) = WallpaperValidator().validate(at: directory) {
             Issue.record("Wallpaper blocked: \(reason)")
         }

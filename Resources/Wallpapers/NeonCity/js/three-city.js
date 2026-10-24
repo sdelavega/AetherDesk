@@ -3,10 +3,10 @@
 // See ../LICENSE.txt for the MIT license.
 'use strict';
 
-function adaptRenderScale(current, p95FrameMs, msUnderBudget) {
-  if (p95FrameMs > 20) return current > 0.6 ? 0.6 : 0.5;
-  if (p95FrameMs < 12 && msUnderBudget >= 60000) return current < 0.6 ? 0.6 : 0.75;
-  return current;
+function lerpCityColor(color, target, blend) {
+  color.lerp(target, blend);
+  // Match GPU precision so settled colors stop causing invisible uniform uploads.
+  color.r = Math.fround(color.r); color.g = Math.fround(color.g); color.b = Math.fround(color.b);
 }
 
 function cityRandom(seed) {
@@ -55,6 +55,8 @@ function initializeThreeCity(canvas, model) {
     const rim = new THREE.DirectionalLight('#89b8dd', 1.4);
     rim.position.set(-130, 260, 140);
     scene.add(ambient, rim);
+    const phaseColors = Object.fromEntries(Object.entries(CITY_PALETTES).map(([phase, palette]) =>
+      [phase, Object.fromEntries(['sky', 'horizon', 'fog', 'light'].map(key => [key, new THREE.Color(palette[key])]))]));
     const uniforms = { uLit: { value: 0.23 }, uNeon: { value: 0.85 } };
     const towerMaterial = new THREE.MeshStandardMaterial({ color: '#182b40', roughness: 0.86, metalness: 0.25 });
     towerMaterial.onBeforeCompile = shader => {
@@ -89,12 +91,9 @@ function initializeThreeCity(canvas, model) {
       dummy.position.set(x, y, z); dummy.scale.set(w, h, d); dummy.rotation.set(0, 0, 0);
       dummy.updateMatrix(); mesh.setMatrixAt(index, dummy.matrix);
     }
-    for (const band of ['near', 'mid', 'far']) {
-      const towers = model.towers.filter(tower => tower.band === band);
-      const mesh = new THREE.InstancedMesh(box, towerMaterial, towers.length);
-      towers.forEach((b, i) => instance(mesh, i, b.x, b.h / 2, b.z, b.w, b.h, b.d));
-      scene.add(mesh);
-    }
+    const towers = new THREE.InstancedMesh(box, towerMaterial, model.towers.length);
+    model.towers.forEach((b, i) => instance(towers, i, b.x, b.h / 2, b.z, b.w, b.h, b.d));
+    scene.add(towers);
     const random = cityRandom(model.seed ^ 0x4e454f4e), range = (a, b) => a + (b - a) * random();
     const softCanvas = document.createElement('canvas'); softCanvas.width = softCanvas.height = 64;
     const softContext = softCanvas.getContext('2d');
@@ -108,18 +107,22 @@ function initializeThreeCity(canvas, model) {
       const i = site.towerIndex, j = site.signIndex, b = model.towers[i];
       const vertical = j % 3 !== 2;
       signGroups[(vertical ? 0 : 4) + i % 4].push({
-        ...site, lifeIndex,
+        ...site, lifeIndex, tile: (vertical ? 0 : 4) + i % 4,
         x: b.x + (vertical ? (j % 2 ? 1 : -1) * b.w * .35 : 0),
         y: Math.min(b.h - 15, b.h * (.22 + j * .17)), z: b.z + b.d / 2 + .5,
         w: vertical ? range(2.8, 5.5) : b.w * .94, h: vertical ? range(14, 32) : 4.5,
-        color: neonColors[(i + j) % 4], glow: j === 0
+        color: neonColors[(i + j) % 4], tint: new THREE.Color(neonColors[(i + j) % 4]), glow: j === 0
       });
     });
+    // Pack the eight local art variants at native resolution into one atlas.
+    const atlas = document.createElement('canvas'); atlas.width = 2048; atlas.height = 512;
+    const atlasContext = atlas.getContext('2d');
     // Tube art is generated locally; deliberate strokes need no language font.
     for (let variant = 0; variant < signGroups.length; variant++) {
       const vertical = variant < 4, art = document.createElement('canvas');
       art.width = vertical ? 128 : 512; art.height = vertical ? 512 : 128;
       const ctx = art.getContext('2d');
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, art.width, art.height);
       ctx.strokeStyle = ctx.fillStyle = '#fff'; ctx.lineWidth = 4;
       ctx.shadowColor = '#fff'; ctx.shadowBlur = 5;
       ctx.strokeRect(7, 7, art.width - 14, art.height - 14);
@@ -136,26 +139,53 @@ function initializeThreeCity(canvas, model) {
         ctx.font = '600 68px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(['HOTEL', 'NEON', '24 : 00', 'MARKET'][variant % 4], 256, 66);
       }
-      const texture = new THREE.CanvasTexture(art); texture.colorSpace = THREE.SRGBColorSpace;
-      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false });
-      const signs = signGroups[variant], mesh = new THREE.InstancedMesh(plane, material, signs.length);
-      const backing = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ color: '#070c17' }), signs.length);
-      signMaterials.push(material);
-      signs.forEach((s, i) => {
-        instance(mesh, i, s.x, s.y, s.z, s.w, s.h, 1);
-        mesh.setColorAt(i, new THREE.Color(s.color));
-        instance(backing, i, s.x, s.y, s.z - .1, s.w * 1.07, s.h * 1.04, 1);
-        if (s.glow) {
-          const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color: s.color, transparent: true,
-            opacity: .3, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-          halo.position.set(s.x, s.y, s.z + .15); halo.scale.set(s.w * 5, s.h * 2.2, 1);
-          halo.lifeIndex = s.lifeIndex;
-          scene.add(halo); halos.push(halo);
-        }
-      });
-      signBatches.push({ mesh, signs });
-      scene.add(backing, mesh);
+      atlasContext.drawImage(art, vertical ? variant * 128 : 512, vertical ? 0 : (variant - 4) * 128);
     }
+    atlasContext.fillStyle = '#fff'; atlasContext.fillRect(1536, 256, 1, 1);
+    const texture = new THREE.CanvasTexture(atlas); texture.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
+    material.onBeforeCompile = shader => {
+      shader.vertexShader = 'attribute float cityTile;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+        vMapUv=cityTile>=8. ? vec2(1536.5/2048.,255.5/512.) : cityTile<4. ?
+          vec2((vMapUv.x+cityTile)*.0625,vMapUv.y) :
+          vec2(.25+vMapUv.x*.25,(vMapUv.y+7.-cityTile)*.25);`);
+    };
+    const signs = signGroups.flat(), trim = [];
+    const crowns = model.towers.filter((b, i) => b.band !== 'far' && i % 3 === 0);
+    crowns.forEach((b, i) => {
+      const pieces = [[b.x, b.h - 1, b.w, .3], [b.x - b.w / 2 + .2, b.h * .61, .25, b.h * .74],
+        [b.x + b.w / 2 - .2, b.h * .77, .22, b.h * .43]];
+      for (const [x, y, w, h] of pieces) trim.push({ x, y, z: b.z + b.d / 2 + .6, w, h,
+        tile: 8, tint: new THREE.Color(neonColors[i % 4]) });
+    });
+    const instances = signs.concat(trim), mesh = new THREE.InstancedMesh(plane.clone(), material, instances.length);
+    // Reuse the bundled InstancedBufferAttribute class exposed by instanceMatrix.
+    const InstancedAttribute = mesh.instanceMatrix.constructor;
+    mesh.geometry.setAttribute('cityTile', new InstancedAttribute(Float32Array.from(instances, sign => sign.tile), 1));
+    signMaterials.push(material);
+    instances.forEach((s, i) => {
+      instance(mesh, i, s.x, s.y, s.z, s.w, s.h, 1);
+      mesh.setColorAt(i, s.tint);
+      if (s.glow) halos.push(s);
+    });
+    signBatches.push({ mesh, signs });
+    scene.add(mesh);
+    const haloMaterial = new THREE.MeshBasicMaterial({ map: soft, transparent: true,
+      opacity: .3, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    // Keep Sprite's camera-facing glow while submitting every halo in one draw.
+    haloMaterial.onBeforeCompile = shader => {
+      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `
+        vec4 mvPosition=modelViewMatrix*vec4(instanceMatrix[3].xyz,1.);
+        mvPosition.xy+=position.xy*vec2(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz));
+        gl_Position=projectionMatrix*mvPosition;`);
+    };
+    const haloMesh = new THREE.InstancedMesh(plane, haloMaterial, halos.length);
+    halos.forEach((s, i) => {
+      instance(haloMesh, i, s.x, s.y, s.z + .15, s.w * 5, s.h * 2.2, 1);
+      haloMesh.setColorAt(i, new THREE.Color(s.color));
+    });
+    scene.add(haloMesh);
     // Facade-aligned glow pools stay in front of the masonry while depth
     // testing still hides them behind closer towers. All pools share one draw.
     const pools = signGroups.flat();
@@ -167,17 +197,6 @@ function initializeThreeCity(canvas, model) {
       poolMesh.setColorAt(i, new THREE.Color(s.color));
     });
     scene.add(poolMesh); signMaterials.push(poolMaterial);
-    const crowns = model.towers.filter((b, i) => b.band !== 'far' && i % 3 === 0);
-    const edges = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ toneMapped: false }), crowns.length * 3);
-    crowns.forEach((b, i) => {
-      const pieces = [[b.x, b.h - 1, b.w, .3], [b.x - b.w / 2 + .2, b.h * .61, .25, b.h * .74],
-        [b.x + b.w / 2 - .2, b.h * .77, .22, b.h * .43]];
-      pieces.forEach(([x, y, w, h], j) => {
-        instance(edges, i * 3 + j, x, y, b.z + b.d / 2 + .6, w, h, 1);
-        edges.setColorAt(i * 3 + j, new THREE.Color(neonColors[i % 4]));
-      });
-    });
-    scene.add(edges); signMaterials.push(edges.material);
     const street = new THREE.Mesh(new THREE.PlaneGeometry(950, 1600),
       new THREE.MeshStandardMaterial({ color: '#07131d', roughness: .22, metalness: .75 }));
     street.rotation.x = -Math.PI / 2; street.position.set(0, -1, -420); scene.add(street);
@@ -202,9 +221,13 @@ function initializeThreeCity(canvas, model) {
         #include <colorspace_fragment>
         }`
     })); scene.add(sky);
-    const particleCount = 2400, particleData = [];
-    for (let i = 0; i < particleCount; i++) particleData.push({ x: range(-105, 105), y: range(-52, 110),
-      z: range(-170, -3), speed: range(.7, 1.4), phase: range(0, Math.PI * 2) });
+    const particleCount = 1200, particleData = [];
+    for (let i = 0; i < particleCount; i++) {
+      const particle = { x: range(-105, 105), y: range(-52, 110),
+        z: range(-170, -3), speed: range(.7, 1.4), phase: range(0, Math.PI * 2) };
+      particle.sinPhase = Math.sin(particle.phase); particle.cosPhase = Math.cos(particle.phase);
+      particleData.push(particle);
+    }
     const rainGeometry = new THREE.BufferGeometry();
     rainGeometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(particleCount * 6), 3));
     const rain = new THREE.LineSegments(rainGeometry, new THREE.LineBasicMaterial({ color: '#a6c5e4',
@@ -230,9 +253,10 @@ function initializeThreeCity(canvas, model) {
     ], true, 'catmullrom', .5);
     const lifeView = createThreeLifeView(THREE, scene, life, soft, box, plane);
     threeCity = { renderer, scene, camera, cameraPath, ambient, rim, uniforms, sky, skyUniforms, signMaterials, halos,
-      life, lifeView, signBatches, poolMesh, pools,
+      life, lifeView, signBatches, poolMesh, pools, haloMesh, signStates: new Uint8Array(life.signs.length).fill(2),
       reflectionMaterial, particleData, rain, snow, snowMaterial, lastTime: null, width: 0, height: 0, scale: 0,
-      backgroundTarget: new THREE.Color(), horizonTarget: new THREE.Color(), fogTarget: new THREE.Color(), lightTarget: new THREE.Color() };
+      phaseColors, snowFog: new THREE.Color('#526779'),
+      backgroundTarget: new THREE.Color(), horizonTarget: new THREE.Color(), fogTarget: new THREE.Color() };
     return true;
   } catch (error) {
     disposeCityResources(scene, renderer);
@@ -267,7 +291,8 @@ function renderThreeCity(t, cityState) {
   const width = Math.max(1, window.innerWidth), height = Math.max(1, window.innerHeight);
   if (c.width !== width || c.height !== height || c.scale !== scale) {
     c.width = width; c.height = height; c.scale = scale;
-    c.renderer.setPixelRatio((window.devicePixelRatio || 1) * scale);
+    // Quality scale is a CSS-pixel ratio, as in WeatherAether, not a Retina multiplier.
+    c.renderer.setPixelRatio(scale);
     c.renderer.setSize(width, height, false);
     c.camera.aspect = width / height; c.camera.updateProjectionMatrix();
     c.snowMaterial.uniforms.uPixelRatio.value = c.renderer.getPixelRatio();
@@ -275,18 +300,19 @@ function renderThreeCity(t, cityState) {
   const dt = c.lastTime === null ? 1 / tier.fps : Math.min((t - c.lastTime) / 1000, .1);
   c.lastTime = t;
   const palette = CITY_PALETTES[state.phase] || CITY_PALETTES.night;
+  const colors = c.phaseColors[state.phase] || c.phaseColors.night;
   const a = 1 - Math.exp(-dt * 1.8);
-  c.backgroundTarget.set(palette.sky); c.horizonTarget.set(palette.horizon); c.fogTarget.set(palette.fog);
-  if (state.weather === 'snow') c.fogTarget.lerp(c.lightTarget.set('#526779'), .22);
-  c.scene.background.lerp(c.backgroundTarget, a); c.scene.fog.color.lerp(c.fogTarget, a);
-  c.skyUniforms.zenith.value.lerp(c.backgroundTarget, a); c.skyUniforms.horizon.value.lerp(c.horizonTarget, a);
+  c.backgroundTarget.copy(colors.sky); c.horizonTarget.copy(colors.horizon); c.fogTarget.copy(colors.fog);
+  if (state.weather === 'snow') c.fogTarget.lerp(c.snowFog, .22);
+  lerpCityColor(c.scene.background, c.backgroundTarget, a); lerpCityColor(c.scene.fog.color, c.fogTarget, a);
+  lerpCityColor(c.skyUniforms.zenith.value, c.backgroundTarget, a); lerpCityColor(c.skyUniforms.horizon.value, c.horizonTarget, a);
   c.skyUniforms.uTime.value = t / 1000;
-  c.scene.fog.density += (.0024 + state.fog * .0105 - c.scene.fog.density) * a;
-  c.rim.color.lerp(c.lightTarget.set(palette.light), a);
-  c.ambient.intensity += (palette.ambient - c.ambient.intensity) * a;
-  c.uniforms.uLit.value += (state.windowsLit * .44 - c.uniforms.uLit.value) * a;
+  c.scene.fog.density = Math.fround(c.scene.fog.density + (.0024 + state.fog * .0105 - c.scene.fog.density) * a);
+  lerpCityColor(c.rim.color, colors.light, a);
+  c.ambient.intensity = Math.fround(c.ambient.intensity + (palette.ambient - c.ambient.intensity) * a);
+  c.uniforms.uLit.value = Math.fround(c.uniforms.uLit.value + (state.windowsLit * .44 - c.uniforms.uLit.value) * a);
   const energy = state.neon * (window.NeonCityStatus.neonBrightness || 100) / 100;
-  c.uniforms.uNeon.value += (energy - c.uniforms.uNeon.value) * a;
+  c.uniforms.uNeon.value = Math.fround(c.uniforms.uNeon.value + (energy - c.uniforms.uNeon.value) * a);
   for (let i = 0; i < c.signMaterials.length; i++) {
     c.signMaterials[i].color.setScalar(c.uniforms.uNeon.value * 3.6 + .025);
   }
@@ -297,7 +323,8 @@ function renderThreeCity(t, cityState) {
   c.camera.lookAt(Math.sin(cycle * Math.PI * 2 + .6) * 9, 64 + Math.sin(cycle * Math.PI * 2) * 3, -350);
   c.sky.position.copy(c.camera.position);
   const snowy = state.weather === 'snow';
-  const amount = Math.round((snowy ? 1500 : state.rain * 2400) * tier.countScale);
+  const swaySin = snowy ? Math.sin(t * .0006) * 2.5 : 0, swayCos = snowy ? Math.cos(t * .0006) * 2.5 : 0;
+  const amount = Math.round((snowy ? 900 : state.weather === 'downpour' ? 600 : state.rain * 1200) * tier.countScale);
   c.rain.visible = !snowy && amount > 0; c.snow.visible = snowy;
   c.rain.geometry.setDrawRange(0, amount * 2); c.snow.geometry.setDrawRange(0, amount);
   const positions = (snowy ? c.snow : c.rain).geometry.attributes.position;
@@ -305,7 +332,7 @@ function renderThreeCity(t, cityState) {
     const p = c.particleData[i];
     p.y -= dt * (snowy ? 3.4 : state.weather === 'downpour' ? 95 : 65) * p.speed;
     if (p.y < -52) p.y += 162;
-    const x = p.x + c.camera.position.x + (snowy ? Math.sin(t * .0006 + p.phase) * 2.5 : 0);
+    const x = p.x + c.camera.position.x + (snowy ? swaySin * p.cosPhase + swayCos * p.sinPhase : 0);
     const y = p.y + c.camera.position.y, z = p.z + c.camera.position.z;
     const j = i * (snowy ? 3 : 6);
     positions.array[j] = x; positions.array[j + 1] = y; positions.array[j + 2] = z;
@@ -326,19 +353,25 @@ function createThreeLifeView(THREE, scene, life, soft, box, plane) {
   const lamps = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({ toneMapped: false }), 80);
   const glow = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ map: soft,
     transparent: true, opacity: .65, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), 20);
-  const trails = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({ transparent: true,
-    opacity: .35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), 20);
-  const streams = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({ transparent: true,
-    opacity: .6, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), 20);
+  const tracks = new THREE.InstancedMesh(box.clone(), new THREE.MeshBasicMaterial({ transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), 40);
+  const InstancedAttribute = tracks.instanceMatrix.constructor;
+  tracks.geometry.setAttribute('cityAlpha', new InstancedAttribute(Float32Array.from({ length: 40 }, (_, i) => i < 20 ? .35 : .6), 1));
+  tracks.material.onBeforeCompile = shader => {
+    shader.vertexShader = 'attribute float cityAlpha; varying float vCityAlpha;\n' + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvCityAlpha=cityAlpha;');
+    shader.fragmentShader = 'varying float vCityAlpha;\n' + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <alphamap_fragment>', '#include <alphamap_fragment>\ndiffuseColor.a*=vCityAlpha;');
+  };
   const steam = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ map: soft, color: '#7fabbc',
     transparent: true, opacity: .18, depthWrite: false, blending: THREE.AdditiveBlending }), 48);
   const color = new THREE.Color();
   for (let i = 0; i < 20; i++) {
     color.set(i % 3 ? '#72f9ff' : '#ff357b');
-    glow.setColorAt(i, color); trails.setColorAt(i, color); streams.setColorAt(i, color);
+    glow.setColorAt(i, color); tracks.setColorAt(i, color); tracks.setColorAt(20 + i, color);
     for (let j = 0; j < 4; j++) lamps.setColorAt(i * 4 + j, color.set(j < 2 ? '#c9faff' : '#ff225f'));
   }
-  for (const mesh of [body, lamps, glow, trails, streams, steam]) {
+  for (const mesh of [body, lamps, glow, tracks, steam]) {
     mesh.frustumCulled = false; scene.add(mesh);
   }
   // Build the open cone once with opposite-winding triangle pairs so FrontSide
@@ -366,62 +399,78 @@ function createThreeLifeView(THREE, scene, life, soft, box, plane) {
   const banner = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(bannerCanvas),
     transparent: true, depthWrite: false, toneMapped: false, fog: false }));
   banner.position.set(0, -.5, 7.1); banner.scale.set(30, 7.5, 1); blimp.add(banner); scene.add(blimp);
-  return { body, lamps, glow, trails, streams, steam, beam, blimp, banner, gondola,
-    dummy: new THREE.Object3D(), color };
+  return { body, lamps, glow, tracks, streamCount: 0, steam, beam, blimp, banner, gondola,
+    color };
 }
 
 function lifeInstance(view, mesh, index, x, y, z, w, h, d) {
-  const dummy = view.dummy;
-  dummy.position.set(x, y, z); dummy.scale.set(w, h, d); dummy.rotation.set(0, 0, 0);
-  dummy.updateMatrix(); mesh.setMatrixAt(index, dummy.matrix);
+  // Pooled life instances only translate and scale identity matrices.
+  const matrix = mesh.instanceMatrix.array, at = index * 16;
+  matrix[at] = w; matrix[at + 5] = h; matrix[at + 10] = d;
+  matrix[at + 12] = x; matrix[at + 13] = y; matrix[at + 14] = z;
 }
 
 function renderThreeLife(c, dt, state) {
   const life = c.life, view = c.lifeView;
   life.update(dt, state);
   const energy = life.brightness * (window.NeonCityStatus.neonBrightness || 100) / 100;
-  // Every sign keeps its own failure state even though tube art shares eight draws.
-  for (let b = 0; b < c.signBatches.length; b++) {
-    const batch = c.signBatches[b];
-    for (let i = 0; i < batch.signs.length; i++) {
-      const sign = batch.signs[i];
-      view.color.set(sign.color).multiplyScalar(life.signs[sign.lifeIndex].on ? 1 : .008);
-      batch.mesh.setColorAt(i, view.color);
+  // Flicker remains per sign; upload shared color buffers only when it changes.
+  let signsChanged = false;
+  for (let i = 0; i < life.signs.length; i++) {
+    const on = life.signs[i].on ? 1 : 0;
+    if (c.signStates[i] !== on) { c.signStates[i] = on; signsChanged = true; }
+  }
+  if (signsChanged) {
+    for (let b = 0; b < c.signBatches.length; b++) {
+      const batch = c.signBatches[b];
+      for (let i = 0; i < batch.signs.length; i++) {
+        const sign = batch.signs[i];
+        view.color.copy(sign.tint).multiplyScalar(life.signs[sign.lifeIndex].on ? 1 : .008);
+        batch.mesh.setColorAt(i, view.color);
+      }
+      if (batch.mesh.instanceColor) batch.mesh.instanceColor.needsUpdate = true;
     }
-    if (batch.mesh.instanceColor) batch.mesh.instanceColor.needsUpdate = true;
+    for (const [mesh, sites] of [[c.poolMesh, c.pools], [c.haloMesh, c.halos]]) {
+      for (let i = 0; i < sites.length; i++) {
+        const sign = sites[i];
+        view.color.copy(sign.tint).multiplyScalar(life.signs[sign.lifeIndex].on ? 1 : 0);
+        mesh.setColorAt(i, view.color);
+      }
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
   }
-  for (let i = 0; i < c.pools.length; i++) {
-    const sign = c.pools[i];
-    view.color.set(sign.color).multiplyScalar(life.signs[sign.lifeIndex].on ? 1 : 0);
-    c.poolMesh.setColorAt(i, view.color);
-  }
-  if (c.poolMesh.instanceColor) c.poolMesh.instanceColor.needsUpdate = true;
-  for (let i = 0; i < c.halos.length; i++) {
-    const halo = c.halos[i];
-    halo.material.opacity = life.signs[halo.lifeIndex].on ? energy * .3 : 0;
-  }
-  view.body.count = view.glow.count = view.trails.count = life.vehicles.length;
+  c.haloMesh.material.color.setScalar(energy);
+  view.body.count = view.glow.count = life.vehicles.length;
   view.lamps.count = life.vehicles.length * 4;
-  view.streams.count = 0;
+  if (view.trackVehicleCount !== life.vehicles.length) {
+    // Stable slots retain each vehicle's color. Collapse inactive pooled boxes.
+    const matrix = view.tracks.instanceMatrix.array;
+    for (let i = 0; i < 40; i++) {
+      const at = i * 16; matrix[at] = matrix[at + 5] = matrix[at + 10] = 0;
+    }
+    view.trackVehicleCount = life.vehicles.length;
+  }
+  view.streamCount = 0;
   for (let i = 0; i < life.vehicles.length; i++) {
     const vehicle = life.vehicles[i], lane = life.lanes[vehicle.lane];
     const z = lane.z0 + (lane.z1 - lane.z0) * vehicle.t, direction = lane.z1 > lane.z0 ? 1 : -1;
     lifeInstance(view, view.body, i, lane.x, lane.y, z, 1.4, .45, 2.8);
     lifeInstance(view, view.glow, i, lane.x, lane.y - .35, z, 6, 2.2, 1);
-    lifeInstance(view, view.trails, i, lane.x, lane.y - .12, z - direction * 4.5, .14, .08, 6);
+    lifeInstance(view, view.tracks, i, lane.x, lane.y - .12, z - direction * 4.5, .14, .08, 6);
     for (let j = 0; j < 4; j++) {
       lifeInstance(view, view.lamps, i * 4 + j, lane.x + (j % 2 ? .48 : -.48), lane.y,
         z + direction * (j < 2 ? 1.45 : -1.45), .28, .16, .18);
     }
-    if (lane.y < 2) lifeInstance(view, view.streams, view.streams.count++, lane.x, -.65,
-      z - direction * 8, .32, .1, 16);
+    if (lane.y < 2) {
+      lifeInstance(view, view.tracks, 20 + i, lane.x, -.65, z - direction * 8, .32, .1, 16);
+      view.streamCount++;
+    }
   }
   view.body.material.emissiveIntensity = .25 * energy;
   view.lamps.material.color.setScalar(energy * 2.5);
-  view.glow.material.opacity = .65 * energy; view.trails.material.opacity = .35 * energy;
-  view.streams.material.opacity = .6 * energy;
+  view.glow.material.opacity = .65 * energy; view.tracks.material.opacity = energy;
   view.body.instanceMatrix.needsUpdate = view.lamps.instanceMatrix.needsUpdate = true;
-  view.glow.instanceMatrix.needsUpdate = view.trails.instanceMatrix.needsUpdate = view.streams.instanceMatrix.needsUpdate = true;
+  view.glow.instanceMatrix.needsUpdate = view.tracks.instanceMatrix.needsUpdate = true;
   view.steam.count = 0;
   for (let i = 0; i < life.events.length; i++) {
     const event = life.events[i], tower = event.tower;

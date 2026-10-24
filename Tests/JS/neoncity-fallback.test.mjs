@@ -124,13 +124,14 @@ test('quality tier table accounts for eco, battery, and Low Power Mode independe
   }
 });
 
-test('adaptive render scale uses exact thresholds, one step, and recovery hysteresis', () => {
-  const r = runtime();
-  for (const [current, p95, under, expected] of [
-    [.75, 20, 0, .75], [.75, 20.1, 0, .6], [.6, 21, 0, .5], [.5, 40, 0, .5],
-    [.5, 11, 59999, .5], [.5, 12, 60000, .5], [.5, 11.9, 60000, .6],
-    [.6, 11, 60000, .75], [.75, 11, 60000, .75], [.5, 25, 60000, .5]
-  ]) assert.equal(r.run(`adaptRenderScale(${current},${p95},${under})`), expected);
+test('host callback jitter retains the normal and saver paint cadence', () => {
+  for (const [qualityMode, expected] of [['balanced', 30], ['eco', 15]]) for (const steps of [[16], [32], [33.2], [33, 33, 34], [32, 34, 34]]) {
+    const r = runtime(); r.context.aetherDesk.system.qualityMode = qualityMode; r.start();
+    // Cover both early callbacks and WebKit's quantized 30 Hz timestamps.
+    for (let t = 0, i = 0; t < 60000; t += steps[i++ % steps.length]) r.tick(t);
+    const fps = r.counts().threeFrames / 60;
+    assert.ok(Math.abs(fps - expected) < .05, `${qualityMode}, ${steps.join('/')} ms callbacks: ${fps} fps`);
+  }
 });
 
 test('context loss draws Classic on the next frame, without retrying WebGL', () => {
@@ -174,26 +175,17 @@ test('tier changes apply live, cap cadence, and never recover above saver scale'
   assert.equal(r.context.NeonCityStatus.tier.fps, 30);
 });
 
-test('dispatcher adapts ten-second windows and requires a fresh minute for each recovery step', () => {
-  const r = runtime(); let clock = 0, cost = 25;
+test('R26 keeps the normal scale floor under load and applies saver scale live', () => {
+  const r = runtime(); let clock = 0;
   r.context.performance.now = () => clock;
-  r.context.threeFrame = () => { clock += cost; };
-  r.start(); r.tick(0); r.tick(10000);
-  assert.equal(r.context.NeonCityStatus.renderScale, .6);
-  r.tick(20000);
-  assert.equal(r.context.NeonCityStatus.renderScale, .5);
-  cost = 0;
-  for (let t = 30000; t <= 70000; t += 10000) r.tick(t);
-  assert.equal(r.context.NeonCityStatus.renderScale, .5);
-  r.tick(80000);
-  assert.equal(r.context.NeonCityStatus.renderScale, .6);
-  for (let t = 90000; t <= 130000; t += 10000) r.tick(t);
-  assert.equal(r.context.NeonCityStatus.renderScale, .6);
-  r.tick(140000);
+  r.context.threeFrame = () => { clock += 25; };
+  r.start(); r.tick(0); r.tick(10000); r.tick(20000);
   assert.equal(r.context.NeonCityStatus.renderScale, .75);
-  r.context.aetherDesk.system.onBattery = true;
-  for (let t = 150000; t <= 230000; t += 10000) r.tick(t);
+  assert.equal(r.context.NeonCityStatus.p95FrameMs, 25);
+  r.context.aetherDesk.system.onBattery = true; r.tick(30000);
   assert.equal(r.context.NeonCityStatus.renderScale, .5);
+  r.context.aetherDesk.system.onBattery = false; r.tick(40000);
+  assert.equal(r.context.NeonCityStatus.renderScale, .75);
 });
 
 test('production initializer wires context loss and shader failure, and disposes failed initialization', () => {

@@ -68,7 +68,6 @@ struct Options {
               soak == nil || (soak! >= 10 && soak! % 10 == 0),
               width > 0, height > 0,
               ["weather", "neoncity"].contains(wallpaper), ["night", "dawn", "day", "dusk"].contains(phase),
-              wallpaper != "neoncity" || capture != nil,
               state == nil || (wallpaper == "neoncity" ? ["clear", "drizzle", "rain", "downpour", "fog", "snow"].contains(state!) :
                 states.contains(state!) || (capture != nil && state == "no-location")) else {
             throw PerfError("Use --renderer auto|classic --quality balanced|eco --seconds N --out file [--soak N (multiple of 10)] [--state NAME] [--warmup N] [--root path] [--capture PNG --width N --height N --state no-location|NAME] [--wallpaper weather|neoncity --phase night|dawn|day|dusk]")
@@ -175,6 +174,8 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     var loaded = false
     var childFrame: WKFrameInfo?
     var rendererStatus: String?
+    var expectedPhase = "night"
+    var expectedState = "rain"
     var pinnedPID: Int32?
     let initialPIDs: Set<Int32>
     let dataStore = WKWebsiteDataStore.nonPersistent()
@@ -195,6 +196,20 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
             throw PerfError("Production rAF throttle markers changed")
         }
         let throttle = String(runtime[start.lowerBound..<end.lowerBound])
+        let frameCounter = options.wallpaper == "neoncity" ? """
+          window.__perfFrames=0;window.__perfPaints=0;var lastTimestamp=-1,lastPaint=-1;
+          window.requestAnimationFrame=function(cb){return throttledRAF(function(ts){
+            if(ts!==lastTimestamp){window.__perfFrames++;lastTimestamp=ts;}cb(ts);
+            if(window.NeonCityStatus&&NeonCityStatus.lastPaint===ts&&lastPaint!==ts){
+              window.__perfPaints++;lastPaint=ts;
+            }
+          });};
+        """ : """
+          window.__perfFrames=0;var lastTimestamp=-1;
+          window.requestAnimationFrame=function(cb){return throttledRAF(function(ts){
+            if(ts!==lastTimestamp){window.__perfFrames++;lastTimestamp=ts;}cb(ts);
+          });};
+        """
         let bootstrap = """
         (function(){
           var suspended=false;
@@ -211,10 +226,7 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
             properties:{get:function(){return {};},onUpdate:function(){}},onVisibility:function(){}};
           \(throttle)
           var throttledRAF=window.requestAnimationFrame;
-          window.__perfFrames=0;var lastTimestamp=-1;
-          window.requestAnimationFrame=function(cb){return throttledRAF(function(ts){
-            if(ts!==lastTimestamp){window.__perfFrames++;lastTimestamp=ts;}cb(ts);
-          });};
+          \(frameCounter)
           var seed=123456789;
           Math.random=function(){seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;};
           function blocked(){window.webkit.messageHandlers.weatherPerf.postMessage('Unexpected network request');
@@ -346,10 +358,14 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
             }
         }
         if options.wallpaper == "neoncity" {
-            url = URLComponents(url: options.root.appendingPathComponent("Resources/Wallpapers/NeonCity/index.html"), resolvingAgainstBaseURL: false)!
-            let hour = ["night": "3", "dawn": "6", "day": "12", "dusk": "19.5"][options.phase]!
+            expectedPhase = phase
+            expectedState = state
+            let path = options.capture == nil ? "Tools/NeonCityPreview.html" : "Resources/Wallpapers/NeonCity/index.html"
+            url = URLComponents(url: options.root.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+            let hour = ["night": "3", "dawn": "6", "day": "12", "dusk": "19.5"][phase]!
             url.queryItems = [URLQueryItem(name: "renderer", value: options.renderer),
                               URLQueryItem(name: "quality", value: options.quality), URLQueryItem(name: "hour", value: hour),
+                              URLQueryItem(name: "phase", value: phase), URLQueryItem(name: "perf", value: "1"),
                               URLQueryItem(name: "weather", value: state), URLQueryItem(name: "seed", value: "7319")]
         }
         webView.loadFileURL(url.url!, allowingReadAccessTo: options.root)
@@ -368,17 +384,34 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     func snapshot() throws -> [String: Any] {
         if options.wallpaper == "neoncity" {
             guard childFrame != nil, var value = try evaluate("""
-            ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfFrames,
+            ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfPaints,
               actualRenderer:NeonCityStatus.renderer,quality:NeonCityStatus.tier,renderScale:NeonCityStatus.renderScale,
               phase:currentCityState.phase,weather:currentCityState.weather,shaderError:NeonCityStatus.failure,
-              drawingWidth:document.getElementById('city-webgl').width,drawingHeight:document.getElementById('city-webgl').height,
+              submitP95:NeonCityStatus.p95FrameMs??null,drawCalls:threeCity?threeCity.renderer.info.render.calls:0,
+              drawingWidth:document.getElementById(NeonCityStatus.renderer==='canvas'?'c':'city-webgl').width,drawingHeight:document.getElementById(NeonCityStatus.renderer==='canvas'?'c':'city-webgl').height,
               paintAge:performance.now()-NeonCityStatus.lastPaint})
             """) as? [String: Any] else { throw PerfError("Missing NeonCity frame") }
             let expected = options.renderer == "auto" ? "three" : "canvas"
             guard value["actualRenderer"] as? String == expected, value["shaderError"] is NSNull,
-                  value["phase"] as? String == options.phase,
+                  value["phase"] as? String == expectedPhase, value["weather"] as? String == expectedState,
                   let paintAge = value["paintAge"] as? Double, paintAge >= 0, paintAge < 2000 else {
                 throw PerfError("NeonCity changed renderer or stopped painting: \(value)")
+            }
+            let saver = options.quality == "eco"
+            guard let tier = value["quality"] as? [String: Any],
+                  tier["fps"] as? Int == (saver ? 15 : 30),
+                  tier["renderScale"] as? Double == (saver ? 0.5 : 0.75),
+                  tier["countScale"] as? Double == (saver ? 0.4 : 1),
+                  tier["eventScale"] as? Double == (saver ? 0.5 : 1),
+                  let scale = value["renderScale"] as? Double,
+                  saver ? scale == 0.5 : (scale >= 0.75 && scale <= 1) else {
+                throw PerfError("Unexpected NeonCity quality profile: \(value)")
+            }
+            if options.renderer == "auto" {
+                guard value["drawingWidth"] as? Int == Int(Double(options.width) * scale),
+                      value["drawingHeight"] as? Int == Int(Double(options.height) * scale) else {
+                    throw PerfError("NeonCity drawing buffer does not match its CSS-pixel scale: \(value)")
+                }
             }
             value["renderer"] = expected
             return value
@@ -470,9 +503,11 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
             return
         }
         var rows = [[String: Any]]()
-        let selectedStates = options.soak == nil ? options.state.map { [$0] } ?? states : [options.state ?? "thunder"]
+        let neonCity = options.wallpaper == "neoncity"
+        let availableStates = neonCity ? ["rain", "downpour", "snow", "fog", "clear", "drizzle"] : states
+        let selectedStates = options.soak == nil ? options.state.map { [$0] } ?? availableStates : [options.state ?? (neonCity ? "rain" : "thunder")]
         for state in selectedStates {
-            for phase in options.soak == nil ? ["day", "night"] : ["night"] {
+            for phase in options.soak == nil ? (neonCity ? ["night", "dawn", "day", "dusk"] : ["day", "night"]) : ["night"] {
                 unloadView()
                 var baselineGPU = [Double]()
                 let baselineStart = ProcessInfo.processInfo.systemUptime
@@ -480,6 +515,9 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                 fflush(stdout)
                 for elapsed in 1...15 {
                     pump(until: baselineStart + Double(elapsed))
+                    if neonCity, try ps(["-axo", "comm="]).contains("/Applications/ÆtherDesk.app/") {
+                        throw PerfError("Installed ÆtherDesk is running; wait for it to exit and repeat")
+                    }
                     baselineGPU.append(try sampleGPU())
                 }
                 let baselineMean = baselineGPU.reduce(0, +) / Double(baselineGPU.count)
@@ -496,10 +534,13 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                 var cpu = [Double]()
                 var gpu = [Double]()
                 var lastRSS = initial.rss
-                if options.soak != nil { rows.append(["seconds": 0, "rss": initial.rss, "renderer": options.renderer, "quality": options.quality, "state": state, "phase": phase]) }
+                if options.soak != nil { rows.append(["seconds": 0, "rss": initial.rss, "renderer": options.renderer, "quality": options.quality, "state": state, "phase": phase, "wallpaper": options.wallpaper]) }
                 for elapsed in 1...duration {
                     pump(until: start + Double(elapsed))
                     if let failure { throw PerfError(failure) }
+                    if neonCity, try ps(["-axo", "comm="]).contains("/Applications/ÆtherDesk.app/") {
+                        throw PerfError("Installed ÆtherDesk started during measurement; wait for it to exit and repeat")
+                    }
                     let value = try sample(pid)
                     let delta = value.cpuSeconds - previous.cpuSeconds
                     let interval = value.uptime - previous.uptime
@@ -515,7 +556,7 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                     if options.soak != nil, elapsed % 10 == 0 {
                         _ = try snapshot()
                         rows.append(["seconds": elapsed, "rss": lastRSS, "renderer": options.renderer, "quality": options.quality,
-                                     "state": state, "phase": phase, "gpuMean": gpu.reduce(0, +) / Double(gpu.count), "gpuSamples": gpu.count,
+                                     "state": state, "phase": phase, "wallpaper": options.wallpaper, "gpuMean": gpu.reduce(0, +) / Double(gpu.count), "gpuSamples": gpu.count,
                                      "gpuBaselineMean": baselineMean, "gpuBaselineSamples": baselineGPU.count,
                                      "gpuMarginalMean": gpu.reduce(0, +) / Double(gpu.count) - baselineMean])
                         try writeJSON(rows, to: options.out)
@@ -526,8 +567,10 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                 let info = try snapshot()
                 let after = info["frames"] as? Int ?? 0
                 let fps = Double(after - before) / (ProcessInfo.processInfo.systemUptime - start)
-                guard fps >= 15, fps <= 35 else { throw PerfError("Invalid live frame rate \(fps); occluded or unthrottled view") }
-                if options.renderer == "auto" {
+                let minimumFPS = neonCity ? (options.quality == "eco" ? 13.0 : 27.0) : 15.0
+                let maximumFPS = neonCity ? (options.quality == "eco" ? 17.0 : 32.0) : 35.0
+                guard fps >= minimumFPS, fps <= maximumFPS else { throw PerfError("Invalid live frame rate \(fps); occluded or unthrottled view") }
+                if !neonCity && options.renderer == "auto" {
                     guard let quality = info["quality"] as? [String: Any], quality["name"] as? String == options.quality else {
                         throw PerfError("Unexpected quality profile: \(info)")
                     }
@@ -540,6 +583,11 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
                     let p95 = sorted[max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)]
                     let gpuMean = gpu.reduce(0, +) / Double(gpu.count)
                     rows.append(["state": state, "phase": phase, "renderer": options.renderer, "quality": options.quality,
+                                 "wallpaper": options.wallpaper, "fps": fps,
+                                 "viewportWidth": options.width, "viewportHeight": options.height,
+                                 "drawingWidth": info["drawingWidth"] ?? NSNull(), "drawingHeight": info["drawingHeight"] ?? NSNull(),
+                                 "tier": info["quality"] ?? NSNull(), "renderScale": info["renderScale"] ?? NSNull(),
+                                 "drawCalls": info["drawCalls"] ?? NSNull(), "submitP95": info["submitP95"] ?? NSNull(),
                                  "cpuMean": mean, "cpuP95": p95, "cpuMethod": "proc_pid_rusage",
                                  "cpuDeltas": cpuDeltas, "cpuIntervals": cpuIntervals,
                                  "cpuTimeSeconds": cpuTime, "cpuWindowSeconds": cpuWindow,
