@@ -3,6 +3,17 @@
 // See ../LICENSE.txt for the MIT license.
 'use strict';
 
+function signSites(model) {
+  const sites = [];
+  model.towers.forEach((tower, towerIndex) => {
+    if (tower.band === 'far' || (tower.band === 'mid' && towerIndex % 3)) return;
+    for (let signIndex = 0; signIndex < (tower.band === 'near' ? 4 : 1); signIndex++) {
+      sites.push({ towerIndex, signIndex });
+    }
+  });
+  return sites;
+}
+
 function createLife(seed, model) {
   let randomSeed = (seed ^ 0x4c494645) >>> 0;
   const random = () => {
@@ -24,13 +35,9 @@ function createLife(seed, model) {
     const vehicle = { lane, phase, t: phase, speed: lanes[lane].speed * (.7 + random() * .6) };
     vehiclePool.push(vehicle); vehicles.push(vehicle);
   }
-  for (let i = 0; i < model.towers.length; i++) {
-    const tower = model.towers[i];
-    if (tower.band === 'far' || (tower.band === 'mid' && i % 3)) continue;
-    for (let j = 0; j < (tower.band === 'near' ? 4 : 1); j++) {
-      signs.push({ on: true, dead: false, flicker: random() < .12,
-        offset: random() * 25, period: 8 + random() * 17 });
-    }
+  for (const site of signSites(model)) {
+    signs.push({ ...site, on: true, dead: false, flicker: random() < .12,
+      offset: random() * 25, period: 8 + random() * 17 });
   }
   // Choose an exact, dispersed 3% rather than a Bernoulli draw that can miss the bound.
   const order = signs.map((_, i) => i);
@@ -57,7 +64,7 @@ function createLife(seed, model) {
   const life = { lanes, vehicles, signs, events, brightness: 1, motionScale: 1, update };
   function update(dt, cityState) {
     dt = Number.isFinite(dt) ? Math.max(0, dt) : 0;
-    const tier = window.NeonCityStatus ? window.NeonCityStatus.tier : CITY_QUALITY.normal;
+    const tier = (window.NeonCityStatus && window.NeonCityStatus.tier) || CITY_QUALITY.normal;
     const day = cityState.phase === 'day';
     const frequency = tier.eventScale * (day ? .25 : 1);
     life.brightness = cityState.neon;

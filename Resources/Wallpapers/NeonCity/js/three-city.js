@@ -103,20 +103,17 @@ function initializeThreeCity(canvas, model) {
     softContext.fillStyle = gradient; softContext.fillRect(0, 0, 64, 64);
     const soft = new THREE.CanvasTexture(softCanvas), neonColors = ['#ff168a', '#00eaff', '#ff9e24', '#ac4dff'];
     const life = createLife(model.seed, model), signBatches = [];
-    let signIndex = 0;
     const signMaterials = [], halos = [], signGroups = Array.from({ length: 8 }, () => []);
-    model.towers.forEach((b, i) => {
-      if (b.band === 'far' || (b.band === 'mid' && i % 3)) return;
-      const count = b.band === 'near' ? 4 : 1;
-      for (let j = 0; j < count; j++) {
-        const vertical = j % 3 !== 2;
-        signGroups[(vertical ? 0 : 4) + i % 4].push({
-          x: b.x + (vertical ? (j % 2 ? 1 : -1) * b.w * .35 : 0),
-          y: Math.min(b.h - 15, b.h * (.22 + j * .17)), z: b.z + b.d / 2 + .5,
-          w: vertical ? range(2.8, 5.5) : b.w * .94, h: vertical ? range(14, 32) : 4.5,
-          color: neonColors[(i + j) % 4], glow: j === 0, lifeIndex: signIndex++
-        });
-      }
+    signSites(model).forEach((site, lifeIndex) => {
+      const i = site.towerIndex, j = site.signIndex, b = model.towers[i];
+      const vertical = j % 3 !== 2;
+      signGroups[(vertical ? 0 : 4) + i % 4].push({
+        ...site, lifeIndex,
+        x: b.x + (vertical ? (j % 2 ? 1 : -1) * b.w * .35 : 0),
+        y: Math.min(b.h - 15, b.h * (.22 + j * .17)), z: b.z + b.d / 2 + .5,
+        w: vertical ? range(2.8, 5.5) : b.w * .94, h: vertical ? range(14, 32) : 4.5,
+        color: neonColors[(i + j) % 4], glow: j === 0
+      });
     });
     // Tube art is generated locally; deliberate strokes need no language font.
     for (let variant = 0; variant < signGroups.length; variant++) {
@@ -344,8 +341,8 @@ function createThreeLifeView(THREE, scene, life, soft, box, plane) {
   for (const mesh of [body, lamps, glow, trails, streams, steam]) {
     mesh.frustumCulled = false; scene.add(mesh);
   }
-  // The bundled Three subset already exposes BufferGeometry; build the open,
-  // two-sided cone once rather than adding another geometry to the vendor bundle.
+  // Build the open cone once with opposite-winding triangle pairs so FrontSide
+  // renders both faces without adding another geometry to the vendor bundle.
   const beamGeometry = new THREE.BufferGeometry(), beamVertices = new Float32Array(24 * 18);
   for (let i = 0; i < 24; i++) {
     const a = i / 24 * Math.PI * 2, b = (i + 1) / 24 * Math.PI * 2;
@@ -365,7 +362,7 @@ function createThreeLifeView(THREE, scene, life, soft, box, plane) {
   const bannerCanvas = document.createElement('canvas'); bannerCanvas.width = 256; bannerCanvas.height = 64;
   const ctx = bannerCanvas.getContext('2d');
   ctx.fillStyle = '#82fbe8'; ctx.font = 'bold 38px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('NIGHT / 03', 128, 34);
+  ctx.fillText('LUMEN', 128, 34);
   const banner = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(bannerCanvas),
     transparent: true, depthWrite: false, toneMapped: false, fog: false }));
   banner.position.set(0, -.5, 7.1); banner.scale.set(30, 7.5, 1); blimp.add(banner); scene.add(blimp);
@@ -398,7 +395,7 @@ function renderThreeLife(c, dt, state) {
     view.color.set(sign.color).multiplyScalar(life.signs[sign.lifeIndex].on ? 1 : 0);
     c.poolMesh.setColorAt(i, view.color);
   }
-  c.poolMesh.instanceColor.needsUpdate = true;
+  if (c.poolMesh.instanceColor) c.poolMesh.instanceColor.needsUpdate = true;
   for (let i = 0; i < c.halos.length; i++) {
     const halo = c.halos[i];
     halo.material.opacity = life.signs[halo.lifeIndex].on ? energy * .3 : 0;

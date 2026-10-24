@@ -51,6 +51,21 @@ test('vehicle count follows rounded traffic density and live quality countScale'
   life.update(0, night); assert.equal(life.vehicles.length, 20);
 });
 
+test('missing quality tier uses normal life counts', () => {
+  const { life, context } = runtime();
+  context.NeonCityStatus = {};
+  life.update(0, night);
+  assert.equal(life.vehicles.length, 20);
+});
+
+test('shared sign sites enumerate eligible towers in stable order', () => {
+  const { context } = runtime();
+  const model = { towers: ['far', 'near', 'mid', 'mid', 'near', 'far'].map(band => ({ band })) };
+  const sites = context.signSites(model);
+  assert.deepEqual(Array.from(sites, site => [site.towerIndex, site.signIndex]),
+    [[1, 0], [1, 1], [1, 2], [1, 3], [3, 0], [4, 0], [4, 1], [4, 2], [4, 3]]);
+});
+
 test('individual speeds stay within ±30% of lane speed and ease at lane ends', () => {
   const { life } = runtime(); life.update(0, night);
   const speeds = new Set();
@@ -147,6 +162,18 @@ test('production scene moves pooled instances, switches live counts and extingui
   vm.runInContext(`window.NeonCityStatus = {tier:qualityTier({}),renderScale:.75,neonBrightness:100};
     if(!initializeThreeCity(canvas, buildCity(7319))) throw Error('scene initialization failed');`, context);
   const city = vm.runInContext('threeCity', context);
+  const sceneSigns = Array.from(city.signBatches).flatMap(batch => Array.from(batch.signs));
+  assert.equal(city.life.signs.length, city.signBatches.reduce((n, batch) => n + batch.mesh.count, 0));
+  assert.deepEqual(sceneSigns.map(sign => sign.lifeIndex).sort((a, b) => a - b),
+    Array.from({ length: city.life.signs.length }, (_, i) => i));
+  const sites = context.signSites(context.buildCity(7319));
+  for (const sign of sceneSigns) {
+    const site = sites[sign.lifeIndex], lifeSign = city.life.signs[sign.lifeIndex];
+    assert.equal(sign.towerIndex, site.towerIndex);
+    assert.equal(sign.signIndex, site.signIndex);
+    assert.equal(lifeSign.towerIndex, site.towerIndex);
+    assert.equal(lifeSign.signIndex, site.signIndex);
+  }
   const state = { ...night, weather: 'clear', rain: 0, fog: .08, windowsLit: .5 };
   const draw = t => context.renderThreeCity(t, state);
   draw(0);
