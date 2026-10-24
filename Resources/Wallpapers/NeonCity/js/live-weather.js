@@ -5,7 +5,7 @@
 
 function mapWmoToCityWeather(code, precipMm) {
   let state = 'clear';
-  if ([45, 48].includes(code)) state = 'fog';
+  if ([4, 5, 6, 7, 45, 48].includes(code)) state = 'fog';
   else if (code >= 51 && code <= 55) state = 'drizzle';
   else if ([56, 57, 61, 62, 63, 66, 67, 80, 81].includes(code)) state = 'rain';
   else if ([65, 82].includes(code) || (code >= 95 && code <= 99)) state = 'downpour';

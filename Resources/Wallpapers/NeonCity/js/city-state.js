@@ -3,6 +3,21 @@
 // See ../LICENSE.txt for the MIT license.
 'use strict';
 
+const CITY_QUALITY = {
+  saver: { fps: 15, renderScale: .5, countScale: .4, eventScale: .5 },
+  normal: { fps: 30, renderScale: .75, countScale: 1, eventScale: 1 }
+};
+function qualityTier(system) {
+  return system.qualityMode === 'eco' || system.isLowPowerMode || system.onBattery ?
+    CITY_QUALITY.saver : CITY_QUALITY.normal;
+}
+const CITY_PALETTES = {
+  night: { sky: '#02050e', horizon: '#102342', fog: '#071122', light: '#89b8dd', ambient: 0.8 },
+  dawn: { sky: '#092347', horizon: '#eaa259', fog: '#6d5039', light: '#f5b982', ambient: 1.4 },
+  day: { sky: '#334b65', horizon: '#889897', fog: '#566c7c', light: '#c0d6df', ambient: 2.5 },
+  dusk: { sky: '#07182f', horizon: '#d57c38', fog: '#67442d', light: '#eea073', ambient: 1.2 }
+};
+
 const CITY_WEATHER = {
   clear: { rain: 0, fog: 0.08 },
   drizzle: { rain: 0.2, fog: 0.22 },

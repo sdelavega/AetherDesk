@@ -57,6 +57,41 @@ function runtime({ webgl = true, canvas = true, init = true, classicThrows = fal
     counts: () => ({ classicFrames, threeFrames }) };
 }
 
+test('actual page scripts draw Classic and a static gradient with three-city.js missing', () => {
+  for (const canvasAvailable of [true, false]) {
+    const callbacks = [], elements = {}; let blits = 0;
+    const gradient = { addColorStop() {} };
+    const drawing = new Proxy({}, { get(target, key) {
+      if (key in target) return target[key];
+      if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => gradient;
+      if (key === 'measureText') return () => ({ width: 32 });
+      if (key === 'drawImage') return () => { blits++; };
+      return () => {};
+    } });
+    const canvas = () => ({ style: {}, getContext: () => canvasAvailable ? drawing : null, addEventListener() {} });
+    elements.c = canvas(); elements['city-webgl'] = canvas();
+    const context = vm.createContext({ console, URLSearchParams, AbortSignal,
+      screen: { width: 640, height: 360 }, innerWidth: 640, innerHeight: 360,
+      performance: { now: () => 0, timeOrigin: 1000 }, location: { search: '' },
+      navigator: {}, document: { body: { style: {} }, createElement: canvas, getElementById: id => elements[id] },
+      setInterval() {}, setTimeout() {}, clearTimeout() {}, addEventListener() {},
+      requestAnimationFrame: fn => callbacks.push(fn)
+    });
+    context.window = context;
+    for (const [, file] of source('index.html').matchAll(/<script src="([^"]+)"/g)) {
+      if (file === 'js/three-city.js') continue;
+      vm.runInContext(source(file), context, { filename: file });
+    }
+    assert.equal(context.NeonCityStatus.renderer, canvasAvailable ? 'canvas' : 'static');
+    const before = blits;
+    callbacks.shift()(0);
+    if (canvasAvailable) {
+      assert.ok(blits > before, 'production Classic composites a frame');
+      assert.equal(context.NeonCityStatus.lastPaint, 0);
+    } else assert.match(context.document.body.style.background, /linear-gradient/);
+  }
+});
+
 test('seeded CityModel has stable footprints/heights and all depth bands', () => {
   const r = runtime();
   const first = r.run('JSON.stringify(buildCity(7319))');

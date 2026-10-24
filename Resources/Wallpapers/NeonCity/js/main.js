@@ -74,12 +74,15 @@ function livelyPropertyListener(name, val) {
 window.setCityLiveWeather = function(weather) { cityLiveWeather = weather; refreshCityState(); };
 const cityWeather = createNeonCityWeather(window.setCityLiveWeather);
 
+const cityFrameSystem = {};
 function cityAnimationFrame(t) {
   requestAnimationFrame(cityAnimationFrame);
   const status = window.NeonCityStatus;
-  const system = Object.assign({}, window.aetherDesk && window.aetherDesk.system || {});
-  if (cityPreview.has('quality')) system.qualityMode = cityPreview.get('quality');
-  const tier = qualityTier(system);
+  const system = window.aetherDesk && window.aetherDesk.system;
+  cityFrameSystem.qualityMode = cityPreview.has('quality') ? cityPreview.get('quality') : system && system.qualityMode;
+  cityFrameSystem.onBattery = system && system.onBattery;
+  cityFrameSystem.isLowPowerMode = system && system.isLowPowerMode;
+  const tier = qualityTier(cityFrameSystem);
   if (tier.fps !== status.tier.fps) {
     // A new power tier starts a fresh measurement window. Recovery still needs a full minute.
     citySampleStart = null; citySamples = []; cityUnderBudget = 0;
@@ -89,7 +92,10 @@ function cityAnimationFrame(t) {
   status.neonBrightness = cityProperties.neonBrightness;
   if (t - cityLastFrame < 1000 / tier.fps - .5) return;
   cityLastFrame = t;
-  if (cityDisposePending) { disposeThreeCity(); cityThreeInitialized = false; cityDisposePending = false; }
+  if (cityDisposePending) {
+    if (typeof disposeThreeCity === 'function') disposeThreeCity();
+    cityThreeInitialized = false; cityDisposePending = false;
+  }
   if (cityRenderer === 'static') return;
   const start = performance.now(), origin = cityRenderer;
   try {

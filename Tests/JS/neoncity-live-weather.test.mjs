@@ -61,7 +61,7 @@ function city({ host, geolocation, cached, fail = false } = {}) {
   return { context, requests, frames, timers, elements, fail: (value = true) => { failing = value; } };
 }
 
-const groups = { clear: [0, 1, 2, 3, 4, 5, 6, 7], fog: [45, 48], drizzle: [51, 53, 55],
+const groups = { clear: [0, 1, 2, 3], fog: [4, 5, 6, 7, 45, 48], drizzle: [51, 53, 55],
   rain: [56, 57, 61, 63, 66, 67, 80, 81], downpour: [65, 82, 95, 96, 99], snow: [71, 73, 75, 77, 85, 86] };
 test('mapping covers every WMO_DESC code and bounds precipitation intensity', () => {
   const { context } = city();

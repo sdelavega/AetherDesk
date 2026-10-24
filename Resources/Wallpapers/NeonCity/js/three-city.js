@@ -3,12 +3,6 @@
 // See ../LICENSE.txt for the MIT license.
 'use strict';
 
-function qualityTier(system) {
-  const saver = system.qualityMode === 'eco' || system.isLowPowerMode || system.onBattery;
-  return saver ? { fps: 15, renderScale: 0.5, countScale: 0.4, eventScale: 0.5 } :
-    { fps: 30, renderScale: 0.75, countScale: 1, eventScale: 1 };
-}
-
 function adaptRenderScale(current, p95FrameMs, msUnderBudget) {
   if (p95FrameMs > 20) return current > 0.6 ? 0.6 : 0.5;
   if (p95FrameMs < 12 && msUnderBudget >= 60000) return current < 0.6 ? 0.6 : 0.75;
@@ -38,12 +32,6 @@ function buildCity(seed) {
   return { seed: seed >>> 0, towers };
 }
 
-const CITY_PALETTES = {
-  night: { sky: '#02050e', horizon: '#102342', fog: '#071122', light: '#89b8dd', ambient: 0.8 },
-  dawn: { sky: '#092347', horizon: '#eaa259', fog: '#6d5039', light: '#f5b982', ambient: 1.4 },
-  day: { sky: '#334b65', horizon: '#889897', fog: '#566c7c', light: '#c0d6df', ambient: 2.5 },
-  dusk: { sky: '#07182f', horizon: '#d57c38', fog: '#67442d', light: '#eea073', ambient: 1.2 }
-};
 let threeCity = null;
 
 function initializeThreeCity(canvas, model) {
@@ -114,6 +102,8 @@ function initializeThreeCity(canvas, model) {
     for (const [at, alpha] of [[0, 1], [.18, .65], [.5, .15], [1, 0]]) gradient.addColorStop(at, `rgba(255,255,255,${alpha})`);
     softContext.fillStyle = gradient; softContext.fillRect(0, 0, 64, 64);
     const soft = new THREE.CanvasTexture(softCanvas), neonColors = ['#ff168a', '#00eaff', '#ff9e24', '#ac4dff'];
+    const life = createLife(model.seed, model), signBatches = [];
+    let signIndex = 0;
     const signMaterials = [], halos = [], signGroups = Array.from({ length: 8 }, () => []);
     model.towers.forEach((b, i) => {
       if (b.band === 'far' || (b.band === 'mid' && i % 3)) return;
@@ -124,7 +114,7 @@ function initializeThreeCity(canvas, model) {
           x: b.x + (vertical ? (j % 2 ? 1 : -1) * b.w * .35 : 0),
           y: Math.min(b.h - 15, b.h * (.22 + j * .17)), z: b.z + b.d / 2 + .5,
           w: vertical ? range(2.8, 5.5) : b.w * .94, h: vertical ? range(14, 32) : 4.5,
-          color: neonColors[(i + j) % 4], glow: j === 0
+          color: neonColors[(i + j) % 4], glow: j === 0, lifeIndex: signIndex++
         });
       }
     });
@@ -162,9 +152,11 @@ function initializeThreeCity(canvas, model) {
           const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color: s.color, transparent: true,
             opacity: .3, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
           halo.position.set(s.x, s.y, s.z + .15); halo.scale.set(s.w * 5, s.h * 2.2, 1);
+          halo.lifeIndex = s.lifeIndex;
           scene.add(halo); halos.push(halo);
         }
       });
+      signBatches.push({ mesh, signs });
       scene.add(backing, mesh);
     }
     // Facade-aligned glow pools stay in front of the masonry while depth
@@ -239,7 +231,9 @@ function initializeThreeCity(canvas, model) {
       new THREE.Vector3(0, 44, 159), new THREE.Vector3(7, 46, 135),
       new THREE.Vector3(0, 43, 111), new THREE.Vector3(-7, 40, 135)
     ], true, 'catmullrom', .5);
+    const lifeView = createThreeLifeView(THREE, scene, life, soft, box, plane);
     threeCity = { renderer, scene, camera, cameraPath, ambient, rim, uniforms, sky, skyUniforms, signMaterials, halos,
+      life, lifeView, signBatches, poolMesh, pools,
       reflectionMaterial, particleData, rain, snow, snowMaterial, lastTime: null, width: 0, height: 0, scale: 0,
       backgroundTarget: new THREE.Color(), horizonTarget: new THREE.Color(), fogTarget: new THREE.Color(), lightTarget: new THREE.Color() };
     return true;
@@ -296,12 +290,13 @@ function renderThreeCity(t, cityState) {
   c.uniforms.uLit.value += (state.windowsLit * .44 - c.uniforms.uLit.value) * a;
   const energy = state.neon * (window.NeonCityStatus.neonBrightness || 100) / 100;
   c.uniforms.uNeon.value += (energy - c.uniforms.uNeon.value) * a;
-  c.signMaterials.forEach(material => material.color.setScalar(c.uniforms.uNeon.value * 3.6 + .025));
-  c.halos.forEach(halo => { halo.material.opacity = c.uniforms.uNeon.value * .3; });
+  for (let i = 0; i < c.signMaterials.length; i++) {
+    c.signMaterials[i].color.setScalar(c.uniforms.uNeon.value * 3.6 + .025);
+  }
   c.reflectionMaterial.opacity = (state.rain > 0 ? .15 : .035) * c.uniforms.uNeon.value;
   // A closed ten-minute path, evaluated from absolute time so throttling cannot accelerate it.
   const cycle = (t % 600000) / 600000;
-  c.camera.position.copy(c.cameraPath.getPointAt(cycle));
+  c.cameraPath.getPointAt(cycle, c.camera.position);
   c.camera.lookAt(Math.sin(cycle * Math.PI * 2 + .6) * 9, 64 + Math.sin(cycle * Math.PI * 2) * 3, -350);
   c.sky.position.copy(c.camera.position);
   const snowy = state.weather === 'snow';
@@ -324,5 +319,137 @@ function renderThreeCity(t, cityState) {
     }
   }
   if (amount) positions.needsUpdate = true;
+  renderThreeLife(c, dt, state);
   c.renderer.render(c.scene, c.camera);
+}
+
+function createThreeLifeView(THREE, scene, life, soft, box, plane) {
+  const body = new THREE.InstancedMesh(box, new THREE.MeshStandardMaterial({ color: '#162c3d',
+    emissive: '#276875', emissiveIntensity: .25, metalness: .7, roughness: .3 }), 20);
+  const lamps = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({ toneMapped: false }), 80);
+  const glow = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ map: soft,
+    transparent: true, opacity: .65, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), 20);
+  const trails = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({ transparent: true,
+    opacity: .35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), 20);
+  const streams = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({ transparent: true,
+    opacity: .6, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), 20);
+  const steam = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ map: soft, color: '#7fabbc',
+    transparent: true, opacity: .18, depthWrite: false, blending: THREE.AdditiveBlending }), 48);
+  const color = new THREE.Color();
+  for (let i = 0; i < 20; i++) {
+    color.set(i % 3 ? '#72f9ff' : '#ff357b');
+    glow.setColorAt(i, color); trails.setColorAt(i, color); streams.setColorAt(i, color);
+    for (let j = 0; j < 4; j++) lamps.setColorAt(i * 4 + j, color.set(j < 2 ? '#c9faff' : '#ff225f'));
+  }
+  for (const mesh of [body, lamps, glow, trails, streams, steam]) {
+    mesh.frustumCulled = false; scene.add(mesh);
+  }
+  // The bundled Three subset already exposes BufferGeometry; build the open,
+  // two-sided cone once rather than adding another geometry to the vendor bundle.
+  const beamGeometry = new THREE.BufferGeometry(), beamVertices = new Float32Array(24 * 18);
+  for (let i = 0; i < 24; i++) {
+    const a = i / 24 * Math.PI * 2, b = (i + 1) / 24 * Math.PI * 2;
+    const ax = Math.cos(a) * 30, az = Math.sin(a) * 30, bx = Math.cos(b) * 30, bz = Math.sin(b) * 30;
+    beamVertices.set([0, 0, 0, ax, 150, az, bx, 150, bz, 0, 0, 0, bx, 150, bz, ax, 150, az], i * 18);
+  }
+  beamGeometry.setAttribute('position', new THREE.Float32BufferAttribute(beamVertices, 3));
+  const beam = new THREE.Mesh(beamGeometry, new THREE.MeshBasicMaterial({ color: '#9acbe2',
+    transparent: true, opacity: .045, blending: THREE.AdditiveBlending, depthWrite: false }));
+  scene.add(beam);
+  const blimp = new THREE.Object3D();
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12),
+    new THREE.MeshStandardMaterial({ color: '#233448', roughness: .65, metalness: .3, fog: false }));
+  hull.scale.set(27, 6, 7); blimp.add(hull);
+  const gondola = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ color: '#f8bc7a', toneMapped: false, fog: false }));
+  gondola.scale.set(5, 1.3, 3); gondola.position.y = -6; blimp.add(gondola);
+  const bannerCanvas = document.createElement('canvas'); bannerCanvas.width = 256; bannerCanvas.height = 64;
+  const ctx = bannerCanvas.getContext('2d');
+  ctx.fillStyle = '#82fbe8'; ctx.font = 'bold 38px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('NIGHT / 03', 128, 34);
+  const banner = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(bannerCanvas),
+    transparent: true, depthWrite: false, toneMapped: false, fog: false }));
+  banner.position.set(0, -.5, 7.1); banner.scale.set(30, 7.5, 1); blimp.add(banner); scene.add(blimp);
+  return { body, lamps, glow, trails, streams, steam, beam, blimp, banner, gondola,
+    dummy: new THREE.Object3D(), color };
+}
+
+function lifeInstance(view, mesh, index, x, y, z, w, h, d) {
+  const dummy = view.dummy;
+  dummy.position.set(x, y, z); dummy.scale.set(w, h, d); dummy.rotation.set(0, 0, 0);
+  dummy.updateMatrix(); mesh.setMatrixAt(index, dummy.matrix);
+}
+
+function renderThreeLife(c, dt, state) {
+  const life = c.life, view = c.lifeView;
+  life.update(dt, state);
+  const energy = life.brightness * (window.NeonCityStatus.neonBrightness || 100) / 100;
+  // Every sign keeps its own failure state even though tube art shares eight draws.
+  for (let b = 0; b < c.signBatches.length; b++) {
+    const batch = c.signBatches[b];
+    for (let i = 0; i < batch.signs.length; i++) {
+      const sign = batch.signs[i];
+      view.color.set(sign.color).multiplyScalar(life.signs[sign.lifeIndex].on ? 1 : .008);
+      batch.mesh.setColorAt(i, view.color);
+    }
+    if (batch.mesh.instanceColor) batch.mesh.instanceColor.needsUpdate = true;
+  }
+  for (let i = 0; i < c.pools.length; i++) {
+    const sign = c.pools[i];
+    view.color.set(sign.color).multiplyScalar(life.signs[sign.lifeIndex].on ? 1 : 0);
+    c.poolMesh.setColorAt(i, view.color);
+  }
+  c.poolMesh.instanceColor.needsUpdate = true;
+  for (let i = 0; i < c.halos.length; i++) {
+    const halo = c.halos[i];
+    halo.material.opacity = life.signs[halo.lifeIndex].on ? energy * .3 : 0;
+  }
+  view.body.count = view.glow.count = view.trails.count = life.vehicles.length;
+  view.lamps.count = life.vehicles.length * 4;
+  view.streams.count = 0;
+  for (let i = 0; i < life.vehicles.length; i++) {
+    const vehicle = life.vehicles[i], lane = life.lanes[vehicle.lane];
+    const z = lane.z0 + (lane.z1 - lane.z0) * vehicle.t, direction = lane.z1 > lane.z0 ? 1 : -1;
+    lifeInstance(view, view.body, i, lane.x, lane.y, z, 1.4, .45, 2.8);
+    lifeInstance(view, view.glow, i, lane.x, lane.y - .35, z, 6, 2.2, 1);
+    lifeInstance(view, view.trails, i, lane.x, lane.y - .12, z - direction * 4.5, .14, .08, 6);
+    for (let j = 0; j < 4; j++) {
+      lifeInstance(view, view.lamps, i * 4 + j, lane.x + (j % 2 ? .48 : -.48), lane.y,
+        z + direction * (j < 2 ? 1.45 : -1.45), .28, .16, .18);
+    }
+    if (lane.y < 2) lifeInstance(view, view.streams, view.streams.count++, lane.x, -.65,
+      z - direction * 8, .32, .1, 16);
+  }
+  view.body.material.emissiveIntensity = .25 * energy;
+  view.lamps.material.color.setScalar(energy * 2.5);
+  view.glow.material.opacity = .65 * energy; view.trails.material.opacity = .35 * energy;
+  view.streams.material.opacity = .6 * energy;
+  view.body.instanceMatrix.needsUpdate = view.lamps.instanceMatrix.needsUpdate = true;
+  view.glow.instanceMatrix.needsUpdate = view.trails.instanceMatrix.needsUpdate = view.streams.instanceMatrix.needsUpdate = true;
+  view.steam.count = 0;
+  for (let i = 0; i < life.events.length; i++) {
+    const event = life.events[i], tower = event.tower;
+    if (event.type === 'searchlight') {
+      view.beam.visible = event.active;
+      if (event.active && tower) {
+        view.beam.position.set(tower.x, tower.h + 1, tower.z);
+        view.beam.rotation.set(.35, 0, Math.sin(event.t * Math.PI * 2) * .65);
+        view.beam.material.opacity = .045 * energy * Math.sin(Math.PI * event.t);
+      }
+    } else if (event.type === 'blimp') {
+      view.blimp.visible = event.active;
+      view.blimp.position.set(-330 + event.t * 660, 156 + Math.sin(event.t * Math.PI * 2) * 3, -735);
+      view.banner.material.color.setScalar(energy); view.gondola.material.color.setScalar(energy);
+    } else if (event.active && tower) {
+      const envelope = Math.sin(event.t * Math.PI);
+      for (let puff = 0; puff < 8; puff++) {
+        const rise = (event.t * 2 + puff / 8) % 1, size = 5 + rise * 11, index = view.steam.count++;
+        lifeInstance(view, view.steam, index, tower.x + Math.sin(rise * 4 + i) * rise * 5,
+          tower.h + 2 + rise * 24, tower.z + tower.d / 3, size, size * 1.3, 1);
+        view.steam.setColorAt(index, view.color.setScalar((1 - rise) * envelope));
+      }
+    }
+  }
+  view.steam.material.opacity = .18 * (state.phase === 'day' ? .35 : 1);
+  view.steam.instanceMatrix.needsUpdate = true;
+  if (view.steam.instanceColor) view.steam.instanceColor.needsUpdate = true;
 }

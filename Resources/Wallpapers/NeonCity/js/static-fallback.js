@@ -23,7 +23,7 @@ function showCityRenderer(next) {
 
 function applyRendererPreference() {
   const next = selectRenderer({ rendererPref: cityProperties.renderer,
-    webgl: !!window.NeonCityThree && !cityThreeFailed,
+    webgl: !!window.NeonCityThree && typeof initializeThreeCity === 'function' && !cityThreeFailed,
     canvas2d: !!window.ClassicCityRenderer && !cityCanvasFailed });
   if (next === 'three' && !cityThreeInitialized) {
     cityThreeInitialized = initializeThreeCity(document.getElementById('city-webgl'), buildCity(cityLayoutSeed));
