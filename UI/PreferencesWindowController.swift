@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -73,6 +73,7 @@ private final class PreferencesViewController: NSViewController {
     private var currentEditor: PropertyEditorViewController?
     private let wallpaperEditorContainer = NSView()
     private var contactedDomainsLabel: NSTextField?
+    private var acknowledgementsWindow: NSWindow?
     #if AETHERDESK_STORE
     private let premiumController = PremiumViewController()
     private weak var weatherSourcePopup: NSPopUpButton?
@@ -471,6 +472,13 @@ private final class PreferencesViewController: NSViewController {
         privacyPolicyButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(privacyPolicyButton)
 
+        let acknowledgementsButton = NSButton(
+            title: "Acknowledgements…",
+            target: self,
+            action: #selector(showAcknowledgements))
+        acknowledgementsButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(acknowledgementsButton)
+
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: view.topAnchor, constant: 30),
             title.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -499,8 +507,63 @@ private final class PreferencesViewController: NSViewController {
         NSLayoutConstraint.activate([
             privacyPolicyButton.topAnchor.constraint(equalTo: openMeteoAttributionButton.bottomAnchor, constant: 6),
             privacyPolicyButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+
+            acknowledgementsButton.topAnchor.constraint(equalTo: privacyPolicyButton.bottomAnchor, constant: 12),
+            acknowledgementsButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
         ])
         return view
+    }
+
+    @objc private func showAcknowledgements() {
+        if let window = acknowledgementsWindow {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let text: String
+        do {
+            guard let url = Bundle.main.url(forResource: "Acknowledgements", withExtension: "txt") else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            text = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn’t open acknowledgements"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 460),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Acknowledgements"
+        window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 360, height: 260)
+
+        let scrollView = NSScrollView(frame: window.contentView!.bounds)
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasVerticalScroller = true
+        let textView = NSTextView(frame: scrollView.contentView.bounds)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.font = NSFont.systemFont(ofSize: 12)
+        textView.textContainerInset = NSSize(width: 16, height: 16)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.string = text
+        scrollView.documentView = textView
+        window.contentView = scrollView
+        window.center()
+        acknowledgementsWindow = window
+        window.makeKeyAndOrderFront(nil)
     }
 
     // MARK: Editor swap-in

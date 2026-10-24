@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AE1400140000000000000001 /* Acknowledgements.txt in Resources */ = {isa = PBXBuildFile; fileRef = AE1400140000000000000002 /* Acknowledgements.txt */; };
 		AE1400130000000000000001 /* PowerEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400130000000000000002 /* PowerEnvironmentTests.swift */; };
 		AE1400120000000000000001 /* WeatherAetherPortabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */; };
 		AE1400100000000000000003 /* WeatherConditionMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400100000000000000005 /* WeatherConditionMap.swift */; };
@@ -140,6 +141,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AE1400140000000000000002 /* Acknowledgements.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = Acknowledgements.txt; sourceTree = "<group>"; };
 		AE1400130000000000000002 /* PowerEnvironmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/PowerEnvironmentTests.swift; sourceTree = SOURCE_ROOT; };
 		AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/WeatherAetherPortabilityTests.swift; sourceTree = SOURCE_ROOT; };
 		AE1400100000000000000005 /* WeatherConditionMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/WeatherConditionMap.swift; sourceTree = SOURCE_ROOT; };
@@ -341,6 +343,7 @@
 		7CBE1222EE1994907BDFDEF1 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				AE1400140000000000000002 /* Acknowledgements.txt */,
 				CF514B148862C8CA4AF361B9 /* Assets.xcassets */,
 				9B5542B1639E1B9FC4F5043B /* PrivacyInfo.xcprivacy */,
 				58794D4FCA3D313830F09776 /* Wallpapers */,
@@ -502,6 +505,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AE1400140000000000000001 /* Acknowledgements.txt in Resources */,
 				E78A8D1BC0C6ADAE32B1A5F7 /* Assets.xcassets in Resources */,
 				75F307F884FCD2D2A47A15EE /* PrivacyInfo.xcprivacy in Resources */,
 				56652B809CEF6CA4FB0ED736 /* Wallpapers in Resources */,

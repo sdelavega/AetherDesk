@@ -42,7 +42,7 @@ the App Store build stays in scope; v1.4 requires macOS 14.
   nevertheless still runs `xcodegen` from an untracked local file — a
   fresh clone cannot release.
 - Base `MACOSX_DEPLOYMENT_TARGET` is 12.0; every target overrides to 14.0.
-- 52 tracked files carry "All rights reserved" in their GPL header.
+- 52 tracked files carry a restrictive copyright suffix in their GPL header.
 
 ## Global decisions
 
@@ -307,7 +307,7 @@ implementation, including `~/Library/Caches/com.sdelavega.ÆtherDesk`).
 
 ### A5. Licence
 
-- Remove "All rights reserved" from all 52 headers.
+- Remove the restrictive copyright suffix from all 52 headers.
 - Sparkle (MIT) and Three.js (MIT) licences ship in the bundle and are
   listed in About.
 - `CONTRIBUTING.md`: GPL-3 and App Store distribution coexist only

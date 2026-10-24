@@ -19,7 +19,7 @@
 - No new runtime dependency except Sparkle 2, OSS target only. No npm packages in tests; `node:test` and `node:vm` only.
 - Every bundled wallpaper stays self-contained and importable into Lively: no CDN, no remote script/style/font, no build step at runtime.
 - No path may end in a black screen for WeatherAether.
-- New source files start with the project's GPL-3 header **without** "All rights reserved": `// SPDX-License-Identifier: GPL-3.0-only` / `// Copyright (C) 2026 Stephen de la Vega` followed by the standard GPL notice used in existing files.
+- New source files start with the project's GPL-3 header **without** a restrictive copyright suffix: `// SPDX-License-Identifier: GPL-3.0-only` / `// Copyright (C) 2026 Stephen de la Vega` followed by the standard GPL notice used in existing files.
 - Never print the environment, commit secrets, or commit absolute home paths. No sudo. No writes under `/Volumes/*`.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Do not push, tag, publish, or create releases. Publishing steps are written and dry-run only.
@@ -433,15 +433,15 @@ Rules: ordering is all `tearDownHost` (by ascending ID), then for each added dis
 ### Task 14: Licence headers, contributing, acknowledgements
 
 **Files:**
-- Modify: the 52 files from `git grep -l "All rights reserved"`
+- Modify: the live tracked-file list from `git grep -l "All[ ]rights reserved"`
 - Create: `CONTRIBUTING.md`
 - Modify: `UI/PreferencesWindowController.swift` (About tab: acknowledgements list)
 - Create: `Resources/Acknowledgements.txt`
 
-- [ ] **Step 1:** Remove ` All rights reserved.` from each header line; `git grep -n "All rights reserved"` returns nothing.
+- [ ] **Step 1:** Remove the restrictive copyright suffix from each header line; `git grep -n "All[ ]rights reserved"` returns nothing.
 - [ ] **Step 2: `CONTRIBUTING.md`:** GPL-3; the author distributes through the Mac App Store as sole copyright holder, so contributions are accepted only with the contributor's written agreement that the author may also distribute them under the App Store's terms; how to file issues; how to run `scripts/test-gate.sh`.
 - [ ] **Step 3: Acknowledgements:** `Resources/Acknowledgements.txt` contains Three.js MIT licence (copied from `vendor/THREE-LICENSE.txt`) and, from Task 16 on, Sparkle's licence; the About tab shows an "Acknowledgements…" button opening it in a scrollable text view.
-- [ ] **Step 4: Gate PASS. Commit** `Drop "All rights reserved"; add contributing guide and acknowledgements`.
+- [ ] **Step 4: Gate PASS. Commit** the licence cleanup, contributing guide and acknowledgements.
 
 ### Task 15: Split OSS and App Store targets
 
