@@ -123,6 +123,27 @@ Tests: `AetherDesk` runs the unit tests (no signing needed). `AetherDesk-AppStor
 
 ---
 
+## Releasing the OSS Build
+
+Start on a clean `v1.4` or `main` checkout with Xcode, Python 3, Node.js and the standard macOS command-line tools. Run `scripts/test-release.sh` for local pipeline checks; `shellcheck scripts/release-*.sh scripts/make-dmg.sh scripts/test-release.sh` checks shell syntax and usage.
+
+```bash
+scripts/release-build.sh 1.4.0 41 --unsigned-test
+scripts/release-publish.sh 1.4.0
+```
+
+The unsigned rehearsal changes versions in a temporary copy, verifies both app schemes, runs `scripts/test-gate.sh --with-js --with-appstore`, archives Release without Developer ID signing, exports and ad-hoc signs the archived app, and creates the legacy zip/checksum, DMG and manifest in `dist/1.4.0/`. It asserts that the v1.3 handover reaches and fails the team check. Notarization and Sparkle signing print explicit skipped messages. The checkout's versions stay unchanged; unsigned artifacts cannot be published. Move the output directory aside before rebuilding the same version.
+
+For a supervised signed release, omit `--unsigned-test`. Install a Developer ID Application identity for team `N5PUFD82GV`, configure `xcrun notarytool` with keychain profile `AetherDesk` (or set `NOTARIZE_KEYCHAIN_PROFILE`), and keep the Sparkle EdDSA key in the keychain under account `AetherDesk`. The scripts never export the private key. Child tools receive only `PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_*`, `USER` and `DEVELOPER_DIR`; GitHub CLI uses its local authentication. The build rejects a placeholder public key, verifies the Sparkle 2.10.0 SPM tool hashes against `scripts/sparkle-tools.sha256`, notarizes and staples the app and DMG, checks v1.3 compatibility, and verifies the generated appcast enclosure signature. It uses local `ExportOptions.plist` when present, otherwise generates Developer ID export options for the team. Only a successful signed build commits the version bump for both targets.
+
+`dist/<version>/` contains `AetherDesk.zip`, `AetherDesk.zip.sha256` (standard SHA-256 plus `AetherDesk.zip` filename), `AetherDesk-<version>.dmg`, `release-info.txt`, and `manifest.txt` (SHA-256, byte size, filename); signed builds also contain `appcast.xml`. Replacing resolved Sparkle tools requires deliberately updating the pins after checking the new upstream artifact.
+
+`release-publish.sh <version>` prints the complete plan without creating files or contacting a service. With `--execute`, it validates signed artifacts and current HEAD, requires the exact version typed at the prompt, creates the GitHub release, commits and pushes the appcast from a detached `gh-pages` worktree, and renders, commits and pushes `Casks/aetherdesk.rb` in the clean sibling `../homebrew-tap` clone. The `gh-pages` branch must already exist. It then downloads the served feed and all three assets and checks their hashes and sizes against the manifest. A partial publish stops with a diagnostic; inspect the remote state before retrying.
+
+The cask removes the OSS app's Application Support folder, preferences and ASCII-bundle-ID thumbnail cache. It leaves the App Store container intact; the OSS build is unsandboxed and does not create it. No saved-state path is included because none was observed.
+
+---
+
 ## Honest Caveats
 
 The OSS build is unsandboxed by design. The App Store / TestFlight build is fully sandboxed. Display restore at launch works well; hot-plug restore (unplug and replug a display mid-session) is on the list. The codebase is AppKit-first and deliberately light on abstraction — it's a focused utility, not a framework.
