@@ -33,6 +33,9 @@ struct Options {
     var warmup = 5
     var state: String?
     var out = "build/weather-perf-auto.json"
+    var capture: String?
+    var width = 1920
+    var height = 1080
     var root = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
         .deletingLastPathComponent().deletingLastPathComponent()
 
@@ -50,14 +53,18 @@ struct Options {
             case "--warmup": warmup = Int(value) ?? -1
             case "--state": state = value
             case "--out": out = value
+            case "--capture": capture = value
+            case "--width": width = Int(value) ?? 0
+            case "--height": height = Int(value) ?? 0
             case "--root": root = URL(fileURLWithPath: value).standardizedFileURL
             default: throw PerfError("Unknown option: \(flag)")
             }
         }
         guard ["auto", "classic"].contains(renderer), ["balanced", "eco"].contains(quality), seconds > 0, warmup >= 1,
               soak == nil || (soak! >= 10 && soak! % 10 == 0),
-              state == nil || states.contains(state!) else {
-            throw PerfError("Use --renderer auto|classic --quality balanced|eco --seconds N --out file [--soak N (multiple of 10)] [--state NAME] [--warmup N] [--root path]")
+              width > 0, height > 0,
+              state == nil || states.contains(state!) || (capture != nil && state == "no-location") else {
+            throw PerfError("Use --renderer auto|classic --quality balanced|eco --seconds N --out file [--soak N (multiple of 10)] [--state NAME] [--warmup N] [--root path] [--capture PNG --width N --height N --state no-location|NAME]")
         }
     }
 }
@@ -184,6 +191,15 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let bootstrap = """
         (function(){
           var suspended=false;
+          if(\(options.capture != nil)){
+            var NativeDate=Date,fixedTime=new NativeDate(2026,9,22,22,0,0).getTime();
+            window.Date=class extends NativeDate{
+              constructor(...args){super(...(args.length?args:[fixedTime]));}
+              static now(){return fixedTime;}
+            };
+            localStorage.clear();
+            navigator.geolocation.getCurrentPosition=function(success,failure){failure({code:1});};
+          }
           window.aetherDesk={system:{qualityMode:'\(options.quality)',onBattery:\(options.quality == "eco"),fpsCap:30},
             properties:{get:function(){return {};},onUpdate:function(){}},onVisibility:function(){}};
           \(throttle)
@@ -201,7 +217,7 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
           window.WebSocket=function(){blocked();};window.EventSource=function(){blocked();};
           navigator.sendBeacon=function(){blocked();};
           window.addEventListener('error',function(e){window.webkit.messageHandlers.weatherPerf.postMessage(e.message||'Resource load failed');},true);
-          if(window.top!==window)window.addEventListener('DOMContentLoaded',function(){
+          if(window.top!==window||\(options.capture != nil))window.addEventListener('DOMContentLoaded',function(){
             window.webkit.messageHandlers.weatherPerf.postMessage({kind:'frame'});
           });
           if(window.top===window)window.addEventListener('message',function(e){
@@ -227,9 +243,9 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let deadline = ProcessInfo.processInfo.systemUptime + 15
         while !compiled && ProcessInfo.processInfo.systemUptime < deadline { pump(until: ProcessInfo.processInfo.systemUptime + 0.05) }
         guard compiled, failure == nil else { throw PerfError(failure ?? "Offline rule compilation timed out") }
-        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1920, height: 1080), configuration: config)
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: options.width, height: options.height), configuration: config)
         webView.navigationDelegate = self
-        window = NSWindow(contentRect: NSRect(x: -1920, y: 0, width: 1920, height: 1080), styleMask: [.borderless], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: -options.width, y: 0, width: options.width, height: options.height), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = webView
         // A fully offscreen NSWindow is page-hidden by WebKit. Leave a small
@@ -313,6 +329,15 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         url.queryItems = [URLQueryItem(name: "perf", value: "1"), URLQueryItem(name: "state", value: state),
                           URLQueryItem(name: "renderer", value: options.renderer == "classic" ? "canvas" : "three"),
                           URLQueryItem(name: "hour", value: phase == "day" ? "12" : "22")]
+        if options.capture != nil {
+            url = URLComponents(url: options.root.appendingPathComponent("Resources/Wallpapers/WeatherAether/index.html"), resolvingAgainstBaseURL: false)!
+            url.queryItems = [URLQueryItem(name: "renderer", value: options.renderer == "classic" ? "canvas" : "three"),
+                              URLQueryItem(name: "quality", value: options.quality)]
+            if state != "no-location" {
+                url.queryItems! += [URLQueryItem(name: "preview", value: state), URLQueryItem(name: "hour", value: "22"),
+                                   URLQueryItem(name: "minimal", value: "1")]
+            }
+        }
         webView.loadFileURL(url.url!, allowingReadAccessTo: options.root)
         let deadline = ProcessInfo.processInfo.systemUptime + 30
         while !loaded && failure == nil && ProcessInfo.processInfo.systemUptime < deadline { pump(until: ProcessInfo.processInfo.systemUptime + 0.05) }
@@ -320,8 +345,8 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         pump(until: ProcessInfo.processInfo.systemUptime + Double(options.warmup))
         let info = try snapshot()
         guard info["renderer"] as? String == (options.renderer == "auto" ? "three" : "canvas"),
-              info["width"] as? Int == 1920, info["height"] as? Int == 1080,
-              info["hidden"] as? Bool == false else { throw PerfError("Preview did not render at 1920x1080: \(info)") }
+              info["width"] as? Int == options.width, info["height"] as? Int == options.height,
+              info["hidden"] as? Bool == false else { throw PerfError("Preview did not render at \(options.width)x\(options.height): \(info)") }
         print("Live preview: \(info)")
         return try identifyPID()
     }
@@ -330,16 +355,21 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         guard childFrame != nil, var value = try evaluate("""
         ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfFrames,
           actualRenderer:S.renderer,quality:S.threeAtmosphere?S.threeAtmosphere.quality:null,
+          isDay:S.isDay,latitude:S.lat,longitude:S.lon,hasWeather:!!S.weather,shaderError:S.threeShaderError||null,
+          canvasWidth:S.canvas.width,canvasHeight:S.canvas.height,
+          drawingWidth:S.threeAtmosphere?S.threeAtmosphere.renderer.domElement.width:0,
+          drawingHeight:S.threeAtmosphere?S.threeAtmosphere.renderer.domElement.height:0,
           skyMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMetrics:null,
           motionMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMotionMetrics:null,
           paintAge:performance.now()-(S.threeAtmosphere&&S.useThreeRenderer?S.threeAtmosphere.lastPresentationFrame:S.lastFrameTime)})
         """) as? [String: Any] else { throw PerfError("Missing preview frame") }
         let expected = options.renderer == "auto" ? "three" : "canvas"
-        guard rendererStatus == expected, value["actualRenderer"] as? String == expected,
+        guard (options.capture != nil || rendererStatus == expected),
+              value["actualRenderer"] as? String == expected, value["shaderError"] is NSNull,
               let paintAge = value["paintAge"] as? Double, paintAge >= 0, paintAge < 2000 else {
             throw PerfError("Renderer changed or stopped painting: \(value)")
         }
-        value["renderer"] = rendererStatus
+        value["renderer"] = expected
         return value
     }
 
@@ -358,6 +388,42 @@ final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
 
     func run() throws {
         defer { unloadView() }
+        if let path = options.capture {
+            try prepareView()
+            _ = try load(state: options.state ?? "no-location", phase: "night")
+            let info = try snapshot()
+            guard info["isDay"] as? Bool == false else { throw PerfError("Capture must be at night") }
+            if options.state == nil || options.state == "no-location" {
+                guard info["latitude"] is NSNull, info["longitude"] is NSNull,
+                      info["hasWeather"] as? Bool == false else { throw PerfError("Capture has a location or weather") }
+            }
+            var completed = false
+            var captureError: Error?
+            let configuration = WKSnapshotConfiguration()
+            configuration.rect = webView.bounds
+            configuration.snapshotWidth = NSNumber(value: options.width)
+            webView.takeSnapshot(with: configuration) { image, error in
+                defer { completed = true }
+                do {
+                    if let error { throw error }
+                    guard let image, let tiff = image.tiffRepresentation,
+                          let bitmap = NSBitmapImageRep(data: tiff),
+                          let png = bitmap.representation(using: .png, properties: [:]) else {
+                        throw PerfError("Snapshot did not produce a PNG")
+                    }
+                    let url = URL(fileURLWithPath: path)
+                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try png.write(to: url, options: .atomic)
+                } catch { captureError = error }
+            }
+            let deadline = ProcessInfo.processInfo.systemUptime + 15
+            while !completed && ProcessInfo.processInfo.systemUptime < deadline { pump(until: ProcessInfo.processInfo.systemUptime + 0.05) }
+            guard completed else { throw PerfError("Snapshot timed out") }
+            if let captureError { throw captureError }
+            try writeJSON([info], to: path + ".json")
+            print("Captured \(path)")
+            return
+        }
         var rows = [[String: Any]]()
         let selectedStates = options.soak == nil ? options.state.map { [$0] } ?? states : [options.state ?? "thunder"]
         for state in selectedStates {

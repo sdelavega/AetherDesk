@@ -108,7 +108,9 @@ var THREE_SKY_FRAGMENT=[
   '#if USE_CLOUD_NOISE_CACHE == 1',
   'uniform highp sampler2D uCloudNoise;',
   '#endif',
-  'float hash(vec2 p){',
+  // Pixel coordinates exceed mediump's dot-product range on mobile GPUs.
+  // Keep the hash highp to avoid a diagonal NaN boundary in the sky grain.
+  'highp float hash(highp vec2 p){',
   '  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);',
   '}',
   '#if USE_CLOUD_NOISE_CACHE == 0',
