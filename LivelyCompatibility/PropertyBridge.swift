@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -55,6 +55,10 @@ final class PropertyBridge: NSObject {
     func updateFPSCap(_ newValue: Int) {
         fpsCap = min(Constants.Defaults.maxFPS,
                      max(Constants.Defaults.minFPS, newValue))
+    }
+
+    static func qualityMode(onBattery: Bool, lowPower: Bool) -> String {
+        onBattery || lowPower ? "eco" : "balanced"
     }
 
     // MARK: Setup
@@ -159,16 +163,16 @@ final class PropertyBridge: NSObject {
     func injectEnvironment() {
         guard let webView = webView else { return }
 
-        let screen = NSScreen.screens.first(where: { $0.displayID == displayID })
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        let cached = DisplayGeometryCache.shared.geometry(for: displayID)
+        let screen = cached == nil ? (NSScreen.screens.first(where: { $0.displayID == displayID })
+            ?? NSScreen.main ?? NSScreen.screens.first) : nil
 
         let displayDict: [String: Any] = [
             "id":          Int(displayID),
-            "width":       Int(screen?.frame.width ?? 1920),
-            "height":      Int(screen?.frame.height ?? 1080),
-            "scaleFactor": Double(screen?.backingScaleFactor ?? 2.0),
-            "isPrimary":   CGDisplayIsMain(displayID) != 0
+            "width":       Int(cached?.frame.width ?? screen?.frame.width ?? 1920),
+            "height":      Int(cached?.frame.height ?? screen?.frame.height ?? 1080),
+            "scaleFactor": Double(cached?.scale ?? screen?.backingScaleFactor ?? 2.0),
+            "isPrimary":   cached?.isPrimary ?? (CGDisplayIsMain(displayID) != 0)
         ]
         let isLowPower: Bool
         if #available(macOS 12.0, *) {
@@ -183,10 +187,12 @@ final class PropertyBridge: NSObject {
         // readonly property", aborting the environment update. The cap is already
         // correct from the bootstrap (and a reload rebuilds the webview with the
         // current cap), so re-sending it here is both unnecessary and harmful.
+        let onBattery = WallpaperManager.isOnBatteryPower
         let systemDict: [String: Any] = [
             "isLowPowerMode": isLowPower,
             "isOnline":       true,
-            "qualityMode":    "balanced"
+            "onBattery":      onBattery,
+            "qualityMode":    Self.qualityMode(onBattery: onBattery, lowPower: isLowPower)
         ]
         let env: [String: Any] = ["display": displayDict, "system": systemDict]
         let envJSON = jsonFragment(env)

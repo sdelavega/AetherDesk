@@ -10,46 +10,161 @@ body{margin:0;padding:24px;background:#11151d;color:#edf2f7;font-family:-apple-s
 header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:18px}
 h1{font-size:22px;font-weight:600;margin:0}
 label{display:flex;align-items:center;gap:8px;color:#b8c2d1;font-size:14px}
+.controls{display:flex;gap:14px;flex-wrap:wrap}
 select{font:inherit;color:#edf2f7;background:#202735;border:1px solid #3a4558;border-radius:8px;padding:7px 28px 7px 10px}
 main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 figure{position:relative;aspect-ratio:16/9;margin:0;overflow:hidden;border:1px solid #364156;border-radius:12px;background:#080b11}
 iframe{display:block;width:100%;height:100%;border:0;pointer-events:none}
 figcaption{position:absolute;left:12px;bottom:10px;padding:5px 9px;border-radius:7px;background:rgba(8,12,20,.64);backdrop-filter:blur(8px);font-size:13px;font-weight:600;text-transform:capitalize;letter-spacing:.2px}
+.renderer-status{position:absolute;right:10px;top:10px;max-width:72%;padding:4px 7px;border-radius:6px;background:rgba(8,12,20,.76);color:#e5ad62;font:700 10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.2px;text-align:right;text-transform:none;white-space:normal}
+.renderer-status[data-renderer="three"]{color:#75e6a4}.renderer-status[data-error="true"]{color:#ff7b72}
 @media(max-width:800px){main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
 <header>
   <h1>Weather Aether state gallery</h1>
-  <label for="time">Light
-    <select id="time">
-      <option value="6.5">Dawn</option>
-      <option value="12" selected>Noon</option>
-      <option value="17.5">Dusk</option>
-      <option value="22">Night</option>
-    </select>
-  </label>
+  <div class="controls">
+    <label for="view">Preview set
+      <select id="view">
+        <option value="rain" selected>Rain intensity</option>
+        <option value="snow">Snow intensity</option>
+        <option value="freezing">Freezing precipitation</option>
+        <option value="hail">Hail intensity</option>
+        <option value="weather">All weather states</option>
+      </select>
+    </label>
+    <label for="renderer">Renderer
+      <select id="renderer">
+        <option value="three" selected>Three.js volumetric</option>
+        <option value="canvas">Canvas baseline</option>
+      </select>
+    </label>
+    <label for="time">Light
+      <select id="time">
+        <option value="6.5">Dawn</option>
+        <option value="12" selected>Noon</option>
+        <option value="17.5">Dusk</option>
+        <option value="22">Night</option>
+      </select>
+    </label>
+    <label for="quality">Quality
+      <select id="quality">
+        <option value="eco">Eco</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="showcase">Showcase</option>
+      </select>
+    </label>
+  </div>
 </header>
 <main id="gallery"></main>
 <script>
 'use strict';
-var states=['clear','partly','overcast','fog','rain','sleet','snow','thunder'];
+var stateGroups={
+weather:[
+  {key:'clear',label:'Clear'},
+  {key:'partly',label:'Partly cloudy'},
+  {key:'overcast',label:'Overcast'},
+  {key:'fog',label:'Fog'},
+  {key:'moderate-rain',label:'Moderate rain'},
+  {key:'freezing',label:'Freezing precipitation'},
+  {key:'snow',label:'Snow'},
+  {key:'thunder',label:'Thunderstorm'},
+  {key:'hail',label:'Hail'}
+],
+rain:[
+  {key:'light-drizzle',label:'Light drizzle · 16%'},
+  {key:'moderate-drizzle',label:'Moderate drizzle · 28%'},
+  {key:'dense-drizzle',label:'Dense drizzle · 42%'},
+  {key:'slight-rain',label:'Slight rain · 38%'},
+  {key:'moderate-rain',label:'Moderate rain · 66%'},
+  {key:'heavy-rain',label:'Heavy rain · 100%'},
+  {key:'slight-showers',label:'Slight showers · intermittent'},
+  {key:'moderate-showers',label:'Moderate showers · intermittent'},
+  {key:'violent-showers',label:'Violent showers · intermittent'}
+],
+snow:[
+  {key:'slight-snow',label:'Slight snow · 32%'},
+  {key:'moderate-snow',label:'Moderate snow · 60%'},
+  {key:'heavy-snow',label:'Heavy snow · 100%'},
+  {key:'snow-grains',label:'Snow grains · small and hard'},
+  {key:'slight-snow-showers',label:'Slight snow showers · intermittent'},
+  {key:'heavy-snow-showers',label:'Heavy snow showers · intermittent'}
+],
+freezing:[
+  {key:'light-freezing-drizzle',label:'Light freezing drizzle · 22%'},
+  {key:'dense-freezing-drizzle',label:'Dense freezing drizzle · 48%'},
+  {key:'light-freezing-rain',label:'Light freezing rain · 52%'},
+  {key:'heavy-freezing-rain',label:'Heavy freezing rain · 92%'}
+],
+hail:[
+  {key:'slight-hail',label:'Thunderstorm with slight hail · 62%'},
+  {key:'heavy-hail',label:'Thunderstorm with heavy hail · 100%'}
+]};
+var previewParams=new URLSearchParams(window.location.search);
+var perfState=null;
+if(previewParams.get('perf')==='1'){
+  perfState=stateGroups.weather.find(function(state){return state.key===previewParams.get('state');});
+  if(!perfState)throw new Error('Unknown performance preview state');
+  var perfStyle=document.createElement('style');
+  perfStyle.textContent='body{padding:0}header,figcaption,.renderer-status{display:none}main{display:block}figure{width:100vw;height:100vh;border:0;border-radius:0;aspect-ratio:auto}';
+  document.head.appendChild(perfStyle);
+}
 var gallery=document.getElementById('gallery');
+var view=document.getElementById('view');
 var time=document.getElementById('time');
+var renderer=document.getElementById('renderer');
+var quality=document.getElementById('quality');
+if(previewParams.get('renderer')==='canvas')renderer.value='canvas';
+if(perfState){
+  view.value='weather';
+  time.value=previewParams.get('hour')==='22'?'22':'12';
+}
 function draw(){
   gallery.innerHTML='';
+  var states=perfState?[perfState]:stateGroups[view.value];
   for(var i=0;i<states.length;i++){
     var state=states[i];
     var figure=document.createElement('figure');
     var frame=document.createElement('iframe');
-    frame.src='../Resources/Wallpapers/WeatherAether/index.html?preview='+state+'&hour='+time.value+'&minimal=1';
-    frame.setAttribute('aria-label',state+' weather preview');
+    frame.src='../Resources/Wallpapers/WeatherAether/index.html?preview='+state.key+'&hour='+time.value+'&minimal=1&renderer='+renderer.value+'&quality='+quality.value;
+    frame.setAttribute('aria-label',state.label+' weather preview');
     var label=document.createElement('figcaption');
-    label.textContent=state;
-    figure.appendChild(frame);figure.appendChild(label);gallery.appendChild(figure);
+    label.textContent=state.label;
+    var status=document.createElement('span');
+    status.className='renderer-status';status.textContent='checking renderer…';
+    figure.appendChild(frame);figure.appendChild(label);figure.appendChild(status);gallery.appendChild(figure);
   }
 }
+window.addEventListener('message',function(event){
+  var data=event.data;
+  if(!data||data.type!=='weather-aether-renderer-status')return;
+  var frames=gallery.querySelectorAll('iframe');
+  for(var i=0;i<frames.length;i++){
+    if(frames[i].contentWindow!==event.source)continue;
+    var status=frames[i].parentElement.querySelector('.renderer-status');
+    status.dataset.renderer=data.renderer;
+    status.dataset.error=data.error?'true':'false';
+    if(data.error){
+      status.textContent='SHADER ERROR';
+    }else if(data.renderer==='three'&&data.metrics){
+      status.textContent='THREE · '+data.quality+' · '+data.metrics.fps.toFixed(1)+'/'+data.targetFps+' fps · '+data.steps+' steps · '+
+        data.metrics.p95.toFixed(1)+' ms p95 · '+data.metrics.submitAverage.toFixed(2)+' ms submit · '+
+        data.metrics.width+'×'+data.metrics.height+' · '+data.metrics.drawCalls+' draw · volume '+(data.volume?'on':'off')+
+        ((data.rain||data.freezing||data.snow||data.hail)?' · intensity '+Math.round(data.precipitationIntensity*100)+'% · activity '+Math.round(data.precipitationActivity*100)+'%':'')+
+        ((data.rain||data.freezing||data.snow||data.hail)&&data.motionMetrics?' · motion '+data.motionMetrics.fps.toFixed(1)+'/'+data.motionTargetFps+' fps · '+data.motionMetrics.p95.toFixed(1)+' ms p95 · '+data.motionMetrics.drawCalls+' draw · '+(data.rain?'rain 3D':data.freezing?'freezing 3D':data.snow?'snow 3D':'hail 3D'):'');
+    }else{
+      status.textContent=data.renderer.toUpperCase()+' · '+data.revision+
+        (data.renderer==='three'?' · '+data.quality+' · volume '+(data.volume?'on':'off'):'');
+    }
+    if(data.error)status.title=data.error;
+    break;
+  }
+});
 time.addEventListener('change',draw);
+renderer.addEventListener('change',draw);
+quality.addEventListener('change',draw);
+view.addEventListener('change',draw);
 draw();
 </script>
 </body>

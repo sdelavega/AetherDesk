@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -56,11 +56,14 @@ final class WallpaperImporter {
     private let validator = WallpaperValidator()
     private let runtimePolicyStore = RuntimePolicyStore.shared
     private let propertyStore = PropertyStore()
-    private let fileManager = FileManager.default
+    private let fileManager: FileManager
+    private let wallpapersDirectoryOverride: URL?
+    private let bundledWallpapersDirectoryOverride: URL?
     private var cachedWallpapers: [WallpaperBundle]?
 
     /// User-writable library in ~/Library/Application Support/ÆtherDesk/Wallpapers.
     var wallpapersDirectory: URL {
+        if let wallpapersDirectoryOverride { return wallpapersDirectoryOverride }
         let appSupport = fileManager.urls(for: .applicationSupportDirectory,
                                           in: .userDomainMask).first!
         return appSupport
@@ -70,10 +73,16 @@ final class WallpaperImporter {
 
     /// Read-only sample wallpapers shipped inside the app bundle's Resources.
     var bundledWallpapersDirectory: URL? {
-        Bundle.main.resourceURL?.appendingPathComponent("Wallpapers", isDirectory: true)
+        bundledWallpapersDirectoryOverride
+            ?? Bundle.main.resourceURL?.appendingPathComponent("Wallpapers", isDirectory: true)
     }
 
-    init() {
+    init(fileManager: FileManager = .default,
+         wallpapersDirectory: URL? = nil,
+         bundledWallpapersDirectory: URL? = nil) {
+        self.fileManager = fileManager
+        self.wallpapersDirectoryOverride = wallpapersDirectory
+        self.bundledWallpapersDirectoryOverride = bundledWallpapersDirectory
         // Non-throwing; log on failure. Import-time operations will retry.
         try? createWallpapersDirectoryIfNeeded()
     }
@@ -88,6 +97,13 @@ final class WallpaperImporter {
             if let tempDirectory = prepared.tempDirectory {
                 try? fileManager.removeItem(at: tempDirectory)
             }
+        }
+
+        try sanitizeExtractedContent(at: prepared.bundleURL)
+        let metadataURL = prepared.bundleURL.appendingPathComponent("LivelyInfo.json")
+        if fileManager.fileExists(atPath: metadataURL.path),
+           LivelyInfoParser().parse(from: prepared.bundleURL) == nil {
+            throw ImportError.rejected(reason: "Could not parse LivelyInfo.json")
         }
 
         let classification = validator.validate(at: prepared.bundleURL)
@@ -248,30 +264,22 @@ final class WallpaperImporter {
         try sanitizeExtractedContent(at: destinationURL)
     }
 
-    /// Walks the extracted directory tree and removes any files or symlinks that
-    /// resolve outside the destination directory (zip slip / symlink traversal).
+    /// Rejects bundle entries that escape their root, including hidden symlinks,
+    /// and enforces the expanded size limit before copying into the library.
     private func sanitizeExtractedContent(at rootURL: URL) throws {
-        let rootPath = rootURL.standardizedFileURL.path
-        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
+        let rootPath = rootURL.resolvingSymlinksInPath().standardizedFileURL.path
         guard let enumerator = fileManager.enumerator(
             at: rootURL,
-            includingPropertiesForKeys: keys,
-            options: [.skipsHiddenFiles]) else { return }
+            includingPropertiesForKeys: [.isSymbolicLinkKey],
+            options: []) else { return }
 
-        var violations: [URL] = []
         var cumulativeSize: Int64 = 0
-
         for case let itemURL as URL in enumerator {
-            let resolved = itemURL.resolvingSymlinksInPath().standardizedFileURL
-            let resolvedPath = resolved.path
-            if resolvedPath != rootPath && !resolvedPath.hasPrefix(rootPath + "/") {
-                Logger.app.info("ÆtherDesk: zip-slip detected — removing entry that resolves to \(resolvedPath)")
-                violations.append(itemURL)
-                continue
+            let resolvedPath = itemURL.resolvingSymlinksInPath().standardizedFileURL.path
+            guard resolvedPath == rootPath || resolvedPath.hasPrefix(rootPath + "/") else {
+                throw ImportError.rejected(reason: "Bundle contains a symlink or path outside its root")
             }
 
-            // Accumulate file sizes and abort if the extracted content
-            // exceeds the bundle size limit (zip-bomb defense).
             if let attrs = try? fileManager.attributesOfItem(atPath: itemURL.path),
                let fileSize = attrs[.size] as? Int64 {
                 cumulativeSize += fileSize
@@ -281,27 +289,6 @@ final class WallpaperImporter {
                             userInfo: [NSLocalizedDescriptionKey: "Extracted content exceeds maximum bundle size"]))
                 }
             }
-
-            let resourceValues = try? itemURL.resourceValues(forKeys: Set(keys))
-            if resourceValues?.isSymbolicLink == true {
-                let destPath = try? fileManager.destinationOfSymbolicLink(atPath: itemURL.path)
-                if let destPath = destPath {
-                    let destResolved = URL(fileURLWithPath: destPath, relativeTo: itemURL)
-                        .resolvingSymlinksInPath().standardizedFileURL.path
-                    if destResolved != rootPath && !destResolved.hasPrefix(rootPath + "/") {
-                        Logger.app.info("ÆtherDesk: symlink escape detected — removing symlink at \(itemURL.path)")
-                        violations.append(itemURL)
-                    }
-                }
-            }
-        }
-
-        for url in violations {
-            try? fileManager.removeItem(at: url)
-        }
-
-        if !violations.isEmpty {
-            Logger.app.info("ÆtherDesk: removed \(violations.count) zip-slip/symlink-escape entries from extracted archive")
         }
     }
 

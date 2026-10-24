@@ -1,0 +1,119 @@
+--- UpdateManager.swift
++++ UpdateManager.swift
+@@ -36,7 +36,9 @@
+ /// `checkForUpdatesInteractively()`.
+ final class UpdateManager {
+ 
++    #if !V13_HANDOVER
+     static let shared = UpdateManager()
++    #endif
+ 
+     // MARK: - Types
+ 
+@@ -90,7 +92,64 @@
+         }
+     }
+ 
++    #if V13_HANDOVER
++    // R30: expose only offline checks; no installation or application lifecycle.
++    func handoverVerifySizes(asset: GitHubRelease.Asset) throws {
++        // Hard cap before we ever read a response body or disk bytes.
++        guard asset.size <= Constants.Defaults.maxUpdateArchiveBytes else {
++            let reason = "Update archive exceeds the maximum allowed size."
++            throw UpdateError.hashVerificationFailed(reason)
++        }
++    }
++
++    func handoverExtract(zip zipInTempDir: URL, to extractDir: URL) -> UpdateError? {
++        // ditto preserves code signatures, extended attributes, and notarization tickets.
++        let ditto = Process()
++        ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
++        ditto.arguments = ["-xk", zipInTempDir.path, extractDir.path]
++        do { try ditto.run(); ditto.waitUntilExit() } catch {
++            return reportInstallError(UpdateError.extractionFailed(-1))
++        }
++        guard ditto.terminationStatus == 0 else {
++            return reportInstallError(UpdateError.extractionFailed(ditto.terminationStatus))
++        }
++
++        return nil
++    }
++
++    func handoverVerifyCodeSignature(ofAppAtPath appPath: String) throws {
++        let verify = Process()
++        verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
++        verify.arguments = ["--verify", "--strict", appPath]
++        verify.standardOutput = FileHandle.nullDevice
++        let errPipe = Pipe()
++        verify.standardError = errPipe
++
++        do {
++            try verify.run()
++            verify.waitUntilExit()
++        } catch {
++            throw UpdateError.signatureVerificationFailed(
++                "Could not run codesign: \(error.localizedDescription)")
++        }
++
++        guard verify.terminationStatus == 0 else {
++            let output = (try? errPipe.fileHandleForReading.readToEnd())
++                .flatMap { String(data: $0, encoding: .utf8) }
++                ?? "unknown error"
++            throw UpdateError.signatureVerificationFailed(
++                "Invalid code signature: \(output.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))")
++        }
++
++    }
++
++    internal func reportInstallError(_ error: UpdateError) -> UpdateError? {
++        error
++    }
++    #endif
++
+     // MARK: - Properties
++    #if !V13_HANDOVER
+ 
+     internal(set) var state: UpdateState = .idle {
+         didSet { /* mutations funnel through setState(_:) */ }
+@@ -428,6 +487,8 @@
+         }
+     }
+ 
++    #endif
++
+     /// Extracts the TeamIdentifier from `codesign -dvvv` output, which
+     /// identifies the Apple Developer team regardless of whether the cert
+     /// is "Developer ID Application" or "Apple Development".
+@@ -470,6 +531,7 @@
+     }
+ 
+     // MARK: - Pure-Swift self-replacement
++    #if !V13_HANDOVER
+ 
+     internal func performInstall(zipURL: URL, hashURL: URL?) {
+         DispatchQueue.main.async { self.setState(.installing) }
+@@ -577,6 +639,8 @@
+         DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+     }
+ 
++    #endif
++
+     // MARK: - Hash verification
+ 
+     internal func verifySHA256(ofFileAt fileURL: URL, againstHashFile hashURL: URL) throws {
+@@ -609,6 +673,7 @@
+         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+     }
+ 
++    #if !V13_HANDOVER
+     internal func reportInstallError(_ error: UpdateError) {
+         DispatchQueue.main.async {
+             self.setState(.failed(error))
+@@ -654,6 +719,7 @@
+         NSApp.activate(ignoringOtherApps: true)
+         alert.runModal()
+     }
++    #endif
+ }
+ 
+ // MARK: - SHA-256 helper

@@ -15,6 +15,7 @@ xcuserdata/
 DerivedData/
 build/
 Build/
+dist/
 *.hmap
 *.ipa
 *.dSYM.zip
@@ -62,7 +63,6 @@ OPTIMIZATION.md
 mac-lively-wrapper-expert-prompt.md
 CLAUDE.md
 AGENTS.md
-release
 
 
 #Ignore insiders AI rules

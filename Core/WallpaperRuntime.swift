@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -39,6 +39,11 @@ protocol WallpaperRuntime: AnyObject {
     func stop()
     func reload() throws
     func updateProperty(_ key: String, value: Any)
+    func displayGeometryDidChange()
+}
+
+extension WallpaperRuntime {
+    func displayGeometryDidChange() {}
 }
 
 /// Errors produced by wallpaper runtimes during lifecycle operations.

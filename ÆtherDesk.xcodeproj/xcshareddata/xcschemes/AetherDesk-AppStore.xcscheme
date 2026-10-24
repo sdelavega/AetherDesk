@@ -14,25 +14,25 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "FBA11D06B9427CFB2D37A96D"
+               BlueprintIdentifier = "AE1400150000000000000001"
                BuildableName = "&#xc6;therDesk.app"
-               BlueprintName = "AetherDesk"
+               BlueprintName = "AetherDeskAppStore"
                ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
-      buildConfiguration = "AppStore"
+      buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "FBA11D06B9427CFB2D37A96D"
+            BlueprintIdentifier = "AE1400150000000000000001"
             BuildableName = "&#xc6;therDesk.app"
-            BlueprintName = "AetherDesk"
+            BlueprintName = "AetherDeskAppStore"
             ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -43,7 +43,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "98454B4E1708BC36D752F77B"
-               BuildableName = "&#xc6;therDesk.xctest"
+               BuildableName = "AetherDeskTests.xctest"
                BlueprintName = "AetherDeskTests"
                ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
             </BuildableReference>
@@ -54,7 +54,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "2F20865CB318B3567A5DFE06"
-               BuildableName = "&#xc6;therDesk.xctest"
+               BuildableName = "AetherDeskStoreTests.xctest"
                BlueprintName = "AetherDeskStoreTests"
                ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
             </BuildableReference>
@@ -62,7 +62,7 @@
       </Testables>
    </TestAction>
    <LaunchAction
-      buildConfiguration = "AppStore"
+      buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
@@ -75,9 +75,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "FBA11D06B9427CFB2D37A96D"
+            BlueprintIdentifier = "AE1400150000000000000001"
             BuildableName = "&#xc6;therDesk.app"
-            BlueprintName = "AetherDesk"
+            BlueprintName = "AetherDeskAppStore"
             ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -86,7 +86,7 @@
       </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
-      buildConfiguration = "AppStore"
+      buildConfiguration = "Release"
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
@@ -95,18 +95,18 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "FBA11D06B9427CFB2D37A96D"
+            BlueprintIdentifier = "AE1400150000000000000001"
             BuildableName = "&#xc6;therDesk.app"
-            BlueprintName = "AetherDesk"
+            BlueprintName = "AetherDeskAppStore"
             ReferencedContainer = "container:&#xc6;therDesk.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction
-      buildConfiguration = "AppStore">
+      buildConfiguration = "Debug">
    </AnalyzeAction>
    <ArchiveAction
-      buildConfiguration = "AppStore"
+      buildConfiguration = "Release"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>

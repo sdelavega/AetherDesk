@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -67,13 +67,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                                selector: #selector(wallpaperDidChange),
                                                name: Constants.Notifications.wallpaperDidChange,
                                                object: nil)
-
-        #if !AETHERDESK_STORE
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(handleUpdateAvailable(_:)),
-                                               name: Constants.Notifications.updateAvailable,
-                                               object: nil)
-        #endif
     }
 
     deinit {
@@ -137,7 +130,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        #if !AETHERDESK_STORE
+        #if !AETHERDESK_STORE && !AETHERDESK_TESTS
         let checkUpdatesItem = NSMenuItem(title: "Check for Updates…",
                                           action: #selector(checkForUpdates),
                                           keyEquivalent: "u")
@@ -355,14 +348,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         PreferencesWindowController.shared.showWindow(nil)
     }
 
-    #if !AETHERDESK_STORE
+    #if !AETHERDESK_STORE && !AETHERDESK_TESTS
     @objc private func checkForUpdates() {
-        UpdateManager.shared.checkForUpdatesInteractively()
-    }
-
-    @objc private func handleUpdateAvailable(_ note: Notification) {
-        guard let release = note.object as? UpdateManager.GitHubRelease else { return }
-        UpdateManager.shared.presentUpdateAlert(release)
+        SoftwareUpdater.shared.checkForUpdates()
     }
     #endif
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -45,6 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil)
         #endif
 
+        #if !AETHERDESK_STORE && !AETHERDESK_TESTS
+        UpdateSettingsMigration.migrate(defaults: .standard, into: SoftwareUpdater.shared)
+        SoftwareUpdater.shared.start()
+        #endif
+
         let manager = WallpaperManager()
         self.wallpaperManager = manager
         self.menuBarController = MenuBarController(wallpaperManager: manager)
@@ -59,9 +64,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let fallback = WallpaperImporter.shared.listBundledWallpapers().first
                 DispatchQueue.main.async {
                     manager.startAndRestore(availableBundles: available, fallback: fallback)
-                    #if !AETHERDESK_STORE
-                    UpdateManager.shared.startPeriodicChecks()
-                    #endif
                 }
             }
         }

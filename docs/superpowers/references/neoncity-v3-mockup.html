@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NeonCity</title>
+<style>
+:root{color-scheme:dark;--ink:#e1f5f4;--muted:#799499;--cyan:#9af5df;--line:rgba(176,232,223,.15)}*{box-sizing:border-box}body{margin:0;background:#04070e;color:var(--ink);font:13px 'Space Grotesk',sans-serif;overflow:hidden}canvas{display:block;width:100vw;height:100vh}body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,#01040b88 100%)}.mono{font-family:monospace}.dot{width:5px;height:5px;background:var(--cyan);border-radius:50%;box-shadow:0 0 10px #71efce}.panel{position:fixed;z-index:3;right:30px;top:30px;width:282px;border:1px solid var(--line);background:rgba(9,20,27,.78);backdrop-filter:blur(20px);border-radius:12px;box-shadow:0 15px 50px #0004;overflow:hidden}.panel header{display:flex;align-items:center;justify-content:space-between;padding:17px 19px}.panel header span{font-size:12px;font-weight:600}.panel header small{font:9px 'IBM Plex Mono',monospace;color:var(--muted);margin-left:7px}button{font:inherit;color:inherit;cursor:pointer}.collapse{border:0;background:transparent;font-size:18px;color:var(--muted);padding:0 4px}.body{padding:0 19px 18px}.panel.closed .body{display:none}.section{border-top:1px solid var(--line);padding-top:16px;margin-top:5px;margin-bottom:18px}.label{display:flex;justify-content:space-between;align-items:center;color:#94aaae;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:11px}.value{color:var(--cyan);font:10px 'IBM Plex Mono',monospace;letter-spacing:0}.seg{display:flex;gap:4px;background:#020b1177;padding:4px;border-radius:6px}.seg button{flex:1;border:0;background:transparent;color:var(--muted);font-size:11px;padding:8px 0;border-radius:4px}.seg button.active,.weather button.active{background:#a6f5de18;color:#b6ffe8;box-shadow:inset 0 0 0 1px #9ef1d234}.time{display:flex;justify-content:space-between;margin:14px 0 5px;color:var(--muted);font-size:10px}.weather{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.weather button{border:1px solid var(--line);background:#ffffff03;border-radius:5px;padding:9px 0;font-size:10px;color:#8fa6ac}.weather button:hover{border-color:#8ce8cf66}input[type=range]{width:100%;height:3px;accent-color:#a5f2d8;cursor:pointer;margin:9px 0 7px}input:focus-visible,button:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}.range-ticks{display:flex;justify-content:space-between;color:#59747c;font:8px 'IBM Plex Mono',monospace}.panel footer{border-top:1px solid var(--line);padding-top:13px;display:flex;align-items:center;gap:8px;font:9px 'IBM Plex Mono',monospace;color:var(--muted)}.phase-label{position:fixed;bottom:20px;left:22px;z-index:2;color:#9ab5c5;font-size:9px;letter-spacing:1.5px;pointer-events:none}#error{display:none;position:fixed;z-index:8;inset:40% 20%;padding:24px;background:#10212c;border:1px solid #74cbb4;border-radius:10px;line-height:1.6}@media(max-width:650px){.panel{top:16px;right:16px;width:246px}.panel header{padding:13px 16px}.body{padding:0 15px 13px}.section{padding-top:12px;margin-bottom:12px}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js"}}</script>
+</head>
+<body>
+<canvas id="city" aria-label="Animated cyberpunk city with flying traffic and changing weather"></canvas>
+<aside class="panel" aria-label="Scene controls"><header><span>Atmosphere <small>V.03</small></span><button class="collapse" aria-label="Collapse controls" aria-expanded="true">−</button></header><div class="body">
+<section class="section"><div class="label">Time of day <span class="value" id="clock">03:00</span></div><div class="seg" id="timeModes"><button data-mode="live">Live</button><button data-mode="night" class="active">Always night</button><button data-mode="manual">Manual</button></div><div class="time"><span>Hour override</span><span id="hourText">03:00</span></div><input aria-label="Manual hour" id="hour" type="range" min="0" max="24" step="0.1" value="3"><div class="range-ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></section>
+<section class="section"><div class="label">Weather <span class="value" id="weatherCode">02 / 06</span></div><div class="weather" id="weather"><button data-weather="clear">Clear</button><button class="active" data-weather="drizzle">Drizzle</button><button data-weather="rain">Rain</button><button data-weather="downpour">Downpour</button><button data-weather="fog">Fog</button><button data-weather="snow">Snow</button></div></section>
+<section class="section"><div class="label">Traffic density <span class="value" id="trafficValue">65%</span></div><input id="traffic" aria-label="Traffic density" type="range" min="0" max="100" value="65"><div class="label" style="margin-top:15px">Neon brightness <span class="value" id="neonValue">85%</span></div><input id="neon" aria-label="Neon brightness" type="range" min="0" max="150" value="85"></section>
+<footer><i class="dot"></i><span id="phase">NIGHT / DRIZZLE</span><span style="margin-left:auto">● REALTIME</span></footer></div></aside>
+<div class="phase-label mono" id="scenePhase">NIGHT / DRIZZLE</div>
+<div id="error" role="alert"></div>
+<script type="module">
+import * as THREE from 'three';
+try {
+const canvas=document.querySelector('#city');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.65));renderer.setSize(innerWidth,innerHeight);renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+const scene=new THREE.Scene();scene.background=new THREE.Color('#060c1b');scene.fog=new THREE.FogExp2('#081729',.0068);
+const camera=new THREE.PerspectiveCamera(57,innerWidth/innerHeight,.5,1800);camera.position.set(0,44,145);
+let seed=7319;const rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296},range=(a,b)=>a+(b-a)*rand();
+const box=new THREE.BoxGeometry(1,1,1),dummy=new THREE.Object3D();
+const ambient=new THREE.HemisphereLight('#46688c','#03050b',.48);scene.add(ambient);
+const moon=new THREE.DirectionalLight('#6b9db7',.7);moon.position.set(-130,260,90);scene.add(moon);
+const uniforms={uTime:{value:0},uLit:{value:.23},uNeon:{value:.85}};
+const towerMat=new THREE.MeshStandardMaterial({color:'#0a1422',roughness:.86,metalness:.25});
+towerMat.onBeforeCompile=s=>{Object.assign(s.uniforms,uniforms);s.vertexShader='varying vec3 vFace; varying vec3 vLocal; varying vec3 vSize; varying float vSeed;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvFace=normal; vLocal=position; vSize=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz)); vSeed=instanceMatrix[3].x+instanceMatrix[3].z;');s.fragmentShader='uniform float uTime; uniform float uLit; uniform float uNeon; varying vec3 vFace; varying vec3 vLocal; varying vec3 vSize; varying float vSeed;\nfloat hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
+vec2 surface=abs(vFace.z)>.5 ? vLocal.xy*vSize.xy : vec2(vLocal.z*vSize.z,vLocal.y*vSize.y);
+vec2 grid=surface/vec2(2.1,3.4);vec2 cell=floor(grid);vec2 f=fract(grid);
+float h=hash(cell+vSeed);float suite=hash(vec2(floor(cell.x/3.),cell.y)+vSeed);
+float on=step(h,uLit*.48+suite*uLit*.9)*step(.19,suite);
+float width=mix(.32,.76,hash(cell+vSeed+8.));
+float mask=step(.16,f.x)*step(f.x,width)*step(.28,f.y)*step(f.y,.72);
+float facade=1.-step(.8,abs(vFace.y));
+vec3 light=mix(vec3(1.,.43,.12),vec3(1.,.79,.50),step(.40,h));
+light=mix(light,vec3(.23,.57,1.),step(.93,hash(cell+vSeed+15.)));
+totalEmissiveRadiance+=light*mask*on*facade*(.65+uNeon*1.25)*mix(.35,1.2,suite);
+`);};
+const buildings=[];const addTower=(x,z,w,h,d)=>buildings.push({x,z,w,h,d});
+// Depth bands leave an uninterrupted central street canyon.
+for(let i=0;i<22;i++){const side=i%2?1:-1;addTower(side*range(43,92),range(-270,95),range(18,31),range(90,210),range(21,40))}
+for(let i=0;i<175;i++){let x=range(-270,270),z=range(-670,-120);if(Math.abs(x)<30)x+=x<0?-40:40;addTower(x,z,range(10,25),range(27,145),range(12,28))}
+for(let i=0;i<100;i++)addTower(range(-600,600),range(-1100,-650),range(14,37),range(40,180),range(15,35));
+const towers=new THREE.InstancedMesh(box,towerMat,buildings.length+100);let ti=0;
+function instance(x,y,z,w,h,d){dummy.position.set(x,y,z);dummy.scale.set(w,h,d);dummy.rotation.set(0,0,0);dummy.updateMatrix();towers.setMatrixAt(ti++,dummy.matrix)}
+const antennaMat=new THREE.MeshStandardMaterial({color:'#29424c',metalness:.8,roughness:.5});const antennas=new THREE.InstancedMesh(box,antennaMat,100);let ai=0;
+for(const b of buildings){instance(b.x,b.h/2,b.z,b.w,b.h,b.d);if(rand()<.24&&ti<buildings.length+99){instance(b.x,b.h+5,b.z,b.w*.64,10,b.d*.65);if(ai<100){dummy.position.set(b.x,b.h+range(15,27),b.z);dummy.scale.set(.35,30,.35);dummy.updateMatrix();antennas.setMatrixAt(ai++,dummy.matrix)}}}towers.count=ti;antennas.count=ai;scene.add(towers,antennas);
+// Canvas tube art and additive halos keep this single-file scene independent of addons.
+function softTexture(){const c=document.createElement('canvas');c.width=c.height=64;const ctx=c.getContext('2d'),g=ctx.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.18,'rgba(255,255,255,.65)');g.addColorStop(.5,'rgba(255,255,255,.15)');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.fillRect(0,0,64,64);return new THREE.CanvasTexture(c)}
+const soft=softTexture(),plane=new THREE.PlaneGeometry(1,1);
+const neonColors=['#ff168a','#00eaff','#ff9e24','#ac4dff'];const signs=[],pools=[];
+function tubeTexture(vertical,variant){
+ const c=document.createElement('canvas');c.width=vertical?128:512;c.height=vertical?512:128;
+ const ctx=c.getContext('2d');ctx.strokeStyle='#fff';ctx.fillStyle='#fff';ctx.lineWidth=4;ctx.shadowColor='#fff';ctx.shadowBlur=5;ctx.strokeRect(7,7,c.width-14,c.height-14);
+ if(vertical){
+  // Draw deliberate kanji-style strokes; no installed language font is required.
+  for(let n=0;n<4;n++){const y=35+n*112;ctx.save();ctx.translate(24,y);ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(4,16);ctx.lineTo(76,16);ctx.moveTo(40,0);ctx.lineTo(40,82);ctx.moveTo(9,45);ctx.lineTo(72,45);ctx.moveTo(12,78);ctx.lineTo(34,56);ctx.moveTo(48,56);ctx.lineTo(73,80);if((variant+n)%2){ctx.moveTo(13,27);ctx.lineTo(13,64);ctx.lineTo(68,64);ctx.lineTo(68,27)}ctx.stroke();ctx.restore()}
+ }else{ctx.font='600 68px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(['夜 市','新 世 界','HOTEL','電 気','24 : 00','空 港'][variant%6],256,66)}
+ const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;
+}
+const tubeTextures=Array.from({length:12},(_,i)=>tubeTexture(i<6,i%6));
+function halo(color,x,y,z,w,h,opacity=.3){const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:soft,color,transparent:true,opacity,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));sprite.position.set(x,y,z);sprite.scale.set(w,h,1);scene.add(sprite);return sprite}
+function addSign(b,x,y,w,h,color,variant,vertical,roof=false){
+ const z=b.z+b.d/2+.35;
+ const mat=new THREE.MeshBasicMaterial({map:tubeTextures[(vertical?0:6)+variant%6],color,transparent:true,depthWrite:false,toneMapped:false});
+ const mesh=new THREE.Mesh(plane,mat);mesh.position.set(x,y,z);mesh.scale.set(w,h,1);scene.add(mesh);
+ const backing=new THREE.Mesh(plane,new THREE.MeshBasicMaterial({color:'#070c17'}));backing.position.set(x,y,z-.1);backing.scale.set(w*1.07,h*1.04,1);scene.add(backing);
+ const glow=halo(color,x,y,z+.15,w*3.8,h*1.9,.32),air=halo(color,x,y,z+3,Math.max(w*6,18),h*2.3,.12);
+ // A soft additive pool lies against the facade, behind the bright tubes.
+ const pool=new THREE.Mesh(plane,new THREE.MeshBasicMaterial({map:soft,color,transparent:true,opacity:.3,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));pool.position.set(x,y,z-.04);pool.scale.set(Math.max(w*7,24),h*2.5,1);scene.add(pool);
+ signs.push({mesh,base:new THREE.Color(color),flicker:rand()<.13,dead:signs.length<2,offset:range(0,20),halos:[glow,air,pool]});
+ pools.push({position:mesh.position,color:new THREE.Color(color)});
+ if(roof){const support=new THREE.Mesh(box,antennaMat);support.position.set(x,b.h+2,b.z);support.scale.set(.45,7,.45);scene.add(support)}
+}
+for(let i=0;i<buildings.length;i++){
+ const b=buildings[i];if(i>=197&&rand()<.65)continue;
+ const count=i<22?5:1;
+ for(let j=0;j<count;j++){
+  const vertical=j%3!==2,w=vertical?range(2.8,5.5):b.w*.94,h=vertical?range(14,32):range(3,5.5);
+  const x=b.x+(vertical?(j%2?1:-1)*b.w*.35:0),y=b.h*(.22+j*.14)+range(-3,3);
+  addSign(b,x,Math.min(b.h-h/2,y),w,h,neonColors[(i+j)%4],i+j,vertical);
+ }
+ if(i<80&&i%4===0)addSign(b,b.x,b.h+7,b.w*1.2,9,neonColors[(i+1)%4],i,false,true);
+ // Selected tower crowns, horizontal bands, and long edge tubes.
+ if(i<100&&i%3===0){
+  const color=neonColors[(i+2)%4],z=b.z+b.d/2+.5;
+  const pieces=[[b.x,b.h-1,b.w,.28],[b.x-b.w/2+.2,b.h*.61,.24,b.h*.74],[b.x+b.w/2-.2,b.h*.77,.22,b.h*.43],[b.x,b.h*.34,b.w,.24]];
+  for(const [x,y,w,h]of pieces){const mesh=new THREE.Mesh(plane,new THREE.MeshBasicMaterial({color,toneMapped:false}));mesh.position.set(x,y,z);mesh.scale.set(w,h,1);scene.add(mesh);const glow=halo(color,x,y,z+.1,w<1?3.5:w*1.2,h<1?3:h*1.1,.22);signs.push({mesh,base:new THREE.Color(color),flicker:false,dead:false,offset:0,halos:[glow]})}
+ }
+}
+// A few real colored lights wash nearby masonry; sprites supply the larger haze pools.
+const neonLights=[];for(let i=0;i<8;i++){const s=signs.filter(s=>s.mesh.position.z>-220&&s.mesh.position.y<100)[i*3];if(!s)continue;const l=new THREE.PointLight(s.base,70,65,1.6);l.position.copy(s.mesh.position).add(new THREE.Vector3(0,0,9));scene.add(l);neonLights.push(l)}
+const street=new THREE.Mesh(new THREE.PlaneGeometry(950,1600),new THREE.MeshStandardMaterial({color:'#07131d',roughness:.22,metalness:.75}));street.rotation.x=-Math.PI/2;street.position.set(0,-1,-420);scene.add(street);
+// Broad transparent color trails suggest reflections on wet asphalt.
+const reflections=[];for(let i=0;i<32;i++){const mat=new THREE.MeshBasicMaterial({color:neonColors[i%4],transparent:true,opacity:.07,depthWrite:false});const p=new THREE.Mesh(plane,mat);p.rotation.x=-Math.PI/2;p.position.set(range(-31,31),-.8,range(-450,150));p.scale.set(range(.25,1.8),range(20,65),1);scene.add(p);reflections.push(p)}
+const laneLights=new THREE.InstancedMesh(box,new THREE.MeshBasicMaterial({color:'#ffd6a5',toneMapped:false}),180);for(let i=0;i<180;i++){dummy.position.set((i%2?1:-1)*range(13,19),.3,80-i*3.7);dummy.scale.set(.25,.2,1.2);dummy.updateMatrix();laneLights.setMatrixAt(i,dummy.matrix)}scene.add(laneLights);
+const vehicles=[];const vehicleBody=new THREE.BoxGeometry(.85,.24,1.55);const lampGeo=new THREE.BoxGeometry(.2,.1,.12);
+for(let i=0;i<65;i++){
+ const g=new THREE.Group(),color=i%3?'#72f9ff':'#ff357b';
+ g.add(new THREE.Mesh(vehicleBody,new THREE.MeshStandardMaterial({color:'#162c3d',emissive:color,emissiveIntensity:.13,metalness:.7,roughness:.3})));
+ for(const z of [-.8,.8])for(const x of [-.3,.3]){const l=new THREE.Mesh(lampGeo,new THREE.MeshBasicMaterial({color:z>0?'#c9faff':'#ff225f',toneMapped:false}));l.position.set(x,0,z);g.add(l)}
+ const under=new THREE.Sprite(new THREE.SpriteMaterial({map:soft,color,blending:THREE.AdditiveBlending,transparent:true,opacity:.75,depthWrite:false,toneMapped:false}));under.scale.set(3,1.4,1);under.position.y=-.2;g.add(under);
+ const trail=new THREE.Mesh(new THREE.BoxGeometry(.10,.06,3),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.38,depthWrite:false,blending:THREE.AdditiveBlending}));trail.position.z=-2.3;g.add(trail);scene.add(g);vehicles.push({g,phase:rand(),lane:i%4,speed:range(.018,.034)})
+}
+const lanes=Array.from({length:4},(_,i)=>new THREE.CatmullRomCurve3([new THREE.Vector3(-20+i*12,22+i*17,220),new THREE.Vector3(7+i*9,25+i*18,-90),new THREE.Vector3(-27+i*10,44+i*13,-390),new THREE.Vector3(30+i*13,50+i*15,-850)]));
+// A single soft searchlight cone, with its source at the narrow end.
+const beam=new THREE.Mesh(new THREE.ConeGeometry(37,250,32,1,true),new THREE.MeshBasicMaterial({color:'#91d9dd',transparent:true,opacity:.035,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending}));const beamPivot=new THREE.Group();beam.position.y=-125;beamPivot.position.set(-100,157,-320);beamPivot.add(beam);scene.add(beamPivot);
+const steam=[];for(let i=0;i<14;i++){const b=buildings[i%14],s=new THREE.Sprite(new THREE.SpriteMaterial({map:soft,color:'#9ab5c4',transparent:true,opacity:.1,depthWrite:false}));scene.add(s);steam.push({s,b,offset:rand()*12})}
+const blimp=new THREE.Group();const hull=new THREE.Mesh(new THREE.SphereGeometry(1,24,12),new THREE.MeshStandardMaterial({color:'#435763',roughness:.7}));hull.scale.set(24,6,7);blimp.add(hull);const ad=new THREE.Mesh(plane,new THREE.MeshBasicMaterial({color:'#ed4c9e',toneMapped:false}));ad.scale.set(23,3,1);ad.position.set(0,0,6.5);blimp.add(ad);for(let i=0;i<7;i++){const stripe=new THREE.Mesh(plane,new THREE.MeshBasicMaterial({color:'#432541'}));stripe.scale.set(.6,2,1);stripe.position.set(i*2.7-8,0,6.6);blimp.add(stripe)}scene.add(blimp);
+// Camera-local precipitation stays in the foreground throughout the drift.
+const particleCount=4200,positions=new Float32Array(particleCount*6),rainColors=new Float32Array(particleCount*6),particleData=[];
+for(let i=0;i<particleCount;i++)particleData.push({x:range(-105,105),y:range(-52,110),z:range(-170,-3),speed:range(.7,1.4),phase:rand()*6.28});
+const rainGeo=new THREE.BufferGeometry();rainGeo.setAttribute('position',new THREE.BufferAttribute(positions,3));rainGeo.setAttribute('color',new THREE.BufferAttribute(rainColors,3));
+const rainMat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.58,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false});const rain=new THREE.LineSegments(rainGeo,rainMat);rain.frustumCulled=false;scene.add(rain);
+const snowGeo=new THREE.BufferGeometry(),snowColors=new Float32Array(particleCount*3),snowSizes=new Float32Array(particleCount);for(let i=0;i<particleCount;i++)snowSizes[i]=range(.24,.7);
+snowGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(particleCount*3),3));snowGeo.setAttribute('color',new THREE.BufferAttribute(snowColors,3));snowGeo.setAttribute('flakeSize',new THREE.BufferAttribute(snowSizes,1));
+const snowMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,vertexColors:true,uniforms:{uPixelRatio:{value:renderer.getPixelRatio()}},vertexShader:`attribute float flakeSize;uniform float uPixelRatio;varying vec3 tint;void main(){tint=color;vec4 mv=modelViewMatrix*vec4(position,1.);gl_Position=projectionMatrix*mv;gl_PointSize=clamp(flakeSize*460.*uPixelRatio/-mv.z,2.0,15.0);}`,fragmentShader:`varying vec3 tint;void main(){float r=length(gl_PointCoord-.5)*2.;if(r>1.)discard;float a=(1.-smoothstep(.18,1.,r))*.9;gl_FragColor=vec4(tint,a);#include <colorspace_fragment>
+}`.replace(';#include',';\n#include')});
+const snow=new THREE.Points(snowGeo,snowMat);snow.frustumCulled=false;scene.add(snow);
+// Spatial bins let rain and flakes pick up nearby sign color without a full sign scan.
+const poolBins=new Map(),binSize=40;
+for(const p of pools){const v=p.position,key=[Math.floor(v.x/binSize),Math.floor(v.y/binSize),Math.floor(v.z/binSize)].join(',');if(!poolBins.has(key))poolBins.set(key,[]);poolBins.get(key).push(p)}
+const tintCandidates=new Map();
+function precipitationTint(x,y,z,snowy){let r=snowy?.82:.28,g=snowy?.9:.43,b=snowy?1:.62;const ix=Math.floor(x/binSize),iy=Math.floor(y/binSize),iz=Math.floor(z/binSize),key=ix+','+iy+','+iz;let candidates=tintCandidates.get(key);if(!candidates){candidates=[];for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){const bin=poolBins.get([ix+dx,iy+dy,iz+dz].join(','));if(bin)candidates.push(...bin)}tintCandidates.set(key,candidates)}for(const p of candidates){const dist=p.position.distanceToSquared(tintPosition.set(x,y,z)),f=Math.max(0,1-dist/1500)*uniforms.uNeon.value*.7;r+=p.color.r*f;g+=p.color.g*f;b+=p.color.b*f}return tintColor.setRGB(r,g,b)}
+const tintColor=new THREE.Color(),tintPosition=new THREE.Vector3();
+// The sky has an amber horizon, blue zenith, and broad layered smog at twilight.
+const skyUniforms={zenith:{value:new THREE.Color('#02050e')},horizon:{value:new THREE.Color('#102342')},uTime:uniforms.uTime};
+const sky=new THREE.Mesh(new THREE.SphereGeometry(1400,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:skyUniforms,vertexShader:`varying vec3 direction;void main(){direction=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,fragmentShader:`uniform vec3 zenith;uniform vec3 horizon;uniform float uTime;varying vec3 direction;void main(){vec3 d=normalize(direction);float altitude=max(0.,d.y);float gradient=pow(smoothstep(-.015,.34,d.y),.65);float layer=sin(d.y*62.+sin(d.x*7.+uTime*.012)*.65)*sin(d.x*11.+d.z*5.);vec3 col=mix(horizon,zenith,gradient);col+=horizon*layer*.10*exp(-altitude*7.);gl_FragColor=vec4(col,1.);#include <tonemapping_fragment>
+#include <colorspace_fragment>
+}`.replace(';#include',';\n#include')}));scene.add(sky);
+const state={mode:'night',hour:3,weather:'drizzle',traffic:.65,neon:.85};const $=s=>document.querySelector(s);
+$('.collapse').onclick=()=>{const closed=$('.panel').classList.toggle('closed');$('.collapse').textContent=closed?'+':'−';$('.collapse').setAttribute('aria-expanded',String(!closed));$('.collapse').setAttribute('aria-label',closed?'Expand controls':'Collapse controls')};
+function mode(m){state.mode=m;document.querySelectorAll('[data-mode]').forEach(b=>{b.classList.toggle('active',b.dataset.mode===m);b.setAttribute('aria-pressed',String(b.dataset.mode===m))})}
+$('#timeModes').onclick=e=>{if(e.target.dataset.mode)mode(e.target.dataset.mode)};$('#hour').oninput=e=>{state.hour=+e.target.value;mode('manual')};$('#weather').onclick=e=>{if(!e.target.dataset.weather)return;state.weather=e.target.dataset.weather;document.querySelectorAll('[data-weather]').forEach((b,i)=>{b.classList.toggle('active',b.dataset.weather===state.weather);b.setAttribute('aria-pressed',String(b.dataset.weather===state.weather));if(b.dataset.weather===state.weather)$('#weatherCode').textContent=`0${i+1} / 06`})};$('#traffic').oninput=e=>{state.traffic=+e.target.value/100;$('#trafficValue').textContent=e.target.value+'%'};$('#neon').oninput=e=>{state.neon=+e.target.value/100;$('#neonValue').textContent=e.target.value+'%'};
+const palettes={night:{fog:'#071122',sky:'#02050e',horizon:'#102342',light:'#6485ad',ambient:.48,neon:1,lit:.23},dawn:{fog:'#6d5039',sky:'#092347',horizon:'#eaa259',light:'#f5b982',ambient:1.4,neon:.64,lit:.16},day:{fog:'#566c7c',sky:'#334b65',horizon:'#889897',light:'#c0d6df',ambient:2.5,neon:.3,lit:.07},dusk:{fog:'#67442d',sky:'#07182f',horizon:'#d57c38',light:'#eea073',ambient:1.0,neon:.76,lit:.19}};
+const bgTarget=new THREE.Color(),fogTarget=new THREE.Color(),lightTarget=new THREE.Color(),horizonTarget=new THREE.Color();
+function atmosphere(dt){const d=new Date(),hour=state.mode==='live'?d.getHours()+d.getMinutes()/60:state.mode==='night'?3:state.hour%24;const phase=hour<5||hour>=21?'night':hour<7?'dawn':hour<18?'day':'dusk';const p=palettes[phase];bgTarget.set(p.sky);fogTarget.set(p.fog);lightTarget.set(p.light);horizonTarget.set(p.horizon);if(state.weather==='snow')fogTarget.lerp(new THREE.Color('#526779'),.22);const a=1-Math.exp(-dt*1.8);scene.background.lerp(bgTarget,a);skyUniforms.zenith.value.lerp(bgTarget,a);skyUniforms.horizon.value.lerp(horizonTarget,a);scene.fog.color.lerp(fogTarget,a);moon.color.lerp(lightTarget,a);ambient.intensity=THREE.MathUtils.lerp(ambient.intensity,p.ambient,a);uniforms.uLit.value=THREE.MathUtils.lerp(uniforms.uLit.value,p.lit,a);uniforms.uNeon.value=THREE.MathUtils.lerp(uniforms.uNeon.value,state.neon*p.neon,a);const fogDensity={clear:.0024,drizzle:.0034,rain:.0045,downpour:.006,fog:.012,snow:.0049};scene.fog.density=THREE.MathUtils.lerp(scene.fog.density,fogDensity[state.weather],a);const clock=`${String(Math.floor(hour)).padStart(2,'0')}:${String(Math.floor((hour%1)*60)).padStart(2,'0')}`;$('#clock').textContent=clock;$('#hourText').textContent=clock;$('#phase').textContent=phase.toUpperCase()+' / '+state.weather.toUpperCase();$('#scenePhase').textContent=$('#phase').textContent;reflections.forEach(r=>r.material.opacity=(state.weather==='clear'?.035:.15)*uniforms.uNeon.value);neonLights.forEach(l=>l.intensity=95*uniforms.uNeon.value)}
+const cameraPath=new THREE.CatmullRomCurve3([new THREE.Vector3(0,44,159),new THREE.Vector3(7,46,135),new THREE.Vector3(0,43,111),new THREE.Vector3(-7,40,135)],true,'catmullrom',.5);
+const clock=new THREE.Clock();let elapsed=0;function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.05);elapsed+=dt;uniforms.uTime.value=elapsed;atmosphere(dt);
+// A closed gentle spline returns to its start in two minutes.
+const cycle=elapsed*Math.PI*2/120;camera.position.copy(cameraPath.getPointAt((elapsed%120)/120));camera.lookAt(Math.sin(cycle+.6)*9,64+Math.sin(cycle)*3,-350);
+sky.position.copy(camera.position);
+for(const s of signs){let f=1;if(s.dead)f=Math.sin(elapsed*9+s.offset)>.91?.9:.045;else if(s.flicker)f=Math.sin(elapsed*11+s.offset)>.94?.35:1;const energy=uniforms.uNeon.value*f;s.mesh.material.color.copy(s.base).multiplyScalar(energy*3.6+.025);s.halos.forEach((h,i)=>h.material.opacity=energy*(i===0?.36:i===1?.15:.32))}
+for(let i=0;i<vehicles.length;i++){const v=vehicles[i];v.g.visible=i<Math.round(state.traffic*vehicles.length);v.phase=(v.phase+dt*v.speed*(.78+.32*Math.sin(elapsed*.45+i)))%1;const lane=lanes[v.lane];v.g.position.copy(lane.getPoint(v.phase));v.g.lookAt(lane.getPoint(Math.min(.99999,v.phase+.002)));if(v.g.position.distanceTo(camera.position)<16)v.g.visible=false}
+beamPivot.rotation.set(.35+Math.sin(elapsed*.13)*.3,0,Math.sin(elapsed*.09)*.5);blimp.position.set(Math.sin(elapsed*.018)*290,183,-610);blimp.rotation.y=.1*Math.sin(elapsed*.04);
+for(const {s,b,offset}of steam){const age=(elapsed+offset)%12;s.position.set(b.x+age*.6,b.h+age*1.7,b.z);s.scale.setScalar(4+age*1.9);s.material.opacity=Math.sin(age/12*Math.PI)*.075;s.material.blending=THREE.AdditiveBlending}
+const snowy=state.weather==='snow',amount={clear:0,drizzle:900,rain:2400,downpour:4200,fog:0,snow:2400}[state.weather];rain.visible=!snowy&&amount>0;snow.visible=snowy;rainGeo.setDrawRange(0,amount*2);snowGeo.setDrawRange(0,amount);const snowPos=snowGeo.attributes.position.array;
+if(amount>0){tintCandidates.clear();for(let i=0;i<amount;i++){const p=particleData[i];p.y-=dt*(snowy?3.4:state.weather==='downpour'?95:65)*p.speed;if(p.y< -52)p.y=110;const x=p.x+camera.position.x+(snowy?Math.sin(elapsed*.6+p.phase)*2.5:0),y=p.y+camera.position.y,z=p.z+camera.position.z;const tint=precipitationTint(x,y,z,snowy);if(snowy){snowPos[i*3]=x;snowPos[i*3+1]=y;snowPos[i*3+2]=z;tint.toArray(snowColors,i*3)}else{const j=i*6;positions[j]=x;positions[j+1]=y;positions[j+2]=z;positions[j+3]=x-.25;positions[j+4]=y+(state.weather==='downpour'?3.4:state.weather==='drizzle'?1.1:2.3);positions[j+5]=z;tint.toArray(rainColors,j);tint.toArray(rainColors,j+3)}}if(snowy){snowGeo.attributes.position.needsUpdate=true;snowGeo.attributes.color.needsUpdate=true}else{rainGeo.attributes.position.needsUpdate=true;rainGeo.attributes.color.needsUpdate=true}}renderer.render(scene,camera)}
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});animate();
+}catch(e){document.querySelector('#error').style.display='block';document.querySelector('#error').textContent='The city could not start. Please use a browser with WebGL enabled and an internet connection to load Three.js. '+e.message;console.error(e)}
+</script>
+</body>
+</html>

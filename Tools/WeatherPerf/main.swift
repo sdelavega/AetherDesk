@@ -1,0 +1,617 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Stephen de la Vega
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+import AppKit
+import Darwin
+import WebKit
+
+struct PerfError: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
+}
+
+let states = ["clear", "partly", "overcast", "fog", "moderate-rain", "freezing", "snow", "thunder", "hail"]
+
+struct Options {
+    var wallpaper = "weather"
+    var phase = "night"
+    var renderer = "auto"
+    var quality = "balanced"
+    var seconds = 30
+    var soak: Int?
+    var warmup = 5
+    var state: String?
+    var out = "build/weather-perf-auto.json"
+    var capture: String?
+    var width = 1920
+    var height = 1080
+    var root = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+        .deletingLastPathComponent().deletingLastPathComponent()
+
+    init() throws {
+        var args = Array(CommandLine.arguments.dropFirst())
+        while !args.isEmpty {
+            let flag = args.removeFirst()
+            guard !args.isEmpty else { throw PerfError("Missing value for \(flag)") }
+            let value = args.removeFirst()
+            switch flag {
+            case "--wallpaper": wallpaper = value
+            case "--phase": phase = value
+            case "--renderer": renderer = value
+            case "--quality": quality = value
+            case "--seconds": seconds = Int(value) ?? 0
+            case "--soak": soak = Int(value) ?? 0
+            case "--warmup": warmup = Int(value) ?? -1
+            case "--state": state = value
+            case "--out": out = value
+            case "--capture": capture = value
+            case "--width": width = Int(value) ?? 0
+            case "--height": height = Int(value) ?? 0
+            case "--root": root = URL(fileURLWithPath: value).standardizedFileURL
+            default: throw PerfError("Unknown option: \(flag)")
+            }
+        }
+        guard ["auto", "classic"].contains(renderer), ["balanced", "eco"].contains(quality), seconds > 0, warmup >= 1,
+              soak == nil || (soak! >= 10 && soak! % 10 == 0),
+              width > 0, height > 0,
+              ["weather", "neoncity"].contains(wallpaper), ["night", "dawn", "day", "dusk"].contains(phase),
+              state == nil || (wallpaper == "neoncity" ? ["clear", "drizzle", "rain", "downpour", "fog", "snow"].contains(state!) :
+                states.contains(state!) || (capture != nil && state == "no-location")) else {
+            throw PerfError("Use --renderer auto|classic --quality balanced|eco --seconds N --out file [--soak N (multiple of 10)] [--state NAME] [--warmup N] [--root path] [--capture PNG --width N --height N --state no-location|NAME] [--wallpaper weather|neoncity --phase night|dawn|day|dusk]")
+        }
+    }
+}
+
+func ps(_ arguments: [String]) throws -> String {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/ps")
+    process.arguments = arguments
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { throw PerfError("ps failed; WebContent may have exited") }
+    return String(decoding: data, as: UTF8.self)
+}
+
+func webContentPIDs() throws -> Set<Int32> {
+    Set(try ps(["-axo", "pid=,comm="]).split(separator: "\n").compactMap { line in
+        guard line.contains("com.apple.WebKit.WebContent") else { return nil }
+        return Int32(line.split(whereSeparator: { $0.isWhitespace }).first ?? "")
+    })
+}
+
+func sample(_ pid: Int32) throws -> (cpuSeconds: Double, uptime: TimeInterval, rss: Double) {
+    let text = try ps(["-p", String(pid), "-o", "rss="]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let rss = Double(text), rss.isFinite, rss > 0 else { throw PerfError("Invalid RSS for PID \(pid)") }
+    var usage = rusage_info_v2()
+    let result = withUnsafeMutablePointer(to: &usage) { pointer in
+        pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+            proc_pid_rusage(pid, RUSAGE_INFO_V2, $0)
+        }
+    }
+    guard result == 0 else { throw PerfError("proc_pid_rusage failed for pinned PID \(pid)") }
+    var timebase = mach_timebase_info_data_t()
+    guard mach_timebase_info(&timebase) == KERN_SUCCESS, timebase.denom > 0 else {
+        throw PerfError("Cannot convert CPU Mach time to seconds")
+    }
+    // User and system counters use Mach time units; uptime is monotonic seconds.
+    let cpuSeconds = (Double(usage.ri_user_time) + Double(usage.ri_system_time))
+        * Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
+    return (cpuSeconds, ProcessInfo.processInfo.systemUptime, rss)
+}
+
+// IOAccelerator reports whole-device activity, including other applications.
+// With multiple accelerators, retain the highest utilization each second.
+func sampleGPU() throws -> Double {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
+    process.arguments = ["-a", "-r", "-d", "1", "-c", "IOAccelerator"]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { throw PerfError("ioreg failed") }
+    let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
+    var values = [Double]()
+    func visit(_ object: Any) {
+        if let dictionary = object as? [String: Any] {
+            if let statistics = dictionary["PerformanceStatistics"] as? [String: Any],
+               let number = statistics["Device Utilization %"] as? NSNumber {
+                let value = number.doubleValue
+                if value.isFinite, value >= 0, value <= 100 { values.append(value) }
+            }
+            for value in dictionary.values { visit(value) }
+        } else if let array = object as? [Any] {
+            for value in array { visit(value) }
+        }
+    }
+    visit(plist)
+    guard let value = values.max() else { throw PerfError("IOAccelerator has no valid Device Utilization % sample") }
+    return value
+}
+
+func pump(until deadline: TimeInterval) {
+    while ProcessInfo.processInfo.systemUptime < deadline {
+        if let event = NSApp.nextEvent(matching: .any,
+                                      until: Date(timeIntervalSinceNow: min(0.05, deadline - ProcessInfo.processInfo.systemUptime)),
+                                      inMode: .default, dequeue: true) {
+            NSApp.sendEvent(event)
+        }
+        NSApp.updateWindows()
+    }
+}
+
+func writeJSON(_ rows: [[String: Any]], to path: String) throws {
+    let url = URL(fileURLWithPath: path)
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let data = try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
+    try data.write(to: url, options: .atomic)
+}
+
+final class Harness: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    let options: Options
+    var window: NSWindow!
+    var webView: WKWebView!
+    var failure: String?
+    var loaded = false
+    var childFrame: WKFrameInfo?
+    var rendererStatus: String?
+    var expectedPhase = "night"
+    var expectedState = "rain"
+    var pinnedPID: Int32?
+    let initialPIDs: Set<Int32>
+    let dataStore = WKWebsiteDataStore.nonPersistent()
+
+    init(options: Options) throws {
+        self.options = options
+        initialPIDs = try webContentPIDs()
+        super.init()
+    }
+
+    func prepareView() throws {
+        let controller = WKUserContentController()
+        controller.add(self, name: "weatherPerf")
+        // Read the production throttle verbatim so the benchmark cannot drift.
+        let runtime = try String(contentsOf: options.root.appendingPathComponent("WallpaperTypes/WebWallpaperRuntime.swift"), encoding: .utf8)
+        guard let start = runtime.range(of: "            // rAF throttle:"),
+              let end = runtime.range(of: "            // Geolocation bridge:", range: start.upperBound..<runtime.endIndex) else {
+            throw PerfError("Production rAF throttle markers changed")
+        }
+        let throttle = String(runtime[start.lowerBound..<end.lowerBound])
+        let frameCounter = options.wallpaper == "neoncity" ? """
+          window.__perfFrames=0;window.__perfPaints=0;var lastTimestamp=-1,lastPaint=-1;
+          window.requestAnimationFrame=function(cb){return throttledRAF(function(ts){
+            if(ts!==lastTimestamp){window.__perfFrames++;lastTimestamp=ts;}cb(ts);
+            if(window.NeonCityStatus&&NeonCityStatus.lastPaint===ts&&lastPaint!==ts){
+              window.__perfPaints++;lastPaint=ts;
+            }
+          });};
+        """ : """
+          window.__perfFrames=0;var lastTimestamp=-1;
+          window.requestAnimationFrame=function(cb){return throttledRAF(function(ts){
+            if(ts!==lastTimestamp){window.__perfFrames++;lastTimestamp=ts;}cb(ts);
+          });};
+        """
+        let bootstrap = """
+        (function(){
+          var suspended=false;
+          if(\(options.capture != nil)){
+            var NativeDate=Date,fixedTime=new NativeDate(2026,9,22,22,0,0).getTime();
+            window.Date=class extends NativeDate{
+              constructor(...args){super(...(args.length?args:[fixedTime]));}
+              static now(){return fixedTime;}
+            };
+            localStorage.clear();
+            navigator.geolocation.getCurrentPosition=function(success,failure){failure({code:1});};
+          }
+          window.aetherDesk={system:{qualityMode:'\(options.quality)',onBattery:\(options.quality == "eco"),fpsCap:30},
+            properties:{get:function(){return {};},onUpdate:function(){}},onVisibility:function(){}};
+          \(throttle)
+          var throttledRAF=window.requestAnimationFrame;
+          \(frameCounter)
+          var seed=123456789;
+          Math.random=function(){seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;};
+          function blocked(){window.webkit.messageHandlers.weatherPerf.postMessage('Unexpected network request');
+            throw new Error('WeatherPerf is offline');}
+          window.fetch=function(){try{blocked();}catch(e){return Promise.reject(e);}};
+          XMLHttpRequest.prototype.open=blocked;
+          window.WebSocket=function(){blocked();};window.EventSource=function(){blocked();};
+          navigator.sendBeacon=function(){blocked();};
+          window.addEventListener('error',function(e){window.webkit.messageHandlers.weatherPerf.postMessage(e.message||'Resource load failed');},true);
+          if(window.top!==window||\(options.capture != nil))window.addEventListener('DOMContentLoaded',function(){
+            window.webkit.messageHandlers.weatherPerf.postMessage({kind:'frame'});
+          });
+          if(window.top===window)window.addEventListener('message',function(e){
+            if(e.data&&e.data.type==='weather-aether-renderer-status')
+              window.webkit.messageHandlers.weatherPerf.postMessage({kind:'status',renderer:e.data.renderer,error:e.data.error||null});
+          });
+        })();
+        """
+        controller.addUserScript(WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        let config = WKWebViewConfiguration()
+        config.userContentController = controller
+        config.websiteDataStore = dataStore
+        // A second layer blocks network subresources, not just fetch/XHR.
+        let rules = """
+        [{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}},
+         {"trigger":{"url-filter":"^wss?://"},"action":{"type":"block"}}]
+        """
+        var compiled = false
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "WeatherPerfOffline", encodedContentRuleList: rules) { list, error in
+            if let list { controller.add(list) } else { self.failure = "Offline rules: \(String(describing: error))" }
+            compiled = true
+        }
+        let deadline = ProcessInfo.processInfo.systemUptime + 15
+        while !compiled && ProcessInfo.processInfo.systemUptime < deadline { pump(until: ProcessInfo.processInfo.systemUptime + 0.05) }
+        guard compiled, failure == nil else { throw PerfError(failure ?? "Offline rule compilation timed out") }
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: options.width, height: options.height), configuration: config)
+        webView.navigationDelegate = self
+        window = NSWindow(contentRect: NSRect(x: -options.width, y: 0, width: options.width, height: options.height), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = webView
+        // A fully offscreen NSWindow is page-hidden by WebKit. Leave a small
+        // corner inside the usable display, clear of the menu bar and Dock.
+        if let screen = NSScreen.main {
+            window.setFrameOrigin(NSPoint(x: screen.visibleFrame.maxX - 16, y: screen.visibleFrame.maxY - 16))
+        }
+        window.orderFrontRegardless()
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let body = message.body as? [String: Any] {
+            if body["kind"] as? String == "frame" { childFrame = message.frameInfo; return }
+            if body["kind"] as? String == "status" {
+                rendererStatus = body["renderer"] as? String
+                if let error = body["error"] as? String, !error.isEmpty { failure = error }
+                return
+            }
+        }
+        failure = String(describing: message.body)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loaded = true }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failure = error.localizedDescription }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failure = error.localizedDescription }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failure = "WebContent terminated" }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        let scheme = navigationAction.request.url?.scheme
+        let allowed = scheme == "file" || scheme == "about"
+        if !allowed { failure = "Unexpected external navigation" }
+        decisionHandler(allowed ? .allow : .cancel)
+    }
+
+    func evaluate(_ script: String) throws -> Any? {
+        var done = false
+        var result: Any?
+        var jsError: Error?
+        webView.evaluateJavaScript(script, in: childFrame, in: .page) { response in
+            switch response {
+            case .success(let value): result = value
+            case .failure(let error): jsError = error
+            }
+            done = true
+        }
+        let deadline = ProcessInfo.processInfo.systemUptime + 10
+        while !done && ProcessInfo.processInfo.systemUptime < deadline { pump(until: ProcessInfo.processInfo.systemUptime + 0.05) }
+        guard done else { throw PerfError("JavaScript timed out") }
+        if let jsError { throw jsError }
+        if let failure { throw PerfError(failure) }
+        return result
+    }
+
+    func identifyPID() throws -> Int32 {
+        let current = try webContentPIDs()
+        print("New WebContent processes: \(current.subtracting(initialPIDs).sorted())")
+        // Standalone diagnostic only: use WebKit's process accessor if available.
+        // Do not ship this private selector in the app. Verify it against ps.
+        if webView.responds(to: NSSelectorFromString("_webProcessIdentifier")),
+           let number = webView.value(forKey: "_webProcessIdentifier") as? NSNumber,
+           current.contains(number.int32Value) {
+            pinnedPID = number.int32Value
+            print("WebContent PID \(number) (WKWebView process accessor)")
+            return number.int32Value
+        }
+        if let pinnedPID, current.contains(pinnedPID) { return pinnedPID }
+        let candidates = current.subtracting(initialPIDs)
+        guard candidates.count == 1, let pid = candidates.first else {
+            throw PerfError("Cannot unambiguously attribute WebContent (\(candidates.count) new processes); close competing launches and retry")
+        }
+        pinnedPID = pid
+        print("WebContent PID \(pid) (only new WebContent since harness launch)")
+        return pid
+    }
+
+    func load(state: String, phase: String) throws -> Int32 {
+        loaded = false
+        failure = nil
+        childFrame = nil
+        rendererStatus = nil
+        var url = URLComponents(url: options.root.appendingPathComponent("Tools/WeatherAetherPreview.html"), resolvingAgainstBaseURL: false)!
+        url.queryItems = [URLQueryItem(name: "perf", value: "1"), URLQueryItem(name: "state", value: state),
+                          URLQueryItem(name: "renderer", value: options.renderer == "classic" ? "canvas" : "three"),
+                          URLQueryItem(name: "hour", value: phase == "day" ? "12" : "22")]
+        if options.capture != nil {
+            url = URLComponents(url: options.root.appendingPathComponent("Resources/Wallpapers/WeatherAether/index.html"), resolvingAgainstBaseURL: false)!
+            url.queryItems = [URLQueryItem(name: "renderer", value: options.renderer == "classic" ? "canvas" : "three"),
+                              URLQueryItem(name: "quality", value: options.quality)]
+            if state != "no-location" {
+                url.queryItems! += [URLQueryItem(name: "preview", value: state), URLQueryItem(name: "hour", value: "22"),
+                                   URLQueryItem(name: "minimal", value: "1")]
+            }
+        }
+        if options.wallpaper == "neoncity" {
+            expectedPhase = phase
+            expectedState = state
+            let path = options.capture == nil ? "Tools/NeonCityPreview.html" : "Resources/Wallpapers/NeonCity/index.html"
+            url = URLComponents(url: options.root.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+            let hour = ["night": "3", "dawn": "6", "day": "12", "dusk": "19.5"][phase]!
+            url.queryItems = [URLQueryItem(name: "renderer", value: options.renderer),
+                              URLQueryItem(name: "quality", value: options.quality), URLQueryItem(name: "hour", value: hour),
+                              URLQueryItem(name: "phase", value: phase), URLQueryItem(name: "perf", value: "1"),
+                              URLQueryItem(name: "weather", value: state), URLQueryItem(name: "seed", value: "7319")]
+        }
+        webView.loadFileURL(url.url!, allowingReadAccessTo: options.root)
+        let deadline = ProcessInfo.processInfo.systemUptime + 30
+        while !loaded && failure == nil && ProcessInfo.processInfo.systemUptime < deadline { pump(until: ProcessInfo.processInfo.systemUptime + 0.05) }
+        guard loaded, failure == nil else { throw PerfError(failure ?? "Preview load timed out") }
+        pump(until: ProcessInfo.processInfo.systemUptime + Double(options.warmup))
+        let info = try snapshot()
+        guard info["renderer"] as? String == (options.renderer == "auto" ? "three" : "canvas"),
+              info["width"] as? Int == options.width, info["height"] as? Int == options.height,
+              info["hidden"] as? Bool == false else { throw PerfError("Preview did not render at \(options.width)x\(options.height): \(info)") }
+        print("Live preview: \(info)")
+        return try identifyPID()
+    }
+
+    func snapshot() throws -> [String: Any] {
+        if options.wallpaper == "neoncity" {
+            guard childFrame != nil, var value = try evaluate("""
+            ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfPaints,
+              actualRenderer:NeonCityStatus.renderer,quality:NeonCityStatus.tier,renderScale:NeonCityStatus.renderScale,
+              phase:currentCityState.phase,weather:currentCityState.weather,shaderError:NeonCityStatus.failure,
+              submitP95:NeonCityStatus.p95FrameMs??null,drawCalls:threeCity?threeCity.renderer.info.render.calls:0,
+              drawingWidth:document.getElementById(NeonCityStatus.renderer==='canvas'?'c':'city-webgl').width,drawingHeight:document.getElementById(NeonCityStatus.renderer==='canvas'?'c':'city-webgl').height,
+              paintAge:performance.now()-NeonCityStatus.lastPaint})
+            """) as? [String: Any] else { throw PerfError("Missing NeonCity frame") }
+            let expected = options.renderer == "auto" ? "three" : "canvas"
+            guard value["actualRenderer"] as? String == expected, value["shaderError"] is NSNull,
+                  value["phase"] as? String == expectedPhase, value["weather"] as? String == expectedState,
+                  let paintAge = value["paintAge"] as? Double, paintAge >= 0, paintAge < 2000 else {
+                throw PerfError("NeonCity changed renderer or stopped painting: \(value)")
+            }
+            let saver = options.quality == "eco"
+            guard let tier = value["quality"] as? [String: Any],
+                  tier["fps"] as? Int == (saver ? 15 : 30),
+                  tier["renderScale"] as? Double == (saver ? 0.5 : 0.75),
+                  tier["countScale"] as? Double == (saver ? 0.4 : 1),
+                  tier["eventScale"] as? Double == (saver ? 0.5 : 1),
+                  let scale = value["renderScale"] as? Double,
+                  saver ? scale == 0.5 : (scale >= 0.75 && scale <= 1) else {
+                throw PerfError("Unexpected NeonCity quality profile: \(value)")
+            }
+            if options.renderer == "auto" {
+                guard value["drawingWidth"] as? Int == Int(Double(options.width) * scale),
+                      value["drawingHeight"] as? Int == Int(Double(options.height) * scale) else {
+                    throw PerfError("NeonCity drawing buffer does not match its CSS-pixel scale: \(value)")
+                }
+            }
+            value["renderer"] = expected
+            return value
+        }
+        guard childFrame != nil, var value = try evaluate("""
+        ({width:innerWidth,height:innerHeight,hidden:document.hidden,frames:window.__perfFrames,
+          actualRenderer:S.renderer,quality:S.threeAtmosphere?S.threeAtmosphere.quality:null,
+          isDay:S.isDay,latitude:S.lat,longitude:S.lon,hasWeather:!!S.weather,shaderError:S.threeShaderError||null,
+          canvasWidth:S.canvas.width,canvasHeight:S.canvas.height,
+          drawingWidth:S.threeAtmosphere?S.threeAtmosphere.renderer.domElement.width:0,
+          drawingHeight:S.threeAtmosphere?S.threeAtmosphere.renderer.domElement.height:0,
+          skyMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMetrics:null,
+          motionMetrics:S.threeAtmosphere?S.threeAtmosphere.latestMotionMetrics:null,
+          paintAge:performance.now()-(S.threeAtmosphere&&S.useThreeRenderer?S.threeAtmosphere.lastPresentationFrame:S.lastFrameTime)})
+        """) as? [String: Any] else { throw PerfError("Missing preview frame") }
+        let expected = options.renderer == "auto" ? "three" : "canvas"
+        guard (options.capture != nil || rendererStatus == expected),
+              value["actualRenderer"] as? String == expected, value["shaderError"] is NSNull,
+              let paintAge = value["paintAge"] as? Double, paintAge >= 0, paintAge < 2000 else {
+            throw PerfError("Renderer changed or stopped painting: \(value)")
+        }
+        value["renderer"] = expected
+        return value
+    }
+
+    func unloadView() {
+        webView?.stopLoading()
+        webView?.navigationDelegate = nil
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "weatherPerf")
+        window?.contentView = nil
+        window?.close()
+        webView = nil
+        window = nil
+        childFrame = nil
+        pinnedPID = nil
+        failure = nil
+    }
+
+    func run() throws {
+        defer { unloadView() }
+        if let path = options.capture {
+            try prepareView()
+            _ = try load(state: options.state ?? (options.wallpaper == "neoncity" ? "drizzle" : "no-location"), phase: options.phase)
+            let info = try snapshot()
+            if options.wallpaper == "weather" {
+                guard info["isDay"] as? Bool == false else { throw PerfError("Weather capture must be at night") }
+            }
+            if options.wallpaper == "weather" && (options.state == nil || options.state == "no-location") {
+                guard info["latitude"] is NSNull, info["longitude"] is NSNull,
+                      info["hasWeather"] as? Bool == false else { throw PerfError("Capture has a location or weather") }
+            }
+            var completed = false
+            var captureError: Error?
+            let configuration = WKSnapshotConfiguration()
+            configuration.rect = webView.bounds
+            configuration.snapshotWidth = NSNumber(value: options.width)
+            webView.takeSnapshot(with: configuration) { image, error in
+                defer { completed = true }
+                do {
+                    if let error { throw error }
+                    guard let image,
+                          let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: self.options.width,
+                            pixelsHigh: self.options.height, bitsPerSample: 8, samplesPerPixel: 4,
+                            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+                          let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+                        throw PerfError("Snapshot did not produce a bitmap")
+                    }
+                    // WKSnapshot uses Retina backing pixels; --width/--height
+                    // describe the delivered PNG as well as the CSS viewport.
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = context
+                    context.imageInterpolation = .high
+                    image.draw(in: NSRect(x: 0, y: 0, width: self.options.width, height: self.options.height))
+                    NSGraphicsContext.restoreGraphicsState()
+                    guard let png = bitmap.representation(using: .png, properties: [:]) else {
+                        throw PerfError("Snapshot did not produce a PNG")
+                    }
+                    let url = URL(fileURLWithPath: path)
+                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try png.write(to: url, options: .atomic)
+                } catch { captureError = error }
+            }
+            let deadline = ProcessInfo.processInfo.systemUptime + 15
+            while !completed && ProcessInfo.processInfo.systemUptime < deadline { pump(until: ProcessInfo.processInfo.systemUptime + 0.05) }
+            guard completed else { throw PerfError("Snapshot timed out") }
+            if let captureError { throw captureError }
+            try writeJSON([info], to: path + ".json")
+            print("Captured \(path)")
+            return
+        }
+        var rows = [[String: Any]]()
+        let neonCity = options.wallpaper == "neoncity"
+        let availableStates = neonCity ? ["rain", "downpour", "snow", "fog", "clear", "drizzle"] : states
+        let selectedStates = options.soak == nil ? options.state.map { [$0] } ?? availableStates : [options.state ?? (neonCity ? "rain" : "thunder")]
+        for state in selectedStates {
+            for phase in options.soak == nil ? (neonCity ? ["night", "dawn", "day", "dusk"] : ["day", "night"]) : ["night"] {
+                unloadView()
+                var baselineGPU = [Double]()
+                let baselineStart = ProcessInfo.processInfo.systemUptime
+                print("Idle GPU baseline: \(state)/\(phase), no harness web view loaded, 15 s")
+                fflush(stdout)
+                for elapsed in 1...15 {
+                    pump(until: baselineStart + Double(elapsed))
+                    if neonCity, try ps(["-axo", "comm="]).contains("/Applications/ÆtherDesk.app/") {
+                        throw PerfError("Installed ÆtherDesk is running; wait for it to exit and repeat")
+                    }
+                    baselineGPU.append(try sampleGPU())
+                }
+                let baselineMean = baselineGPU.reduce(0, +) / Double(baselineGPU.count)
+                try prepareView()
+                let pid = try load(state: state, phase: phase)
+                fflush(stdout)
+                let before = try snapshot()["frames"] as? Int ?? 0
+                let initial = try sample(pid)
+                let start = initial.uptime
+                let duration = options.soak ?? options.seconds
+                var previous = initial
+                var cpuDeltas = [Double]()
+                var cpuIntervals = [Double]()
+                var cpu = [Double]()
+                var gpu = [Double]()
+                var lastRSS = initial.rss
+                if options.soak != nil { rows.append(["seconds": 0, "rss": initial.rss, "renderer": options.renderer, "quality": options.quality, "state": state, "phase": phase, "wallpaper": options.wallpaper]) }
+                for elapsed in 1...duration {
+                    pump(until: start + Double(elapsed))
+                    if let failure { throw PerfError(failure) }
+                    if neonCity, try ps(["-axo", "comm="]).contains("/Applications/ÆtherDesk.app/") {
+                        throw PerfError("Installed ÆtherDesk started during measurement; wait for it to exit and repeat")
+                    }
+                    let value = try sample(pid)
+                    let delta = value.cpuSeconds - previous.cpuSeconds
+                    let interval = value.uptime - previous.uptime
+                    guard delta.isFinite, delta >= 0, interval.isFinite, interval > 0 else {
+                        throw PerfError("Invalid CPU-time interval for pinned PID \(pid)")
+                    }
+                    cpuDeltas.append(delta)
+                    cpuIntervals.append(interval)
+                    cpu.append(100 * delta / interval)
+                    previous = value
+                    gpu.append(try sampleGPU())
+                    lastRSS = value.rss
+                    if options.soak != nil, elapsed % 10 == 0 {
+                        _ = try snapshot()
+                        rows.append(["seconds": elapsed, "rss": lastRSS, "renderer": options.renderer, "quality": options.quality,
+                                     "state": state, "phase": phase, "wallpaper": options.wallpaper, "gpuMean": gpu.reduce(0, +) / Double(gpu.count), "gpuSamples": gpu.count,
+                                     "gpuBaselineMean": baselineMean, "gpuBaselineSamples": baselineGPU.count,
+                                     "gpuMarginalMean": gpu.reduce(0, +) / Double(gpu.count) - baselineMean])
+                        try writeJSON(rows, to: options.out)
+                        print("soak \(elapsed)s RSS \(Int(lastRSS)) KiB")
+                        fflush(stdout)
+                    }
+                }
+                let info = try snapshot()
+                let after = info["frames"] as? Int ?? 0
+                let fps = Double(after - before) / (ProcessInfo.processInfo.systemUptime - start)
+                let minimumFPS = neonCity ? (options.quality == "eco" ? 13.0 : 27.0) : 15.0
+                let maximumFPS = neonCity ? (options.quality == "eco" ? 17.0 : 32.0) : 35.0
+                guard fps >= minimumFPS, fps <= maximumFPS else { throw PerfError("Invalid live frame rate \(fps); occluded or unthrottled view") }
+                if !neonCity && options.renderer == "auto" {
+                    guard let quality = info["quality"] as? [String: Any], quality["name"] as? String == options.quality else {
+                        throw PerfError("Unexpected quality profile: \(info)")
+                    }
+                }
+                if options.soak == nil {
+                    let sorted = cpu.sorted()
+                    let cpuTime = previous.cpuSeconds - initial.cpuSeconds
+                    let cpuWindow = previous.uptime - initial.uptime
+                    let mean = 100 * cpuTime / cpuWindow
+                    let p95 = sorted[max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)]
+                    let gpuMean = gpu.reduce(0, +) / Double(gpu.count)
+                    rows.append(["state": state, "phase": phase, "renderer": options.renderer, "quality": options.quality,
+                                 "wallpaper": options.wallpaper, "fps": fps,
+                                 "viewportWidth": options.width, "viewportHeight": options.height,
+                                 "drawingWidth": info["drawingWidth"] ?? NSNull(), "drawingHeight": info["drawingHeight"] ?? NSNull(),
+                                 "tier": info["quality"] ?? NSNull(), "renderScale": info["renderScale"] ?? NSNull(),
+                                 "drawCalls": info["drawCalls"] ?? NSNull(), "submitP95": info["submitP95"] ?? NSNull(),
+                                 "cpuMean": mean, "cpuP95": p95, "cpuMethod": "proc_pid_rusage",
+                                 "cpuDeltas": cpuDeltas, "cpuIntervals": cpuIntervals,
+                                 "cpuTimeSeconds": cpuTime, "cpuWindowSeconds": cpuWindow,
+                                 "gpuMean": gpuMean, "gpuSamples": gpu.count,
+                                 "gpuBaselineMean": baselineMean, "gpuBaselineSamples": baselineGPU.count,
+                                 "gpuMarginalMean": gpuMean - baselineMean,
+                                 "rssStart": initial.rss, "rssEnd": lastRSS])
+                    try writeJSON(rows, to: options.out)
+                    print("\(options.quality)/\(options.renderer) \(state) \(phase): CPU \(String(format: "%.2f", mean))% p95 \(p95)% GPU \(String(format: "%.2f", gpuMean))% RSS \(Int(initial.rss))→\(Int(lastRSS)) KiB; \(String(format: "%.1f", fps)) fps")
+                }
+                fflush(stdout)
+            }
+        }
+    }
+}
+
+do {
+    let options = try Options()
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    app.finishLaunching()
+    let harness = try Harness(options: options)
+    try harness.run()
+} catch {
+    fputs("WeatherPerf: \(error)\n", stderr)
+    exit(1)
+}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -376,6 +376,14 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         propertyBridge.updateProperty(key, value: value)
     }
 
+    func refreshEnvironment() {
+        propertyBridge.injectEnvironment()
+    }
+
+    func displayGeometryDidChange() {
+        propertyBridge.injectEnvironment()
+    }
+
     private func freezeAndTearDownWebViewIfStillPaused(_ webView: WKWebView) {
         let snapshotID = UUID()
         pendingPauseSnapshotID = snapshotID
@@ -640,7 +648,7 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             window._aetherDeskProperties = window._aetherDeskProperties || {};
             window.aetherDesk = {
                 display: { id: \(displayID), width: 0, height: 0, scaleFactor: 1, isPrimary: false },
-                system:  { isLowPowerMode: false, isOnline: navigator.onLine, qualityMode: 'balanced' },
+                system:  { isLowPowerMode: \(ProcessInfo.processInfo.isLowPowerModeEnabled), onBattery: \(WallpaperManager.isOnBatteryPower), isOnline: navigator.onLine, qualityMode: '\(PropertyBridge.qualityMode(onBattery: WallpaperManager.isOnBatteryPower, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled))', capabilities: { ipGeolocation: true } },
                 properties: {
                     get: function() { return window._aetherDeskProperties || {}; },
                     onUpdate: function(cb) { callbacks.property = cb; }

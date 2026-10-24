@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Stephen de la Vega. All rights reserved.
+// Copyright (C) 2026 Stephen de la Vega.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,9 +25,8 @@ import AppKit
 ///   }
 ///
 /// Display identities prefer vendor/model/serial metadata when CoreGraphics
-/// exposes it, falling back to CGDirectDisplayID for displays that do not
-/// report stable hardware identifiers. Legacy numeric display-ID keys are read
-/// during restore so older installs migrate naturally as assignments are saved.
+/// exposes it, with ordered fallback candidates for older saved assignments.
+/// Legacy matches migrate to the primary identity during restore.
 final class WallpaperStore {
 
     private let userDefaults: UserDefaults
@@ -45,60 +44,63 @@ final class WallpaperStore {
     // MARK: Display assignments
 
     /// Persist the (display identity -> bundleID) mapping for a single display.
-    func setAssignment(bundleID: UUID, for displayID: CGDirectDisplayID) {
-        var payload = loadPayload()
-        let identity = DisplayIdentity.forDisplay(displayID)
-        payload.displayAssignments[identity.key] = bundleID.uuidString
-        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacyNumeric(displayID))
-        if identity != .legacy(displayID) {
-            payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacy(displayID).key)
+    func setAssignment(bundleID: UUID, for info: DisplayHardwareInfo, among all: [DisplayHardwareInfo]) {
+        mutatePayload { payload in
+            let candidates = DisplayIdentity.candidates(for: info, among: all)
+            for candidate in candidates.dropFirst() {
+                payload.displayAssignments.removeValue(forKey: candidate.key)
+            }
+            payload.displayAssignments[candidates[0].key] = bundleID.uuidString
         }
-        save(payload)
     }
 
     /// Remove the persisted assignment for a display (e.g. when the display
     /// is no longer connected or the wallpaper is uninstalled).
-    func removeAssignment(for displayID: CGDirectDisplayID) {
-        var payload = loadPayload()
-        payload.displayAssignments.removeValue(forKey: DisplayIdentity.forDisplay(displayID).key)
-        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacy(displayID).key)
-        payload.displayAssignments.removeValue(forKey: DisplayIdentity.legacyNumeric(displayID))
-        save(payload)
-    }
-
-    /// Resolve saved assignments for currently connected displays. Values that
-    /// fail to parse as UUIDs are silently dropped. Lookup order is stable
-    /// identity, new CGDisplay fallback key, then legacy raw numeric key.
-    func loadAssignments(for displayIDs: [CGDirectDisplayID]) -> [CGDirectDisplayID: UUID] {
-        let payload = loadPayload()
-        var out: [CGDirectDisplayID: UUID] = [:]
-        for displayID in displayIDs {
-            let candidateKeys = [
-                DisplayIdentity.forDisplay(displayID).key,
-                DisplayIdentity.legacy(displayID).key,
-                DisplayIdentity.legacyNumeric(displayID)
-            ]
-            for key in candidateKeys {
-                guard let value = payload.displayAssignments[key],
-                      let bundleID = UUID(uuidString: value) else {
-                    continue
-                }
-                out[displayID] = bundleID
-                break
+    func removeAssignment(for info: DisplayHardwareInfo, among all: [DisplayHardwareInfo]) {
+        mutatePayload { payload in
+            for candidate in DisplayIdentity.candidates(for: info, among: all) {
+                payload.displayAssignments.removeValue(forKey: candidate.key)
             }
         }
-        return out
+    }
+
+    /// Resolve the first valid identity candidate for each connected display.
+    /// Legacy matches migrate to the primary identity during the same load.
+    func loadAssignments(for displays: [DisplayHardwareInfo]) -> [CGDirectDisplayID: UUID] {
+        mutatePayload { payload in
+            let assignments = payload.displayAssignments
+            var out: [CGDirectDisplayID: UUID] = [:]
+            for info in displays {
+                let candidates = DisplayIdentity.candidates(for: info, among: displays)
+                let primary = candidates[0].key
+                for candidate in candidates {
+                    guard let value = assignments[candidate.key],
+                          let bundleID = UUID(uuidString: value) else {
+                        continue
+                    }
+                    out[info.displayID] = bundleID
+                    if candidate.key != primary {
+                        for fallback in candidates.dropFirst() {
+                            payload.displayAssignments.removeValue(forKey: fallback.key)
+                        }
+                        payload.displayAssignments[primary] = bundleID.uuidString
+                    }
+                    break
+                }
+            }
+            return out
+        }
     }
 
     /// Remove any stored assignments that reference a bundle ID no longer in
     /// the supplied set (e.g. after the user deleted an imported wallpaper).
     func pruneMissing(knownBundleIDs: Set<UUID>) {
-        var payload = loadPayload()
-        payload.displayAssignments = payload.displayAssignments.filter { _, value in
-            guard let uuid = UUID(uuidString: value) else { return false }
-            return knownBundleIDs.contains(uuid)
+        mutatePayload { payload in
+            payload.displayAssignments = payload.displayAssignments.filter { _, value in
+                guard let uuid = UUID(uuidString: value) else { return false }
+                return knownBundleIDs.contains(uuid)
+            }
         }
-        save(payload)
     }
 
     // MARK: Internals
@@ -111,26 +113,26 @@ final class WallpaperStore {
         cacheLock.unlock()
     }
 
-    private func loadPayload() -> Payload {
+    /// Keep reads, migration, cache updates and persistence in one transaction.
+    private func mutatePayload<T>(_ body: (inout Payload) -> T) -> T {
         cacheLock.lock()
         defer { cacheLock.unlock() }
-        if let cached = cachedPayload { return cached }
-        guard let data = userDefaults.data(forKey: key),
-              let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        else {
-            let empty = Payload(displayAssignments: [:])
-            cachedPayload = empty
-            return empty
+        var payload: Payload
+        if let cached = cachedPayload {
+            payload = cached
+        } else if let data = userDefaults.data(forKey: key),
+                  let decoded = try? JSONDecoder().decode(Payload.self, from: data) {
+            payload = decoded
+        } else {
+            payload = Payload(displayAssignments: [:])
         }
+        let originalAssignments = payload.displayAssignments
+        let result = body(&payload)
         cachedPayload = payload
-        return payload
-    }
-
-    private func save(_ payload: Payload) {
-        cacheLock.lock()
-        cachedPayload = payload
-        cacheLock.unlock()
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        userDefaults.set(data, forKey: key)
+        if payload.displayAssignments != originalAssignments,
+           let data = try? JSONEncoder().encode(payload) {
+            userDefaults.set(data, forKey: key)
+        }
+        return result
     }
 }
