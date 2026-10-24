@@ -32,7 +32,9 @@ test('balanced restores scale and motion while eco retains reduced cadences',()=
   context.window.aetherDesk={system:{qualityMode:'eco'}};
   const eco=context.getThreeQualityProfile();
   assert.equal(eco.name,'eco');assert.equal(eco.pixelRatio,0.4);
-  assert.ok(eco.fps>0&&eco.fps<=6);assert.ok(eco.motionFps>0&&eco.motionFps<=15);assert.ok(eco.rainFps>0&&eco.rainFps<=6);
+  assert.equal(eco.fps,6);assert.equal(eco.motionFps,15);assert.equal(eco.rainFps,6);
+  for(const condition of ['rain','freezing'])assert.equal(context.getThreeMotionFps({quality:eco},{condition}),6,condition);
+  for(const condition of ['clear','snow','thunder','hail'])assert.equal(context.getThreeMotionFps({quality:eco},{condition}),15,condition);
   context.window.aetherDesk.system.qualityMode='balanced';
   assert.equal(context.getThreeQualityProfile().name,'balanced');
   for(const cap of [15,30,60]){
@@ -146,6 +148,38 @@ test('GPU precipitation avoids unused Canvas lighting work and keeps the storm o
   context.drawLightningBolt=()=>{bolts++;};
   context.drawParticles({fillRect(){flashes++;}});
   assert.equal(lighting,0);assert.equal(flashes,1);assert.equal(bolts,1);
+});
+
+test('Canvas precipitation lighting and foreground reuse share the same predicate',()=>{
+  const source=fs.readFileSync('Resources/Wallpapers/WeatherAether/js/renderer.js','utf8');
+  for(const bucket of ['clear','partly','overcast','fog','rain','thunder','snow','freezing','hail'])for(let mask=0;mask<16;mask++){
+    let lighting=0,paints=0,helperCalls=0;
+    const gpu={rain:!!(mask&1),snow:!!(mask&2),freezing:!!(mask&4),hail:!!(mask&8)};
+    const kind=bucket==='thunder'?'rain':bucket;
+    const expected=Object.hasOwn(gpu,kind)&&!gpu[kind];
+    const context=vm.createContext({performance:{now:()=>1},
+      S:{renderer:'three',useThreeRenderer:true,props:{showParticles:true},weatherBucket:bucket,isDay:true,
+        atmosphere:{condition:bucket,celestialVisibility:0,lightDiffusion:0.5},threeAtmosphere:{quality:{name:'eco',pixelRatio:0.4}},
+        particles:[],windGust:1,lightningAlpha:0,lightningBoltAlpha:0,fogAlpha:0,ctx:{clearRect(){}}},
+      rendersThreeRain:()=>gpu.rain,rendersThreeSnow:()=>gpu.snow,rendersThreeFreezing:()=>gpu.freezing,rendersThreeHail:()=>gpu.hail,
+      getPrecipitationLighting:()=>{lighting++;return {};},getPrecipitationActivity:()=>0,lerp:()=>0,
+      wallpaperNow:()=>new Date(0),cssW:()=>1920,cssH:()=>1080,
+      syncThreeQualityProfile(){},claimThreeFrame:()=>true,getThreeMotionFps:()=>15,
+      renderThreeAtmosphere:()=>false,renderThreePresentation(){},demoteRenderer:(renderer,error)=>{throw new Error(error);}});
+    vm.runInContext(source,context);
+    assert.equal(typeof context.usesCanvasPrecipitation,'function');
+    const predicate=context.usesCanvasPrecipitation;
+    assert.equal(predicate(bucket),expected,bucket+'/'+mask);
+    context.usesCanvasPrecipitation=bk=>{helperCalls++;return predicate(bk);};
+    const draw=context.drawParticles;
+    context.drawParticles=ctx=>{paints++;draw(ctx);};
+    for(const name of ['updateParticles','drawClouds','drawBgCelestial','drawLightningBolt','syncRendererAnimation'])context[name]=()=>{};
+    context.precipitationWindDrift=()=>0;
+    context.render(1000);context.render(1067);
+    assert.equal(paints,expected?2:1,bucket+'/'+mask+': Canvas precipitation must prevent reuse');
+    assert.equal(lighting,expected?paints:0,bucket+'/'+mask+': only Canvas precipitation needs lighting');
+    assert.equal(helperCalls,2+paints,'both render and drawParticles must consult the helper');
+  }
 });
 
 test('tiers reuse the solar raster while compositing current position and opacity',()=>{

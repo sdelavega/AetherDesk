@@ -18,7 +18,7 @@
 
 var THREE_ATMOSPHERE_REVISION='precipitation-modulation-1';
 var THREE_QUALITY_PROFILES={
-  eco:{name:'eco',pixelRatio:0.4,fps:3,motionFps:6,rainFps:3,steps:3,rainCount:60,freezingCount:60,snowCount:40,hailCount:64},
+  eco:{name:'eco',pixelRatio:0.4,fps:6,motionFps:15,rainFps:6,steps:1,rainCount:30,freezingCount:60,snowCount:20,hailCount:32},
   balanced:{name:'balanced',pixelRatio:0.75,fps:30,motionFps:60,steps:5,cloudStepsByCondition:{partly:1,overcast:1,rain:1,freezing:1,thunder:1,hail:1},rainCount:96,freezingCount:96,snowCount:50,hailCount:64},
   showcase:{name:'showcase',pixelRatio:1.15,fps:30,motionFps:60,steps:9,rainCount:240,freezingCount:240,snowCount:200,hailCount:280}
 };

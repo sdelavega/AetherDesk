@@ -355,15 +355,19 @@ function drawLightningBolt(ctx){
   ctx.restore();
 }
 
+function usesCanvasPrecipitation(bk){
+  return ((bk==='rain'||bk==='thunder')&&!rendersThreeRain())||
+    (bk==='snow'&&!rendersThreeSnow())||(bk==='freezing'&&!rendersThreeFreezing())||
+    (bk==='hail'&&!rendersThreeHail());
+}
+
 function drawParticles(ctx){
   var bk=S.weatherBucket;
   var atmosphere=S.atmosphere||deriveAtmosphericState(S.weather);
   var windDrift=precipitationWindDrift(atmosphere)*S.windGust;
   // GPU particles carry their own lighting; only allocate Canvas colors when
   // a precipitation fallback actually needs them.
-  var canvasPrecipitation=((bk==='rain'||bk==='thunder')&&!rendersThreeRain())||
-    (bk==='snow'&&!rendersThreeSnow())||(bk==='freezing'&&!rendersThreeFreezing())||
-    (bk==='hail'&&!rendersThreeHail());
+  var canvasPrecipitation=usesCanvasPrecipitation(bk);
   var light=canvasPrecipitation?getPrecipitationLighting(atmosphere,wallpaperNow()):null;
   // Stars sit behind cloud cover; precipitation sits in front of it.
   if(!S.useThreeRenderer){
@@ -732,9 +736,7 @@ function render(timestamp){
       atmosphere&&typeof atmosphere.celestialVisibility==='number'&&
       !(S.lightningAlpha>0.005)&&!(S.lightningBoltAlpha>0.005);
     if(reusable&&S.props.showParticles){
-      reusable=!(((bk==='rain'||bk==='thunder')&&!rendersThreeRain())||
-        (bk==='snow'&&!rendersThreeSnow())||(bk==='freezing'&&!rendersThreeFreezing())||
-        (bk==='hail'&&!rendersThreeHail()));
+      reusable=!usesCanvasPrecipitation(bk);
     }
     var foregroundKey=null,foregroundChanged=true;
     if(reusable){

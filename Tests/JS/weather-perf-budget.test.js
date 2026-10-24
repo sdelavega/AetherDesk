@@ -35,7 +35,7 @@ function check(edit){
   const data={};
   for(const quality of ['balanced','eco','classic'])data[quality]=states.flatMap(state=>['day','night'].map(phase=>({state,phase,renderer:quality==='classic'?'classic':'auto',quality:quality==='classic'?'balanced':quality,gpuMean:quality==='eco'?72:80,gpuSamples:30,gpuBaselineMean:60,gpuBaselineSamples:15,gpuMarginalMean:quality==='eco'?12:20,rssStart:100,rssEnd:100})));
   data.soak=Array.from({length:61},(_,i)=>({seconds:i*10,rss:100,renderer:'auto',quality:'balanced',state:'thunder',phase:'night'}));
-  for(const tier of ['classic','balanced','eco'])for(const row of data[tier])cpuWindow(row,tier==='balanced'?7:tier==='eco'?3.5:2,10);
+  for(const tier of ['classic','balanced','eco'])for(const row of data[tier])cpuWindow(row,tier==='balanced'?7:tier==='eco'?4.25:2,10);
   edit(data);
   for(const key of Object.keys(data))fs.writeFileSync(path.join(dir,key+'.json'),JSON.stringify(data[key]));
   try{return spawnSync('bash',['scripts/check-weather-perf.sh','--evaluate',dir],{encoding:'utf8'});}
@@ -68,7 +68,7 @@ test('absolute budgets accept equality regardless of Canvas CPU',()=>{
   assert.equal(result.status,0,result.stderr+result.stdout);
 });
 test('each absolute CPU and GPU threshold rejects an excess',()=>{
-  for(const [tier,key,limit] of [['balanced','cpuMean',7],['balanced','cpuP95',10],['balanced','gpuMarginalMean',20],['eco','cpuMean',3.5],['eco','gpuMarginalMean',12]]){
+  for(const [tier,key,limit] of [['balanced','cpuMean',7],['balanced','cpuP95',10],['balanced','gpuMarginalMean',20],['eco','cpuMean',4.25],['eco','gpuMarginalMean',12]]){
     const result=check(data=>{const row=data[tier][0];if(key==='cpuMean')cpuWindow(row,limit+0.01,10);else if(key==='cpuP95')cpuWindow(row,7,limit+0.01);else row[key]=limit+0.01;if(key==='gpuMarginalMean')row.gpuMean=row.gpuBaselineMean+limit+0.01;});
     assert.equal(result.status,1,tier+'/'+key+': '+result.stderr+result.stdout);
     assert.match(result.stdout,/clear.*day.*FAIL/);

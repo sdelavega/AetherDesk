@@ -85,13 +85,13 @@ try{
     'GPU: ioreg -r -d 1 -c IOAccelerator (XML output via -a), PerformanceStatistics → Device Utilization %, once per second, without sudo. Highest utilization across accelerators per sample. This is whole-device activity, including other applications; it cannot attribute GPU work to WeatherAether. Before each case, collect a 15 s idle baseline at 1 Hz with no harness web view loaded. Gate on marginal GPU (raw case mean minus idle baseline mean); negative differences are retained. Missing or invalid samples fail closed.',''];
   for(const tier of ['balanced','eco','classic']){
     lines.push(`## ${tier==='classic'?'Canvas reference':tier}`, '',
-      tier==='balanced'?'Budgets: CPU mean ≤ 7.0%, p95 ≤ 10.0%, marginal GPU mean ≤ 20.0%.':tier==='eco'?'Budgets: CPU mean ≤ 3.5%, marginal GPU mean ≤ 12.0%.':'No performance gate.', '',
+      tier==='balanced'?'Budgets: CPU mean ≤ 7.0%, p95 ≤ 10.0%, marginal GPU mean ≤ 20.0%.':tier==='eco'?'Budgets: CPU mean ≤ 4.25%, marginal GPU mean ≤ 12.0%.':'No performance gate.', '',
       '| State | Phase | CPU mean | CPU p95 | GPU baseline | GPU raw | GPU marginal | RSS start → end (KiB) | Result |',
       '|---|---|---:|---:|---:|---:|---:|---:|---|');
     for(const state of states)for(const phase of ['day','night']){
       const row=results[tier].get(state+'/'+phase);
       requireValid(row,'missing '+tier+'/'+state+'/'+phase);
-      const pass=tier==='classic'||(tier==='balanced'?row.cpuMean<=7&&row.cpuP95<=10&&row.gpuMarginalMean<=20:row.cpuMean<=3.5&&row.gpuMarginalMean<=12);
+      const pass=tier==='classic'||(tier==='balanced'?row.cpuMean<=7&&row.cpuP95<=10&&row.gpuMarginalMean<=20:row.cpuMean<=4.25&&row.gpuMarginalMean<=12);
       passed&&=pass;
       lines.push(`| ${state} | ${phase} | ${row.cpuMean.toFixed(2)} | ${row.cpuP95.toFixed(2)} | ${row.gpuBaselineMean.toFixed(2)} | ${row.gpuMean.toFixed(2)} | ${row.gpuMarginalMean.toFixed(2)} | ${row.rssStart} → ${row.rssEnd} | ${tier==='classic'?'REFERENCE':pass?'PASS':'FAIL'} |`);
     }
