@@ -852,7 +852,7 @@
 				SPARKLE_PUBLIC_ED_KEY = "GMrlcvxY6lb2wQudMnVWsi8Ox2/mJ8RpMEZcxAKz9sU=";
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = N5PUFD82GV;
-				INFOPLIST_FILE = Resources/Info.plist;
+				INFOPLIST_FILE = "Resources/Info-OSS.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "ÆtherDesk";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
@@ -999,7 +999,7 @@
 				SPARKLE_PUBLIC_ED_KEY = "GMrlcvxY6lb2wQudMnVWsi8Ox2/mJ8RpMEZcxAKz9sU=";
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = N5PUFD82GV;
-				INFOPLIST_FILE = Resources/Info.plist;
+				INFOPLIST_FILE = "Resources/Info-OSS.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "ÆtherDesk";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";

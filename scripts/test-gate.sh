@@ -73,7 +73,13 @@ if "$with_appstore"; then
         printf 'Test gate failed: OSS executable does not link Sparkle.\n' >&2
         exit 1
     fi
-    printf 'OSS build check passed: Sparkle.framework is embedded and linked.\n'
+    oss_info="$oss_app/Contents/Info.plist"
+    if [[ "$(/usr/bin/plutil -extract SUFeedURL raw -o - "$oss_info")" != 'https://sdelavega.github.io/AetherDesk/appcast.xml' ||
+          "$(/usr/bin/plutil -extract SUPublicEDKey raw -o - "$oss_info")" != 'GMrlcvxY6lb2wQudMnVWsi8Ox2/mJ8RpMEZcxAKz9sU=' ]]; then
+        printf 'Test gate failed: OSS Info.plist has missing or incorrect Sparkle feed/public key.\n' >&2
+        exit 1
+    fi
+    printf 'OSS build check passed: Sparkle.framework is embedded and linked; feed and public key are correct.\n'
 
     oss_resources="${DERIVED_DATA:-build/gate}/Build/Products/Release/ÆtherDesk.app/Contents/Resources"
     if [[ ! -f "$oss_resources/Acknowledgements.txt" || ! -d "$oss_resources/Wallpapers" ]]; then

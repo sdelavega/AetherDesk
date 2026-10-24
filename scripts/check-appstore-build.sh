@@ -35,6 +35,11 @@ if [[ -e "$app/Contents/Frameworks/Sparkle.framework" || -L "$app/Contents/Frame
     printf 'App Store check failed: Sparkle.framework is embedded.\n' >&2
     exit 1
 fi
+/usr/bin/plutil -convert xml1 -o "$derived_data/app-info.xml" "$app/Contents/Info.plist"
+if grep -Eq '<key>SU[^<]*</key>' "$derived_data/app-info.xml"; then
+    printf 'App Store check failed: Info.plist contains Sparkle (SU*) keys.\n' >&2
+    exit 1
+fi
 /usr/bin/otool -L "$executable" > "$derived_data/linked-libraries.txt"
 if grep -Fq Sparkle "$derived_data/linked-libraries.txt"; then
     printf 'App Store check failed: executable links Sparkle.\n' >&2
@@ -49,4 +54,4 @@ if [[ ! -f "$app/Contents/Resources/Acknowledgements.txt" || ! -d "$app/Contents
     printf 'App Store check failed: missing Acknowledgements.txt or Wallpapers/.\n' >&2
     exit 1
 fi
-printf 'App Store build check passed: no Sparkle or UpdateManager; required resources are bundled.\n'
+printf 'App Store build check passed: no Sparkle, SU* keys or UpdateManager; required resources are bundled.\n'

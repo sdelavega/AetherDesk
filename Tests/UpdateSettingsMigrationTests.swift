@@ -88,6 +88,7 @@ import Testing
             UpdateSettingsMigration.migrate(defaults: defaults, into: prefs)
             #expect(!prefs.automaticallyChecks)
             #expect(prefs.automaticallyDownloads)
+            #expect(defaults.data(forKey: "AetherDesk.updateSettings.v1") == Data("invalid JSON".utf8))
             #expect(defaults.bool(forKey: "AetherDesk.updateSettingsMigrated"))
         }
     }
