@@ -18,13 +18,14 @@
 set -euo pipefail
 
 with_js=false
+with_appstore=false
 for flag in "$@"; do
     case "$flag" in
         --with-js)
             with_js=true
             ;;
         --with-appstore)
-            printf '%s: not yet configured\n' "$flag"
+            with_appstore=true
             ;;
         *)
             printf 'Unknown option: %s\n' "$flag" >&2
@@ -55,4 +56,18 @@ fi
 if ! grep -E 'Test run with [0-9]+ tests in [0-9]+ suites passed' build/gate.log; then
     printf 'Test gate failed: missing Swift Testing success summary.\n' >&2
     exit 1
+fi
+
+if "$with_appstore"; then
+    xcodebuild build -project ÆtherDesk.xcodeproj -scheme AetherDesk \
+        -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \
+        -derivedDataPath "${DERIVED_DATA:-build/gate}" 2>&1 | tee build/gate-oss-release.log
+
+    oss_resources="${DERIVED_DATA:-build/gate}/Build/Products/Release/ÆtherDesk.app/Contents/Resources"
+    if [[ ! -f "$oss_resources/Acknowledgements.txt" || ! -d "$oss_resources/Wallpapers" ]]; then
+        printf 'Test gate failed: OSS app is missing Acknowledgements.txt or Wallpapers/.\n' >&2
+        exit 1
+    fi
+
+    scripts/check-appstore-build.sh 2>&1 | tee build/gate-appstore.log
 fi

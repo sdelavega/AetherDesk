@@ -30,7 +30,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "98454B4E1708BC36D752F77B"
-               BuildableName = "ÆtherDesk.xctest"
+               BuildableName = "AetherDeskTests.xctest"
                BlueprintName = "AetherDeskTests"
                ReferencedContainer = "container:ÆtherDesk.xcodeproj">
             </BuildableReference>
@@ -59,7 +59,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "98454B4E1708BC36D752F77B"
-               BuildableName = "ÆtherDesk.xctest"
+               BuildableName = "AetherDeskTests.xctest"
                BlueprintName = "AetherDeskTests"
                ReferencedContainer = "container:ÆtherDesk.xcodeproj">
             </BuildableReference>
