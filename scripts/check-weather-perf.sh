@@ -26,7 +26,10 @@ fi
 wallpaper=weather
 measurement_dir=
 while [[ $# -gt 0 ]]; do
-    if [[ $# -lt 2 ]]; then exit 2; fi
+    if [[ $# -lt 2 ]]; then
+        printf 'Usage: %s [--wallpaper weather|neoncity] [--evaluate directory]\n' "$0" >&2
+        exit 2
+    fi
     case "$1" in
         --wallpaper) wallpaper=$2 ;;
         --evaluate) measurement_dir=$2 ;;
@@ -37,13 +40,18 @@ done
 if [[ "$wallpaper" != weather && "$wallpaper" != neoncity ]]; then exit 2; fi
 wait_for_installed_app() {
     local elapsed=0
-    local waiting_file=.superpowers/sdd/2026-10-22-aetherdesk-v1.4/task-13e-waiting.txt
+    local waiting_file=build/weather-perf-waiting.txt
+    mkdir -p build
     while /bin/ps -axo comm= | /usr/bin/grep -F '/Applications/ÆtherDesk.app/' > /dev/null; do
         printf 'Waiting for installed ÆtherDesk to exit; elapsed %s seconds (limit 1800).\n' "$elapsed" | tee "$waiting_file"
-        if [[ "$elapsed" -ge 1800 ]]; then return 1; fi
+        if [[ "$elapsed" -ge 1800 ]]; then
+            rm -f "$waiting_file"
+            return 1
+        fi
         sleep 30
         elapsed=$((elapsed + 30))
     done
+    rm -f "$waiting_file"
 }
 if [[ -z "$measurement_dir" ]]; then
     measurement_dir=build/weather-perf
