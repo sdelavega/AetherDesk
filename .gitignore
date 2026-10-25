@@ -16,6 +16,8 @@ DerivedData/
 build/
 Build/
 dist/
+# The Sparkle feed is published by GitHub Pages from main:/docs.
+!/docs/appcast.xml
 *.hmap
 *.ipa
 *.dSYM.zip

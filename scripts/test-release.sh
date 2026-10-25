@@ -76,7 +76,11 @@ before=$(git -C "$root" status --porcelain=v1 --untracked-files=all)
 /bin/bash "$root/scripts/release-publish.sh" 1.4.0 > "$work/plan.txt"
 [[ $before == "$(git -C "$root" status --porcelain=v1 --untracked-files=all)" ]]
 grep -Fq 'gh release create v1.4.0' "$work/plan.txt"
-grep -Fq 'detached temporary worktree' "$work/plan.txt"
+grep -Fq 'Verify origin main matches the built HEAD; fail if main moved.' "$work/plan.txt"
+grep -Fq 'Copy dist/1.4.0/appcast.xml to docs/appcast.xml in the main checkout.' "$work/plan.txt"
+grep -Fq 'Commit only docs/appcast.xml (Publish appcast for 1.4.0); push main fast-forward only.' "$work/plan.txt"
+if grep -Eq 'gh-pages|detached temporary worktree' "$work/plan.txt"; then fail 'Obsolete Pages publishing plan'; fi
+if git -C "$root" check-ignore -q docs/appcast.xml; then fail 'Published appcast must not be ignored'; fi
 printf '%s\n' 'PASS: argument rejection and side-effect-free publish plan'
 # Exercise manifest integrity, incomplete-manifest rejection and unsigned block.
 mkdir -p "$work/1.4.0"

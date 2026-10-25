@@ -35,8 +35,9 @@ printf '%s\n' \
     "  Verify dist/$version/manifest.txt, signed marker, commit, handover and stapled DMG." \
     "  Require typed confirmation: $version" \
     "  gh release create $tag with AetherDesk.zip, AetherDesk.zip.sha256, AetherDesk-$version.dmg (repo sdelavega/AetherDesk; target verified HEAD)." \
-    '  Fetch origin gh-pages; create a detached temporary worktree.' \
-    "  Copy dist/$version/appcast.xml; commit appcast.xml and push HEAD:gh-pages; remove worktree." \
+    '  Verify origin main matches the built HEAD; fail if main moved.' \
+    "  Copy dist/$version/appcast.xml to docs/appcast.xml in the main checkout." \
+    "  Commit only docs/appcast.xml (Publish appcast for $version); push main fast-forward only." \
     "  Render packaging/aetherdesk.rb.template with version $version and DMG SHA-256." \
     "  Write ../homebrew-tap/Casks/aetherdesk.rb; commit only that path and push the tap branch." \
     "  Fetch $feed_url and all three release assets; compare SHA-256 and size with manifest.txt."
@@ -44,6 +45,7 @@ printf '%s\n' \
 cd "$root"
 clean_tree "$root"
 release_branch "$root"
+[[ $(tool git branch --show-current) == main ]] || fail 'Publishing requires the main checkout'
 dist="$root/dist/$version"
 manifest verify "$dist"
 head=$(tool git rev-parse HEAD)
@@ -66,14 +68,12 @@ printf 'Type %s to publish: ' "$version"
 IFS= read -r answer || fail 'Confirmation required'
 [[ $answer == "$version" ]] || fail 'Confirmation must match the version exactly'
 work=$(tool mktemp -d "${TMPDIR:-/tmp}/aetherdesk-publish.XXXXXX")
-pages="$work/pages"
 cleanup() {
     local status=$?
     trap - EXIT
-    if [[ -d $pages ]]; then tool git worktree remove --force "$pages" || true; fi
     tool rm -rf "$work"
     if [[ $status != 0 ]]; then
-        printf '%s\n' 'Publish stopped. Inspect remote release, gh-pages and tap before retrying; no rollback was attempted.' >&2
+        printf '%s\n' 'Publish stopped. Inspect remote release, main docs/appcast.xml and tap before retrying; no rollback was attempted.' >&2
     fi
     exit "$status"
 }
@@ -91,19 +91,26 @@ if not re.fullmatch(r"[0-9a-f]{64}", sha) or re.search(r"@[A-Z0-9_]+@", text):
     sys.exit("Invalid cask render")
 pathlib.Path(output).write_text(text)
 PY
-# Validate access and an existing feed branch before creating the release.
-tool git fetch origin gh-pages
-tool git worktree add --detach "$pages" FETCH_HEAD
+# Pages already serves main:/docs. Check the built commit before creating
+# the release; never merge remote changes into the verified release checkout.
+tool git fetch origin refs/heads/main
+[[ $(tool git rev-parse FETCH_HEAD) == "$head" ]] || fail 'Remote main moved or differs from built HEAD; rebuild from current main before publishing'
 # gh authenticates using its local keychain/config; no credential environment
 # variables are forwarded to child tools.
 tool gh release create "$tag" "$dist/AetherDesk.zip" "$dist/AetherDesk.zip.sha256" \
     "$dist/AetherDesk-$version.dmg" --repo sdelavega/AetherDesk --target "$head" \
     --title "ÆtherDesk $version" --notes "ÆtherDesk $version for macOS 14 or later."
-tool cp "$dist/appcast.xml" "$pages/appcast.xml"
-tool git -C "$pages" add -- appcast.xml
-tool git -C "$pages" commit -m "Release $tag appcast" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
-tool git -C "$pages" push origin HEAD:refs/heads/gh-pages
-tool git worktree remove "$pages"
+clean_tree "$root"
+[[ $(tool git branch --show-current) == main && $(tool git rev-parse HEAD) == "$head" ]] \
+    || fail 'Local main moved during publishing; inspect the release before retrying'
+tool cp "$dist/appcast.xml" "$root/docs/appcast.xml"
+tool git add -- docs/appcast.xml
+tool git commit --only -m "Publish appcast for $version" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' -- docs/appcast.xml
+tool git fetch origin refs/heads/main
+[[ $(tool git rev-parse FETCH_HEAD) == "$head" ]] || fail 'Remote main moved during publishing; appcast commit remains local; inspect before retrying'
+# A normal push rejects a concurrent non-fast-forward update; never force it.
+tool git push origin HEAD:refs/heads/main \
+    || fail 'Fast-forward push of main failed; main may have moved; inspect the local appcast commit and remote release before retrying'
 clean_tree "$tap"
 tool cp "$work/aetherdesk.rb" "$tap/Casks/aetherdesk.rb"
 tool git -C "$tap" add -- Casks/aetherdesk.rb
