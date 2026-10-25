@@ -32,6 +32,9 @@ root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)
 cd "$root"
 clean_tree "$root"
 release_branch "$root"
+if ! "$unsigned"; then
+    signing_identity=$(developer_id_identity)
+fi
 head=$(tool git rev-parse HEAD)
 [[ ! -e dist/$version ]] || fail 'Output already exists; move it aside before rebuilding'
 tool mkdir -p dist build
@@ -111,7 +114,7 @@ if "$unsigned"; then
     tool codesign --force --deep --sign - "$export_dir/ÆtherDesk.app"
 else
     tool xcodebuild archive "${archive_args[@]}" CODE_SIGN_STYLE=Manual \
-        'CODE_SIGN_IDENTITY=Developer ID Application' DEVELOPMENT_TEAM=N5PUFD82GV
+        "CODE_SIGN_IDENTITY=$signing_identity" DEVELOPMENT_TEAM=N5PUFD82GV
     if [[ -f $root/ExportOptions.plist ]]; then
         tool cp "$root/ExportOptions.plist" "$work/ExportOptions.plist"
     else
@@ -148,7 +151,7 @@ if "$unsigned"; then
     tool /bin/bash "$root/scripts/make-dmg.sh" "$version" "$app" "$output/AetherDesk-$version.dmg" --unsigned-test
     printf '%s\n' 'DMG notarization and stapling: skipped (unsigned-test)'
 else
-    tool /bin/bash "$root/scripts/make-dmg.sh" "$version" "$app" "$output/AetherDesk-$version.dmg" 'Developer ID Application'
+    tool /bin/bash "$root/scripts/make-dmg.sh" "$version" "$app" "$output/AetherDesk-$version.dmg" "$signing_identity"
     tool xcrun notarytool submit "$output/AetherDesk-$version.dmg" --keychain-profile "$profile" --wait --output-format json > "$work/notary-dmg.json"
     tool python3 -I - "$work/notary-dmg.json" <<'PY'
 import json, sys

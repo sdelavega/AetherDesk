@@ -26,9 +26,37 @@ trap 'exit 143' TERM
 expect_failure() {
     local expected=$1
     shift
-    if "$@" > "$work/failure.log" 2>&1; then fail 'Expected failure was accepted'; fi
+    if ( "$@" ) > "$work/failure.log" 2>&1; then fail 'Expected failure was accepted'; fi
     grep -Fq "$expected" "$work/failure.log" || { cat "$work/failure.log"; fail 'Wrong failure'; }
 }
+# Stub security in a subshell so no real keychain is queried and PATH is restored.
+(
+    mkdir -p "$work/bin"
+    cat > "$work/bin/security" <<'SH'
+#!/bin/bash
+[[ $# == 5 && $1 == find-identity && $2 == -v && $3 == -p && $4 == codesigning && $5 == "$HOME/Library/Keychains/login.keychain-db" ]] || exit 2
+cat "${0%/*}/identities"
+SH
+    chmod +x "$work/bin/security"
+    export PATH="$work/bin:$PATH"
+    cat > "$work/bin/identities" <<'IDENTITIES'
+  1) AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "Apple Development: Stephen de la Vega (N5PUFD82GV)"
+  2) BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB "Developer ID Application: Other Team (XXXXXXXXXX)"
+  3) 0123456789ABCDEF0123456789ABCDEF01234567 "Developer ID Application: Stephen de la Vega (N5PUFD82GV)"
+  4) BADHASH "Developer ID Application: Stephen de la Vega (N5PUFD82GV)"
+     4 valid identities found
+IDENTITIES
+    identity=$(developer_id_identity)
+    [[ $identity == 0123456789ABCDEF0123456789ABCDEF01234567 && $identity =~ ^[A-Fa-f0-9]{40}$ ]]
+    printf '%s\n' '  5) CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC "Developer ID Application: Second Certificate (N5PUFD82GV)"' >> "$work/bin/identities"
+    expect_failure 'Multiple Developer ID Application identities' developer_id_identity
+    sed '/0123456789ABCDEF0123456789ABCDEF01234567/d; /CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC/d' "$work/bin/identities" > "$work/no-match"
+    cp "$work/no-match" "$work/bin/identities"
+    expect_failure 'No Developer ID Application identity' developer_id_identity
+    printf '     0 valid identities found\n' > "$work/bin/identities"
+    expect_failure 'No Developer ID Application identity' developer_id_identity
+)
+printf '%s\n' 'PASS: login-keychain identity hash selection and missing/ambiguous identity rejection'
 # Test presence, never print any environment names or values.
 RELEASE_TEST_SENTINEL=must-not-leak
 export RELEASE_TEST_SENTINEL

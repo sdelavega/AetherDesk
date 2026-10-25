@@ -49,6 +49,25 @@ release_branch() {
     esac
 }
 
+# Select an exact certificate hash from the login keychain, never a name that
+# codesign could also resolve in the System keychain.
+developer_id_identity() {
+    local identities line hash='' candidate
+    local pattern='^[[:space:]]*[0-9]+\)[[:space:]]+([A-Fa-f0-9]{40})[[:space:]]+"Developer ID Application: [^"]+ \(N5PUFD82GV\)"[[:space:]]*$'
+    identities=$(tool security find-identity -v -p codesigning "$HOME/Library/Keychains/login.keychain-db") \
+        || fail 'Unable to query signing identities in the login keychain'
+    while IFS= read -r line; do
+        if [[ $line =~ $pattern ]]; then
+            candidate=${BASH_REMATCH[1]}
+            [[ -z $hash || $hash == "$candidate" ]] \
+                || fail 'Multiple Developer ID Application identities for team N5PUFD82GV in the login keychain'
+            hash=$candidate
+        fi
+    done <<< "$identities"
+    [[ -n $hash ]] || fail 'No Developer ID Application identity for team N5PUFD82GV in the login keychain'
+    printf '%s\n' "$hash"
+}
+
 verify_sparkle_tools() {
     local root=$1 tools=$2
     [[ -x $tools/generate_appcast && -x $tools/sign_update ]] || fail 'Resolve Sparkle 2.10.0 before using its tools'
