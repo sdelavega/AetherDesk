@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AE1400170000000000000001 /* PremiumViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88B5D894CAB04AE32EA6489 /* PremiumViewController.swift */; };
 		AE1400140000000000000001 /* Acknowledgements.txt in Resources */ = {isa = PBXBuildFile; fileRef = AE1400140000000000000002 /* Acknowledgements.txt */; };
 		AE1400130000000000000001 /* PowerEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400130000000000000002 /* PowerEnvironmentTests.swift */; };
 		AE1400120000000000000001 /* WeatherAetherPortabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */; };
@@ -757,6 +758,7 @@
 				1632CD1D5A231C19F8553C30 /* Constants.swift in Sources */,
 				3347944062C15001D53AC19B /* PremiumStore.swift in Sources */,
 				E6DB474501C12C893C71CC73 /* PremiumStoreTests.swift in Sources */,
+				AE1400170000000000000001 /* PremiumViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -940,7 +942,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1045,7 +1047,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_HARDENED_RUNTIME = YES;

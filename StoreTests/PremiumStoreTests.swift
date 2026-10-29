@@ -63,6 +63,8 @@ final class PremiumStoreTests {
         // macOS 15.2+ requires a window to anchor the purchase confirmation.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
                               styleMask: [.titled], backing: .buffered, defer: false)
+        // ARC owns this window; closing must not release it a second time.
+        window.isReleasedWhenClosed = false
         window.orderFront(nil)
         defer { window.close() }
         let outcome = try await store.purchase(lifetime, from: window)
@@ -146,6 +148,112 @@ final class PremiumStoreTests {
         // didChange is delivered asynchronously on the main queue.
         try await Task.sleep(nanoseconds: 100_000_000)
         #expect(posted == 1)
+    }
+
+    @Test func premiumLegalLinksStayInsideClickableTabArea() async throws {
+        // Use real StoreKit prices and the same tab geometry as Preferences:
+        // a 720×520 content view, 16 pt tab margins, then NSTabView.contentRect.
+        await PremiumStore.shared.loadProducts()
+        await PremiumStore.shared.refreshEntitlement()
+        #expect(PremiumStore.shared.products.count == 2)
+        #expect(!PremiumStore.shared.isEntitled)
+
+        for size in [NSSize(width: 720, height: 520), NSSize(width: 600, height: 378)] {
+            let controller = PremiumViewController()
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                                  styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: .aqua)
+            defer { window.close() }
+            let root = try #require(window.contentView)
+            let tabs = NSTabView(frame: root.bounds.insetBy(dx: 16, dy: 16))
+            root.addSubview(tabs)
+            let item = NSTabViewItem(identifier: "premium")
+            item.label = "Premium"
+            item.view = controller.view
+            tabs.addTabViewItem(item)
+            tabs.selectTabViewItem(item)
+            root.layoutSubtreeIfNeeded()
+
+            func descendants(_ view: NSView) -> [NSView] {
+                [view] + view.subviews.flatMap { descendants($0) }
+            }
+            let controls = descendants(controller.view)
+            let legalLinks = controls.compactMap { $0 as? NSButton }.filter {
+                $0.title == "Terms of Use (EULA)" || $0.title == "Privacy Policy"
+            }
+            #expect(legalLinks.count == 2)
+            let scroll = try #require(controls.compactMap { $0 as? NSScrollView }.first)
+            let document = try #require(scroll.documentView)
+            #expect(document.isFlipped)
+            #expect(!scroll.hasHorizontalScroller)
+            #expect(controller.view.bounds.contains(scroll.frame))
+            let disclosure = try #require(controls.compactMap { $0 as? NSTextField }.first {
+                $0.stringValue.hasPrefix("Premium Yearly is an auto-renewing")
+            })
+            let originalDisclosure = disclosure.stringValue
+
+            for longText in [false, true] {
+                if longText {
+                    disclosure.stringValue = Array(repeating: originalDisclosure, count: 8).joined(separator: " ")
+                    // A long localized title/price must stay within the form width.
+                    for button in controls.compactMap({ $0 as? NSButton })
+                    where button.identifier?.rawValue == PremiumStore.ProductID.yearly {
+                        button.title = Array(repeating: "Subscribe Yearly — 1.234.567,89 € / year", count: 3).joined(separator: " ")
+                    }
+                }
+                root.layoutSubtreeIfNeeded()
+                #expect(document.bounds.width <= scroll.contentView.bounds.width + 1)
+                #expect(disclosure.bounds.height > disclosure.font!.pointSize)
+                if longText {
+                    #expect(document.bounds.height > scroll.contentView.bounds.height)
+                }
+
+                // Every visible control remains reachable after scrolling, even
+                // when its row starts below the viewport. In particular, drawing
+                // a legal button outside an ancestor's bounds must never pass.
+                for control in controls where (control is NSButton || control is NSTextField)
+                    && !control.isHiddenOrHasHiddenAncestor {
+                    control.scrollToVisible(control.bounds)
+                    root.layoutSubtreeIfNeeded()
+                    let inDocument = control.convert(control.bounds, to: document)
+                    #expect(document.bounds.contains(inDocument))
+                    if control is NSButton {
+                        let inView = control.convert(control.bounds, to: controller.view)
+                        #expect(controller.view.bounds.contains(inView))
+                    }
+                }
+                for button in legalLinks {
+                    #expect(button.target === controller)
+                    let expectedAction = button.title == "Privacy Policy" ? "openPrivacy" : "openTerms"
+                    #expect(button.action == NSSelectorFromString(expectedAction))
+                    #expect(controller.responds(to: try #require(button.action)))
+                    #expect(button.contentTintColor == NSColor.linkColor)
+                    button.scrollToVisible(button.bounds.insetBy(dx: -4, dy: -4))
+                    root.layoutSubtreeIfNeeded()
+                    #expect(scroll.documentVisibleRect.contains(button.convert(button.bounds, to: document)))
+                    let frame = button.convert(button.bounds, to: controller.view)
+                    #expect(controller.view.bounds.contains(frame))
+                    let centre = NSPoint(x: frame.midX, y: frame.midY)
+                    let hitPoint = controller.view.convert(centre, to: controller.view.superview)
+                    #expect(controller.view.hitTest(hitPoint) === button)
+                }
+                if !longText && size.width == 720 {
+                    root.wantsLayer = true
+                    window.orderFront(nil)
+                    // Let AppKit commit the layer-backed labels before caching.
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                    window.display()
+                    let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+                    root.cacheDisplay(in: root.bounds, to: bitmap)
+                    let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap))
+                    try #require(root.layer).render(in: context.cgContext)
+                    let image = NSImage(size: root.bounds.size)
+                    image.addRepresentation(bitmap)
+                    Attachment.record(image, named: "premium-fixed.png", as: .png)
+                }
+            }
+        }
     }
 
     /// Polls `condition` until it holds or `timeout` passes. Entitlement

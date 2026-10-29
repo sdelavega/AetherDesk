@@ -29,7 +29,7 @@ final class PremiumViewController: NSViewController {
     private static let manageSubscriptionsURL = URL(string: "https://apps.apple.com/account/subscriptions")!
 
     private let stack = NSStackView()
-    private let statusLabel = NSTextField(labelWithString: "")
+    private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let buyStack = NSStackView()
     private let unavailableLabel = NSTextField(wrappingLabelWithString:
         "Purchases are unavailable right now. Check your internet connection and try again.")
@@ -46,7 +46,20 @@ final class PremiumViewController: NSViewController {
         stack.alignment = .leading
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        // Keep the entire form inside the tab's hit-testable area. Longer
+        // disclosures grow the document vertically instead of escaping the tab.
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        view.addSubview(scrollView)
+
+        let documentView = PremiumDocumentView()
+        documentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = documentView
+        documentView.addSubview(stack)
 
         let title = NSTextField(labelWithString: "ÆtherDesk Premium")
         title.font = NSFont.boldSystemFont(ofSize: 15)
@@ -91,10 +104,20 @@ final class PremiumViewController: NSViewController {
         stack.setCustomSpacing(16, after: accountRow)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            stack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 20),
+            stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -20),
+            stack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -20),
             body.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            statusLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            buyStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
             unavailableLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             disclosureLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
@@ -140,7 +163,12 @@ final class PremiumViewController: NSViewController {
                 button.bezelStyle = .push
                 if product.id == PremiumStore.ProductID.lifetime { button.keyEquivalent = "\r" }
                 button.isEnabled = !isBusy
+                // A localized price/title must not widen the scroll document.
+                button.lineBreakMode = .byTruncatingTail
+                button.toolTip = button.title
+                button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
                 buyStack.addArrangedSubview(button)
+                button.widthAnchor.constraint(lessThanOrEqualTo: buyStack.widthAnchor).isActive = true
             }
         }
         buyStack.isHidden = entitled || products.isEmpty
@@ -242,5 +270,10 @@ final class PremiumViewController: NSViewController {
             alert.runModal()
         }
     }
+}
+
+/// Start at the top of the form, including when the document exceeds the tab.
+private final class PremiumDocumentView: NSView {
+    override var isFlipped: Bool { true }
 }
 #endif
