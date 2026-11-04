@@ -42,7 +42,9 @@ if "$with_js"; then
         printf 'Test gate failed: --with-js requires Node.js (node was not found).\n' >&2
         exit 1
     fi
-    node --test Tests/JS/ 2>&1 | tee build/gate-js.log
+    # Pass the files explicitly: Node 21+ treats a bare directory argument as a
+    # module path and fails before running any test.
+    node --test Tests/JS/*.test.js Tests/JS/*.test.mjs 2>&1 | tee build/gate-js.log
 fi
 
 xcodebuild test -project ÆtherDesk.xcodeproj -scheme AetherDesk \
