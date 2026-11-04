@@ -46,12 +46,12 @@ if grep -Fq Sparkle "$derived_data/linked-libraries.txt"; then
     exit 1
 fi
 /usr/bin/strings -a "$executable" > "$derived_data/symbol-strings.txt"
-if grep -Fq UpdateManager "$derived_data/symbol-strings.txt"; then
-    printf 'App Store check failed: executable contains UpdateManager.\n' >&2
+if grep -Eq 'SoftwareUpdater|SPUStandardUpdaterController|aetherdesk-updater' "$derived_data/symbol-strings.txt"; then
+    printf 'App Store check failed: executable contains self-update code.\n' >&2
     exit 1
 fi
 if [[ ! -f "$app/Contents/Resources/Acknowledgements.txt" || ! -d "$app/Contents/Resources/Wallpapers" ]]; then
     printf 'App Store check failed: missing Acknowledgements.txt or Wallpapers/.\n' >&2
     exit 1
 fi
-printf 'App Store build check passed: no Sparkle, SU* keys or UpdateManager; required resources are bundled.\n'
+printf 'App Store build check passed: no Sparkle, SU* keys or self-update code; required resources are bundled.\n'

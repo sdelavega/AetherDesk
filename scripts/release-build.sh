@@ -204,7 +204,7 @@ PY
     tool cp "$source_root/$project/project.pbxproj" "$root/$project/project.pbxproj"
     if ! tool git diff --quiet -- "$project/project.pbxproj"; then
         tool git add -- "$project/project.pbxproj"
-        tool git commit -m "Bump release version to $version ($build)" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
+        tool git commit -m "Bump release version to $version ($build)"
     fi
     head=$(tool git rev-parse HEAD)
 fi

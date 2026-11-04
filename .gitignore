@@ -23,7 +23,7 @@ dist/
 *.dSYM.zip
 *.dSYM
 
-# XcodeGen source (xcodeproj is committed directly; project.yml is no longer needed)
+# Retired XcodeGen spec (the .xcodeproj is committed directly)
 project.yml
 
 # Swift Package Manager
@@ -60,30 +60,24 @@ ExportOptions.plist
 /var/
 /tmp/
 
-# Development-only docs (not shipped)
+# Local development notes and AI assistant state (not shipped)
 OPTIMIZATION.md
 mac-lively-wrapper-expert-prompt.md
 CLAUDE.md
 AGENTS.md
-
-
-#Ignore insiders AI rules
-.github/instructions/codacy.instructions.md
+/GEMINI.md
 /.claude
 /.codex
 /.ai
-
-# Gortex (code intelligence)
-/.gortex/
-/.claude/
 /.agents/
 /.gemini/
 /.kiro/
 /.opencode/
-/.github/skills/
-/.github/copilot-instructions.md
+/.gortex/
 /.mcp.json
 /.windsurfrules
 /.rules
-/GEMINI.md
 /opencode.json
+/.github/instructions/codacy.instructions.md
+/.github/skills/
+/.github/copilot-instructions.md

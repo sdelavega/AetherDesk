@@ -365,7 +365,6 @@
 		5B459EE416B14B93675B1322 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
-				DF338D9F80DEE88F84BAE118 /* AetherDeskCoreTests */,
 				A438B36D1F5A08740C03D964 /* BundledWallpaperTests.swift */,
 				2DE5D0FDE775538C28D94383 /* ContentRuleListTests.swift */,
 				C78B5796CC594FB0030C606A /* LivelyInfoParserTests.swift */,
@@ -436,13 +435,6 @@
 				5387F0033E9D0C64AE50767E /* AetherDeskStoreTests.xctest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		DF338D9F80DEE88F84BAE118 /* AetherDeskCoreTests */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = AetherDeskCoreTests;
 			sourceTree = "<group>";
 		};
 		E053F0FE57EAF6BDB84BD07F /* StoreTests */ = {
