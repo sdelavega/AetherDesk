@@ -17,11 +17,12 @@
 import AppKit
 import Foundation
 
-/// Preferences window with three tabs:
-///   General      – launch-at-login, reveal-folder, etc.
-///   Performance  – FPS cap, pause-when-occluded, respect low-power mode
+/// Preferences window with these tabs:
+///   General      – launch-at-login, updates (OSS), reveal-folder
+///   Performance  – FPS cap, pause policies, network controls
 ///   Wallpaper    – picker + property editor for the selected wallpaper
-///   About        – build info
+///   Premium      – App Store builds only: buy/restore Apple Weather
+///   About        – build info, attributions
 ///
 /// The AppDelegate wires this up via `shared.showWindow()` from the menu bar.
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
@@ -54,6 +55,13 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func showWindow(_ sender: Any?) {
+        // The window is built once and kept; settings can change behind it
+        // (Sparkle's first-run permission prompt sets automatic checks).
+        rootViewController.refreshControls()
+        super.showWindow(sender)
     }
 
     // MARK: Window delegate
@@ -230,6 +238,14 @@ private final class PreferencesViewController: NSViewController {
             note.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20)
         ])
         return container
+    }
+
+    fileprivate func refreshControls() {
+        launchAtLoginCheckbox.state = LoginItem.isEnabled ? .on : .off
+        launchAtLoginStatusLabel.stringValue = LoginItem.statusDescription
+        #if !AETHERDESK_STORE && !AETHERDESK_TESTS
+        loadUpdateSettingsIntoControls()
+        #endif
     }
 
     #if !AETHERDESK_STORE && !AETHERDESK_TESTS
@@ -583,7 +599,9 @@ private final class PreferencesViewController: NSViewController {
             checkboxWithTitle: "Allow geolocation",
             target: nil, action: nil)
         geoCheckbox.translatesAutoresizingMaskIntoConstraints = false
-        geoCheckbox.state = (geoPermission == .allowed) ? .on : .off
+        // .notDetermined still lets the wallpaper ask CoreLocation (see
+        // LocationProxy), so only an explicit denial shows as unchecked.
+        geoCheckbox.state = (geoPermission == .denied) ? .off : .on
         geoCheckbox.target = self
         geoCheckbox.action = #selector(geoPermissionChanged(_:))
         geoCheckbox.toolTip = "When enabled, this wallpaper can access your location via CoreLocation."
@@ -736,6 +754,9 @@ private final class PreferencesViewController: NSViewController {
     @objc private func weatherSourceChanged(_ sender: NSPopUpButton) {
         let preference: WeatherDataSourcePreference =
             (sender.indexOfSelectedItem == 0) ? .automatic : .openMeteoOnly
+        // Saving reloads running weather wallpapers (see AppDelegate), so
+        // skip re-selections of the current value.
+        guard preference != WeatherSourceSettingsStore.shared.load() else { return }
         WeatherSourceSettingsStore.shared.save(preference)
     }
 

@@ -43,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             selector: #selector(premiumStoreChanged),
             name: PremiumStore.didChange,
             object: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(weatherSourceChanged),
+            name: WeatherSourceSettingsStore.settingsDidChange,
+            object: nil)
         #endif
 
         #if !AETHERDESK_STORE && !AETHERDESK_TESTS
@@ -77,6 +82,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let entitled = PremiumStore.shared.isEntitled
         guard entitled != lastPremiumEntitlement else { return }
         lastPremiumEntitlement = entitled
+        reloadWeatherWallpapers()
+    }
+
+    /// The Wallpaper tab's "Weather data source" choice applies immediately
+    /// too, not only at the next scheduled refresh.
+    @objc private func weatherSourceChanged() {
+        reloadWeatherWallpapers()
+    }
+
+    private func reloadWeatherWallpapers() {
         guard let manager = wallpaperManager else { return }
         for screen in NSScreen.screens {
             let displayID = screen.displayID

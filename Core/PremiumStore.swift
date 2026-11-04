@@ -98,7 +98,9 @@ final class PremiumStore {
     func loadProducts() async {
         do {
             let loaded = try await Product.products(for: ProductID.all)
-            let sorted = loaded.sorted { lhs, _ in lhs.id == ProductID.lifetime }
+            let sorted = loaded.sorted { lhs, rhs in
+                lhs.id == ProductID.lifetime && rhs.id != ProductID.lifetime
+            }
             await MainActor.run {
                 self.products = sorted
                 NotificationCenter.default.post(name: Self.didChange, object: self)

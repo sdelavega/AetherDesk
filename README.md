@@ -36,7 +36,7 @@ Web wallpapers get a proper runtime: a `WKWebView` with a heartbeat watchdog wat
 
 If a wallpaper ships `LivelyProperties.json`, ÆtherDesk builds live controls for it in Preferences and pushes updates into the running wallpaper in real time. No restart needed.
 
-There's also a fair amount of security scaffolding you can tune: block all external network requests, block raw-IP WebSocket connections, restrict access to private IPs, and a compiled WebKit content rule list that quietly drops known ad-tech, analytics, and cryptomining domains. Because wallpapers running JavaScript on your desktop probably shouldn't be phoning home to Google Analytics.
+There's also a fair amount of security scaffolding. You can block all external network requests (page loads, `fetch`, `XMLHttpRequest` and WebSockets alike) and choose whether wallpapers may reach your local network. Raw-IP WebSockets, cloud metadata endpoints and DNS-rebinding tricks are always blocked, and a compiled WebKit content rule list quietly drops known ad-tech, analytics, and cryptomining domains. Because wallpapers running JavaScript on your desktop probably shouldn't be phoning home to Google Analytics.
 
 **Performance controls** let you cap the FPS at 15, 30, or 60, and wallpapers can pause automatically when they're occluded, when low power mode kicks in, or when you're on battery. It's polite like that.
 

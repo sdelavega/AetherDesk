@@ -55,11 +55,13 @@ final class WallpaperImporter {
 
     private let validator = WallpaperValidator()
     private let runtimePolicyStore = RuntimePolicyStore.shared
-    private let propertyStore = PropertyStore()
+    private let propertyStore = PropertyStore.shared
     private let fileManager: FileManager
     private let wallpapersDirectoryOverride: URL?
     private let bundledWallpapersDirectoryOverride: URL?
+    /// Read from the main thread and from background loaders, so guarded.
     private var cachedWallpapers: [WallpaperBundle]?
+    private let cacheLock = NSLock()
 
     /// User-writable library in ~/Library/Application Support/ÆtherDesk/Wallpapers.
     var wallpapersDirectory: URL {
@@ -140,14 +142,14 @@ final class WallpaperImporter {
     /// All available wallpapers: bundled samples + user-imported.
     /// Results are cached; call `invalidateCache()` after import/delete.
     func listWallpapers() -> [WallpaperBundle] {
-        if let cached = cachedWallpapers { return cached }
+        if let cached = cacheLock.withLock({ cachedWallpapers }) { return cached }
         let all = listBundledWallpapers() + listImportedWallpapers()
-        cachedWallpapers = all
+        cacheLock.withLock { cachedWallpapers = all }
         return all
     }
 
     func invalidateCache() {
-        cachedWallpapers = nil
+        cacheLock.withLock { cachedWallpapers = nil }
         LivelyInfoParser.clearCache()
         LivelyPropertiesParser.clearCache()
     }
