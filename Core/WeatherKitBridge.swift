@@ -48,10 +48,7 @@ final class WeatherKitBridge {
     /// `WeatherSourceSettingsStore` preference — when the user has forced
     /// Open-Meteo-only, we never attempt WeatherKit at all.
     static func shouldIntercept(_ url: URL) -> Bool {
-        guard url.host == "api.open-meteo.com" else {
-            Logger.app.info("ÆtherDesk WeatherKitBridge: not intercepting host \(url.host ?? "(nil)", privacy: .public)")
-            return false
-        }
+        guard isForecastURL(url) else { return false }
         guard PremiumStore.shared.isEntitled else {
             Logger.app.info("ÆtherDesk WeatherKitBridge: forecast intercept disabled, Premium not active")
             return false
@@ -60,6 +57,19 @@ final class WeatherKitBridge {
         let shouldIntercept = preference == .automatic
         Logger.app.info("ÆtherDesk WeatherKitBridge: forecast intercept \(shouldIntercept ? "enabled" : "disabled", privacy: .public) preference=\(preference.rawValue, privacy: .public)")
         return shouldIntercept
+    }
+
+    /// True for Open-Meteo forecast requests, the only ones WeatherKit can
+    /// stand in for. Responses to these are always tagged with their source
+    /// so the wallpaper credits the provider that actually answered.
+    static func isForecastURL(_ url: URL) -> Bool {
+        url.host?.lowercased() == "api.open-meteo.com"
+    }
+
+    /// Whether a forecast fetched now would go to WeatherKit first. Used to
+    /// seed the wallpaper's attribution before its first response arrives.
+    static var willAttemptWeatherKit: Bool {
+        PremiumStore.shared.isEntitled && WeatherSourceSettingsStore.shared.load() == .automatic
     }
 
     // MARK: - Fetch

@@ -39,7 +39,6 @@ enum Constants {
         /// unresponsive and demoted to safe content for its display.
         static let watchdogTimeout: TimeInterval = 30.0
 
-        static let memoryWarningThresholdMB: Int = 200
 
         /// Maximum response body size (bytes) for wallpaper native fetch proxy.
         static let maxNativeFetchResponseBytes: Int64 = 5_000_000 // 5 MB
@@ -50,7 +49,6 @@ enum Constants {
 
     enum Directories {
         static let wallpapersSubfolder = "Wallpapers"
-        static let bundledWallpapersSubfolder = "Resources/Wallpapers"
     }
 
     enum Notifications {

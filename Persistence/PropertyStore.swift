@@ -19,6 +19,11 @@ import os.log
 
 class PropertyStore {
 
+    /// The app-wide instance. Each PropertyStore caches the whole dictionary
+    /// and writes all of it back, so two live instances would overwrite each
+    /// other's edits; app code must share this one.
+    static let shared = PropertyStore()
+
     private let userDefaults: UserDefaults
     private let key = "AetherDesk.propertyStore"
     private var cache: [String: [String: Any]]?

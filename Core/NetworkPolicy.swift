@@ -24,9 +24,12 @@ final class NetworkPolicy {
         case metadataEndpointBlocked
         case dnsRebindingBlocked(host: String, resolvedIP: String)
         case lanAccessDisabled(String)
+        case unsupportedScheme(String)
 
         var description: String {
             switch self {
+            case .unsupportedScheme(let scheme):
+                return "Unsupported URL scheme: \(scheme)"
             case .rawIPBlocked(let ip):
                 return "Raw IP address blocked: \(ip). Use a domain name instead."
             case .privateIPBlocked(let ip):
@@ -55,7 +58,16 @@ final class NetworkPolicy {
 
     // MARK: - URL validation
 
+    /// Schemes a wallpaper may reach through the native bridge. Anything else
+    /// (notably file://localhost/…, which URLSession would happily read) is
+    /// refused before any host checks run.
+    static let allowedSchemes: Set<String> = ["http", "https", "ws", "wss"]
+
     func validate(url: URL) -> Result<URL, DenialReason> {
+        let scheme = url.scheme?.lowercased() ?? ""
+        guard Self.allowedSchemes.contains(scheme) else {
+            return .failure(.unsupportedScheme(scheme.isEmpty ? "(none)" : scheme))
+        }
         guard let host = url.host else {
             return .failure(.rawIPBlocked("(no host)"))
         }
@@ -84,7 +96,10 @@ final class NetworkPolicy {
             if Self.isCloudMetadataEndpoint(ip) {
                 return .failure(.metadataEndpointBlocked)
             }
-            if Self.isPrivateIP(ip) {
+            // With LAN access allowed, a hostname that resolves to the LAN
+            // (nas.local, homeassistant.lan) is as legitimate as typing its
+            // IP, which validate(url:) already permits.
+            if Self.isPrivateIP(ip) && !allowLANAccess {
                 return .failure(.dnsRebindingBlocked(host: host, resolvedIP: ip))
             }
         }

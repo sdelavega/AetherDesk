@@ -26,8 +26,9 @@ import os.log
 /// into the sandbox container at
 ///   ~/Library/Containers/com.sdelavega.AetherDesk/Data/Library/Application Support/ÆtherDesk/Wallpapers/
 ///
-/// Security-scoped bookmark helpers are provided for persistent access to
-/// user-selected import directories across launches.
+/// Note: the sandbox only lets this read the old location if the container
+/// was granted access to it; without a home-relative temporary exception the
+/// existence check fails and migration records itself as done.
 enum SandboxSupport {
 
     static var isSandboxed: Bool {
@@ -102,69 +103,5 @@ enum SandboxSupport {
         }
 
         defaults.set(true, forKey: migrationKey)
-    }
-
-    // MARK: - Security-scoped bookmarks
-
-    private static let bookmarkKey = "AetherDesk.securityScopedBookmarks"
-
-    /// Creates a security-scoped bookmark for the given directory URL (typically
-    /// from an NSOpenPanel). Returns nil if bookmark creation fails.
-    static func createBookmark(for url: URL) -> Data? {
-        guard isSandboxed else { return nil }
-        do {
-            return try url.bookmarkData(options: .withSecurityScope,
-                                        includingResourceValuesForKeys: nil,
-                                        relativeTo: nil)
-        } catch {
-            Logger.app.error("ÆtherDesk SandboxSupport: bookmark creation failed: \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    /// Resolves a previously stored bookmark back into a URL and starts
-    /// security-scoped access. Call `stopAccessingSecurityScopedResource()`
-    /// on the returned URL when done.
-    static func resolveBookmark(_ data: Data) -> URL? {
-        guard isSandboxed else { return nil }
-        var isStale = false
-        do {
-            let url = try URL(
-                resolvingBookmarkData: data,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale)
-            if url.startAccessingSecurityScopedResource() {
-                return url
-            }
-            return nil
-        } catch {
-            Logger.app.error("ÆtherDesk SandboxSupport: bookmark resolution failed: \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    /// Persists a bookmark for an import source directory so it can be
-    /// re-accessed across launches.
-    static func saveBookmark(_ data: Data, forKey key: String) {
-        guard isSandboxed else { return }
-        var bookmarks = loadAllBookmarks()
-        bookmarks[key] = data
-        if let encoded = try? JSONEncoder().encode(bookmarks) {
-            UserDefaults.standard.set(encoded, forKey: bookmarkKey)
-        }
-    }
-
-    /// Loads a previously saved bookmark for the given key.
-    static func loadBookmark(forKey key: String) -> Data? {
-        loadAllBookmarks()[key]
-    }
-
-    private static func loadAllBookmarks() -> [String: Data] {
-        guard let data = UserDefaults.standard.data(forKey: bookmarkKey),
-              let dict = try? JSONDecoder().decode([String: Data].self, from: data) else {
-            return [:]
-        }
-        return dict
     }
 }

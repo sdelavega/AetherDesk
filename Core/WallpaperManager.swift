@@ -79,6 +79,11 @@ final class WallpaperManager {
 
     private(set) var isRunning = false
     private(set) var isSafeMode = false
+    /// Set from the menu bar's Pause item. Unlike the automatic pauses
+    /// (occlusion, battery, sleep), only the user clears it.
+    private(set) var isUserPaused = false
+    private var isUnderMemoryPressure = false
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
     private var fallbackBundle: WallpaperBundle?
     private var occludedDisplays: Set<CGDirectDisplayID> = []
     private var powerSource: CFRunLoopSource?
@@ -88,7 +93,7 @@ final class WallpaperManager {
 
     init(displayManager: WallpaperDisplaySource = DisplayManager(),
          wallpaperStore: WallpaperStore = WallpaperStore(),
-         propertyStore: PropertyStore = PropertyStore(),
+         propertyStore: PropertyStore = .shared,
          runtimeFactory: @escaping RuntimeFactory = WallpaperManager.makeRuntime,
          hostFactory: ((CGDirectDisplayID) -> WallpaperHosting?)? = nil) {
         self.displayManager = displayManager
@@ -109,6 +114,7 @@ final class WallpaperManager {
 
     deinit {
         if let powerSource { CFRunLoopSourceInvalidate(powerSource) }
+        memoryPressureSource?.cancel()
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
@@ -194,6 +200,19 @@ final class WallpaperManager {
 
         // Retain the requested bundle even if starting it immediately fails.
         currentBundles[identity] = bundle
+
+        // Safe mode keeps every display inert. Remember the choice so turning
+        // safe mode off shows it, but don't start a runtime now.
+        if isSafeMode {
+            persistAssignment(bundle, for: displayID)
+            showInertContent(for: displayID)
+            NotificationCenter.default.post(name: Constants.Notifications.wallpaperDidChange,
+                                            object: nil,
+                                            userInfo: ["displayID": displayID,
+                                                       "bundleID": bundle.id.uuidString])
+            return
+        }
+
         do {
             let runtime = try runtimeFactory(bundle, displayID)
             let overrides = propertyStore.load(for: bundle.id)
@@ -211,10 +230,7 @@ final class WallpaperManager {
             }
 
             // Persist (displayID -> bundleID) so next launch restores this.
-            let displays = displayManager.hardwareInfo()
-            if let info = displays.first(where: { $0.displayID == displayID }) {
-                wallpaperStore.setAssignment(bundleID: bundle.id, for: info, among: displays)
-            }
+            persistAssignment(bundle, for: displayID)
 
             NotificationCenter.default.post(name: Constants.Notifications.wallpaperDidChange,
                                             object: nil,
@@ -224,6 +240,13 @@ final class WallpaperManager {
         } catch {
             Logger.app.error("ÆtherDesk: runtime start failed for display \(displayID): \(String(describing: error))")
             installSafeModeContent(for: displayID)
+        }
+    }
+
+    private func persistAssignment(_ bundle: WallpaperBundle, for displayID: CGDirectDisplayID) {
+        let displays = displayManager.hardwareInfo()
+        if let info = displays.first(where: { $0.displayID == displayID }) {
+            wallpaperStore.setAssignment(bundleID: bundle.id, for: info, among: displays)
         }
     }
 
@@ -251,7 +274,7 @@ final class WallpaperManager {
     }
 
     func resumeAll() {
-        guard !isSafeMode else { return }
+        guard !isSafeMode, !isUserPaused else { return }
         for (id, runtime) in runtimes {
             if performanceSettings.pauseWhenNotVisible && occludedDisplays.contains(id) { continue }
             runtime.resume()
@@ -278,6 +301,19 @@ final class WallpaperManager {
         propertyStore.save(overrides, for: bundleID)
     }
 
+    /// User-initiated pause from the menu bar. Stays in effect across wallpaper
+    /// changes, power-source events and display reconfiguration until the
+    /// user resumes.
+    func setUserPaused(_ paused: Bool) {
+        guard paused != isUserPaused else { return }
+        isUserPaused = paused
+        if paused {
+            pauseAll()
+        } else {
+            applyPowerPerformancePolicy()
+        }
+    }
+
     /// Flip safe mode on/off. In safe mode all runtimes are paused and the
     /// hosts are filled with a static, inert fallback so a misbehaving
     /// wallpaper can't continue to churn CPU.
@@ -285,7 +321,9 @@ final class WallpaperManager {
         guard enabled != isSafeMode else { return }
         isSafeMode = enabled
         if enabled {
-            for (id, _) in hosts { installSafeModeContent(for: id) }
+            // A user-chosen safe mode is not a runtime failure, so it must not
+            // count against the per-display wake retry allowance.
+            for (id, _) in hosts { showInertContent(for: id) }
         } else {
             // Best-effort: re-run last known good bundles.
             for display in displaySnapshots {
@@ -352,11 +390,18 @@ final class WallpaperManager {
             object: host)
     }
 
+    /// Demotes a display after a runtime failure: records the demotion for
+    /// the wake retry policy, then shows inert content.
     private func installSafeModeContent(for displayID: CGDirectDisplayID) {
         if let identity = identity(for: displayID) {
             demotedDisplays.insert(identity)
             safeModeRetryPolicy.recordDemotion(identity)
         }
+        showInertContent(for: displayID)
+    }
+
+    /// Stops the display's runtime and shows a static black view.
+    private func showInertContent(for displayID: CGDirectDisplayID) {
         guard let host = hosts[displayID] else { return }
         runtimes[displayID]?.stop()
         runtimes.removeValue(forKey: displayID)
@@ -405,11 +450,17 @@ final class WallpaperManager {
                            object: nil)
         }
 
-        // Pause when memory pressure becomes critical.
-        nc.addObserver(self,
-                       selector: #selector(memoryPressureStateChanged),
-                       name: NSNotification.Name("NSProcessInfoMemoryPressureNotification"),
-                       object: nil)
+        // Pause when memory pressure becomes critical. (There is no public
+        // NotificationCenter notification for this; a dispatch source is the
+        // supported API.)
+        let memorySource = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.normal, .warning, .critical], queue: .main)
+        memorySource.setEventHandler { [weak self] in
+            guard let self, let source = self.memoryPressureSource else { return }
+            self.memoryPressureChanged(source.data)
+        }
+        memoryPressureSource = memorySource
+        memorySource.resume()
 
         // Pause on display sleep / unpause on wake.
         let wsnc = NSWorkspace.shared.notificationCenter
@@ -527,10 +578,17 @@ final class WallpaperManager {
     @objc private func sessionDidResignActive() { pauseAll() }
     @objc private func sessionDidBecomeActive() { applyPowerPerformancePolicy() }
 
-        @objc private func memoryPressureStateChanged() {
-        // The notification itself indicates memory pressure.
-        Logger.app.warning("ÆtherDesk: memory pressure notification — pausing all runtimes")
-        pauseAll()
+    private func memoryPressureChanged(_ event: DispatchSource.MemoryPressureEvent) {
+        if event.contains(.critical) {
+            guard !isUnderMemoryPressure else { return }
+            isUnderMemoryPressure = true
+            Logger.app.warning("ÆtherDesk: critical memory pressure — pausing all runtimes")
+            pauseAll()
+        } else if isUnderMemoryPressure {
+            isUnderMemoryPressure = false
+            Logger.app.info("ÆtherDesk: memory pressure eased — re-applying power policy")
+            applyPowerPerformancePolicy()
+        }
     }
     @objc private func screenDidSleep() { pauseAll() }
 
@@ -644,6 +702,11 @@ final class WallpaperManager {
 
     private func applyPowerPerformancePolicy() {
         guard isRunning else { return }
+
+        if isUserPaused || isUnderMemoryPressure {
+            pauseAll()
+            return
+        }
 
         if performanceSettings.respectLowPowerMode,
            isLowPowerModeEnabled {

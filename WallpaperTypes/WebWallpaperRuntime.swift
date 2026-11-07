@@ -230,8 +230,13 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
         // silent URLSession fallback when WeatherKit is unavailable. Wallpapers
         // that want an accurate attribution should re-check the flag after each
         // fetch resolves (WeatherAether does this from applyWeather()).
+        //
+        // The guess must match whether WeatherKit will be attempted at all:
+        // without Premium, or with "Open-Meteo Only" selected, forecasts never
+        // reach WeatherKitBridge, so seeding `true` would credit Apple Weather
+        // for Open-Meteo data.
         let weatherKitFlag = WKUserScript(
-            source: "window.__weatherKitActive = true;",
+            source: "window.__weatherKitActive = \(WeatherKitBridge.willAttemptWeatherKit);",
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         )
@@ -445,6 +450,15 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             return
         }
 
+        // The page's fetch()/XMLHttpRequest are routed here, so WebKit's
+        // external-network content rule never sees them; enforce the setting
+        // on this path too.
+        guard !settings.blockExternalNetwork else {
+            Logger.app.info("ÆtherDesk: blocked wallpaper fetch — external network requests are disabled")
+            deliverFetchResult(id: id, status: 0, body: nil)
+            return
+        }
+
         guard consumeNativeFetchBudget() else {
             Logger.app.warning("ÆtherDesk: blocked wallpaper fetch — native fetch budget exceeded on display \(self.displayID)")
             deliverFetchResult(id: id, status: 0, body: nil)
@@ -474,6 +488,11 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
             }
             return
         }
+        // Not intercepted: the forecast comes straight from Open-Meteo, and
+        // the wallpaper's credit line must say so.
+        let weatherSource: String? = WeatherKitBridge.isForecastURL(url) ? "open-meteo" : nil
+        #else
+        let weatherSource: String? = nil
         #endif
 
         switch networkPolicy.validate(url: url) {
@@ -522,7 +541,8 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                                 guard let data = try? Data(contentsOf: tempURL) else { return nil }
                                 return String(data: data, encoding: .utf8)
                             }()
-                            self?.deliverFetchResult(id: id, status: status, body: body)
+                            self?.deliverFetchResult(id: id, status: status, body: body,
+                                                     weatherSource: weatherSource)
                         case .failure(let error):
                             Logger.app.warning("ÆtherDesk: wallpaper fetch failed: \(error.localizedDescription)")
                             self?.deliverFetchResult(id: id, status: 0, body: nil)
@@ -576,6 +596,14 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
 
     private func validateWebSocket(id: Int, urlStr: String, protocols: [String]?) {
         guard let url = URL(string: urlStr) else {
+            deliverWebSocketValidation(id: id, allowed: false)
+            return
+        }
+
+        // The external-network content rule only matches http(s) URLs, so
+        // WebSockets would otherwise slip past the setting.
+        guard !settings.blockExternalNetwork else {
+            Logger.app.info("ÆtherDesk: blocked WebSocket — external network requests are disabled")
             deliverWebSocketValidation(id: id, allowed: false)
             return
         }
@@ -727,7 +755,12 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                         if (resp.weatherSource !== undefined) {
                             _respInit.headers = { 'X-AetherDesk-Weather-Source': String(resp.weatherSource) };
                         }
-                        pending.resolve(new Response(resp.body, _respInit));
+                        // Response() throws for a body on a null-body status
+                        // (e.g. 204 No Content), which used to turn a
+                        // successful request into a rejection.
+                        var _nullBody = resp.status === 101 || resp.status === 204 ||
+                                        resp.status === 205 || resp.status === 304;
+                        pending.resolve(new Response(_nullBody ? null : resp.body, _respInit));
                     } catch(e) {
                         pending.reject(e);
                     }
@@ -776,12 +809,9 @@ final class WebWallpaperRuntime: NSObject, WallpaperRuntime {
                 NativeXHR.prototype.setRequestHeader = function(header, value) { this._headers[header] = value; };
                 NativeXHR.prototype.send = function(body) {
                     var self = this;
-                    if (!window.aetherDesk._consumeNetworkBudget()) {
-                        this.readyState = NativeXHR.DONE;
-                        if (this.onerror) { try { this.onerror(networkBlockedError()); } catch(e) {} }
-                        if (this.onreadystatechange) { try { this.onreadystatechange(); } catch(e) {} }
-                        return;
-                    }
+                    // The fetch() override below charges the network budget
+                    // (and reports exhaustion); charging here too counted
+                    // every XMLHttpRequest twice.
                     fetch(this._url, { method: this._method, body: body, headers: this._headers })
                         .then(function(resp) { return resp.text().then(function(text) { return { resp: resp, text: text }; }); })
                         .then(function(result) {

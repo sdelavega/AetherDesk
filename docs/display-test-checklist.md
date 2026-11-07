@@ -1,4 +1,4 @@
-# v1.4 display manual checklist
+# Display manual test checklist
 
 Record macOS version, Mac model, monitor models, ports/adapters, date, and tester:
 

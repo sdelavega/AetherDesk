@@ -42,13 +42,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private weak var wallpaperManager: WallpaperManager?
     private var importer: WallpaperImporter { WallpaperImporter.shared }
     private var cachedWallpapers: [WallpaperBundle]?
+    /// Displays the submenu was built for; per-display items go stale when
+    /// a monitor is connected or removed.
+    private var cachedDisplayIDs: [CGDirectDisplayID] = []
 
     // Submenu + items that need dynamic updates.
     private let wallpapersItem = NSMenuItem(title: "Wallpapers", action: nil, keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "Pause", action: nil, keyEquivalent: "p")
     private let safeModeItem = NSMenuItem(title: "Safe Mode", action: nil, keyEquivalent: "")
 
-    private var isPaused = false
     private var isImporting = false
 
     init(wallpaperManager: WallpaperManager) {
@@ -238,14 +240,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         let currentList = importer.listWallpapers()
+        let displayIDs = NSScreen.screens.map(\.displayID)
         let needsRebuild = cachedWallpapers == nil || cachedWallpapers!.count != currentList.count
             || !Set(cachedWallpapers!.map(\.id)).isSuperset(of: currentList.map(\.id))
+            || displayIDs != cachedDisplayIDs
         if needsRebuild {
             cachedWallpapers = currentList
+            cachedDisplayIDs = displayIDs
             wallpapersItem.submenu = buildWallpapersSubmenu(from: currentList)
         } else {
             updateCheckmarks(in: wallpapersItem.submenu, from: currentList)
         }
+        let isPaused = wallpaperManager?.isUserPaused ?? false
         pauseItem.title = isPaused ? "Resume" : "Pause"
         safeModeItem.state = (wallpaperManager?.isSafeMode ?? false) ? .on : .off
     }
@@ -334,8 +340,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func togglePause() {
         guard let manager = wallpaperManager else { return }
-        isPaused.toggle()
-        if isPaused { manager.pauseAll() } else { manager.resumeAll() }
+        manager.setUserPaused(!manager.isUserPaused)
     }
 
     @objc private func toggleSafeMode() {

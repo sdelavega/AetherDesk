@@ -10,6 +10,7 @@
 		AE1400170000000000000001 /* PremiumViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88B5D894CAB04AE32EA6489 /* PremiumViewController.swift */; };
 		AE1400140000000000000001 /* Acknowledgements.txt in Resources */ = {isa = PBXBuildFile; fileRef = AE1400140000000000000002 /* Acknowledgements.txt */; };
 		AE1400130000000000000001 /* PowerEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400130000000000000002 /* PowerEnvironmentTests.swift */; };
+		AE1400200000000000000001 /* NetworkPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400200000000000000002 /* NetworkPolicyTests.swift */; };
 		AE1400120000000000000001 /* WeatherAetherPortabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */; };
 		AE1400100000000000000003 /* WeatherConditionMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400100000000000000005 /* WeatherConditionMap.swift */; };
 		AE1400100000000000000004 /* WeatherConditionMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400100000000000000005 /* WeatherConditionMap.swift */; };
@@ -35,7 +36,6 @@
 		AE1400010000000000000001 /* PerformanceSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1400010000000000000002 /* PerformanceSettingsTests.swift */; };
 		02F34DD0114CB6D2D8D4A5AA /* PropertyBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47F42893F860B8AB7274982B /* PropertyBridge.swift */; };
 		056491480ABADDB41BB323BC /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A1894E1192EEE4193D08C7C /* DisplayManager.swift */; };
-		0B167E57BAF2637D21EBED7D /* SemanticVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23E8ECAAE9B20311B509A291 /* SemanticVersion.swift */; };
 		103B3C3F4917594CD9F6E84F /* VideoWallpaperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E448097252883FFCECE65B /* VideoWallpaperRuntime.swift */; };
 		1632CD1D5A231C19F8553C30 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F8A490D566621B461526E9 /* Constants.swift */; };
 		17DBC365FE89E06FD8E718E2 /* BundledWallpaperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A438B36D1F5A08740C03D964 /* BundledWallpaperTests.swift */; };
@@ -77,9 +77,7 @@
 		751BEC45317E454AA0D27BBB /* WallpaperHostWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F56E4E2EB0CF0D8FFC0953DE /* WallpaperHostWindow.swift */; };
 		75F307F884FCD2D2A47A15EE /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9B5542B1639E1B9FC4F5043B /* PrivacyInfo.xcprivacy */; };
 		7B7494FA890A0136CB8EBC87 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E2C76B34BC64D40CEB2ACE /* PreferencesWindowController.swift */; };
-		7E8BE87639410F58E0811970 /* SemanticVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23E8ECAAE9B20311B509A291 /* SemanticVersion.swift */; };
 		889AC11ACF497CAB71752982 /* GeolocationPermissionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B34527B70A5698DF06D85DB4 /* GeolocationPermissionStore.swift */; };
-		89327B34336E4AA88CF12A2F /* SemanticVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3749C6DA401C43A86066AA06 /* SemanticVersionTests.swift */; };
 		8E1D4D23FE17096A6FA7983A /* AppSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3405166080A849F19BEB41A /* AppSettingsStore.swift */; };
 		9269CE7FC58194BFB8E2782F /* PremiumViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88B5D894CAB04AE32EA6489 /* PremiumViewController.swift */; };
 		9469608136FF1F6F6AB87832 /* PremiumStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 431420BC8DF1C43C71B4CACB /* PremiumStore.swift */; };
@@ -153,7 +151,6 @@
 		AE140015000000000000007C /* PropertyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F7F715D824CB006F547DBF /* PropertyStore.swift */; };
 		AE140015000000000000007D /* RuntimePolicyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5279A479F42BBDE0E8D017E /* RuntimePolicyStore.swift */; };
 		AE140015000000000000007E /* SandboxSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B09F9E32CB9EFC02B3346A /* SandboxSupport.swift */; };
-		AE140015000000000000007F /* SemanticVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23E8ECAAE9B20311B509A291 /* SemanticVersion.swift */; };
 		AE1400150000000000000080 /* ThumbnailRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CF40BF707D1AFF897EB73F2 /* ThumbnailRenderer.swift */; };
 		AE1400150000000000000082 /* UpdateSettingsMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9F7783D63F18FBE2B07B93E /* UpdateSettingsMigration.swift */; };
 		AE1400150000000000000083 /* VideoWallpaperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E448097252883FFCECE65B /* VideoWallpaperRuntime.swift */; };
@@ -193,6 +190,7 @@
 /* Begin PBXFileReference section */
 		AE1400140000000000000002 /* Acknowledgements.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = Acknowledgements.txt; sourceTree = "<group>"; };
 		AE1400130000000000000002 /* PowerEnvironmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/PowerEnvironmentTests.swift; sourceTree = SOURCE_ROOT; };
+		AE1400200000000000000002 /* NetworkPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/NetworkPolicyTests.swift; sourceTree = SOURCE_ROOT; };
 		AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/WeatherAetherPortabilityTests.swift; sourceTree = SOURCE_ROOT; };
 		AE1400100000000000000005 /* WeatherConditionMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/WeatherConditionMap.swift; sourceTree = SOURCE_ROOT; };
 		AE1400100000000000000002 /* WeatherConditionMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/WeatherConditionMapTests.swift; sourceTree = SOURCE_ROOT; };
@@ -213,10 +211,8 @@
 		11029153DBF7B06D601A0121 /* WallpaperManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperManager.swift; sourceTree = "<group>"; };
 		1692B5A0F6D861FBA0F63351 /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		180A4857E93F7D9870B5C672 /* WatchdogTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchdogTimer.swift; sourceTree = "<group>"; };
-		23E8ECAAE9B20311B509A291 /* SemanticVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticVersion.swift; sourceTree = "<group>"; };
 		2B38AFDAF24A4DAF09DADA57 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		2DE5D0FDE775538C28D94383 /* ContentRuleListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentRuleListTests.swift; sourceTree = "<group>"; };
-		3749C6DA401C43A86066AA06 /* SemanticVersionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticVersionTests.swift; sourceTree = "<group>"; };
 		38C9D6541A7CA59ACC2C5A93 /* AetherDeskTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AetherDeskTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C0AF04AFEC748C988704065 /* WallpaperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperRuntime.swift; sourceTree = "<group>"; };
 		431420BC8DF1C43C71B4CACB /* PremiumStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumStore.swift; sourceTree = "<group>"; };
@@ -318,7 +314,6 @@
 				9B0EF3F54F809DD998CF6D1A /* NSScreen+DisplayID.swift */,
 				431420BC8DF1C43C71B4CACB /* PremiumStore.swift */,
 				D5B09F9E32CB9EFC02B3346A /* SandboxSupport.swift */,
-				23E8ECAAE9B20311B509A291 /* SemanticVersion.swift */,
 				6CF40BF707D1AFF897EB73F2 /* ThumbnailRenderer.swift */,
 				F56E4E2EB0CF0D8FFC0953DE /* WallpaperHostWindow.swift */,
 				11029153DBF7B06D601A0121 /* WallpaperManager.swift */,
@@ -365,13 +360,11 @@
 		5B459EE416B14B93675B1322 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
-				DF338D9F80DEE88F84BAE118 /* AetherDeskCoreTests */,
 				A438B36D1F5A08740C03D964 /* BundledWallpaperTests.swift */,
 				2DE5D0FDE775538C28D94383 /* ContentRuleListTests.swift */,
 				C78B5796CC594FB0030C606A /* LivelyInfoParserTests.swift */,
 				7AED0B46712DE2955E7F8C36 /* LivelyPropertiesParserTests.swift */,
 				A7D4276D059E88340FFD4E64 /* PropertyStoreTests.swift */,
-				3749C6DA401C43A86066AA06 /* SemanticVersionTests.swift */,
 				AE1400010000000000000002 /* PerformanceSettingsTests.swift */,
 				AE1400160000000000000002 /* UpdateSettingsMigrationTests.swift */,
 				48746DEFDD802BEA7AC6D0C9 /* WallpaperBundleTests.swift */,
@@ -386,6 +379,7 @@
 				AE1400080000000000000002 /* PropertyRoutingTests.swift */,
 				AE1400100000000000000002 /* WeatherConditionMapTests.swift */,
 				AE1400130000000000000002 /* PowerEnvironmentTests.swift */,
+				AE1400200000000000000002 /* NetworkPolicyTests.swift */,
 				AE1400120000000000000002 /* WeatherAetherPortabilityTests.swift */,
 				8F5D63B30CEEDFD5FCFD2F78 /* WallpaperValidatorTests.swift */,
 			);
@@ -436,13 +430,6 @@
 				5387F0033E9D0C64AE50767E /* AetherDeskStoreTests.xctest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		DF338D9F80DEE88F84BAE118 /* AetherDeskCoreTests */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = AetherDeskCoreTests;
 			sourceTree = "<group>";
 		};
 		E053F0FE57EAF6BDB84BD07F /* StoreTests */ = {
@@ -661,8 +648,6 @@
 				CF10DD8A227A91D4D452928C /* PropertyStoreTests.swift in Sources */,
 				D8B84C2E886EBF219644DC44 /* RuntimePolicyStore.swift in Sources */,
 				C9448D0EF3845C2F68559595 /* SandboxSupport.swift in Sources */,
-				0B167E57BAF2637D21EBED7D /* SemanticVersion.swift in Sources */,
-				89327B34336E4AA88CF12A2F /* SemanticVersionTests.swift in Sources */,
 				674F7739CD086F739B0AE4BF /* ThumbnailRenderer.swift in Sources */,
 				D0212750885F4D8D70F45743 /* UpdateSettingsMigration.swift in Sources */,
 				AE1400010000000000000001 /* PerformanceSettingsTests.swift in Sources */,
@@ -674,6 +659,7 @@
 				AE1400080000000000000001 /* PropertyRoutingTests.swift in Sources */,
 				AE1400100000000000000001 /* WeatherConditionMapTests.swift in Sources */,
 				AE1400130000000000000001 /* PowerEnvironmentTests.swift in Sources */,
+				AE1400200000000000000001 /* NetworkPolicyTests.swift in Sources */,
 				AE1400120000000000000001 /* WeatherAetherPortabilityTests.swift in Sources */,
 				AE1400160000000000000001 /* UpdateSettingsMigrationTests.swift in Sources */,
 				FB237493DB8632BE381F2669 /* VideoWallpaperRuntime.swift in Sources */,
@@ -730,7 +716,6 @@
 				3FDDB978B4020370AC5F3008 /* PropertyStore.swift in Sources */,
 				7013E8A9CEA31AA2E13779A9 /* RuntimePolicyStore.swift in Sources */,
 				2D5118C46DA6C39547FE1526 /* SandboxSupport.swift in Sources */,
-				7E8BE87639410F58E0811970 /* SemanticVersion.swift in Sources */,
 				FEBB4AD7E501CBF200A3BAAA /* ThumbnailRenderer.swift in Sources */,
 				3897956F2EE85FFAC63F32AF /* UpdateSettingsMigration.swift in Sources */,
 				103B3C3F4917594CD9F6E84F /* VideoWallpaperRuntime.swift in Sources */,
@@ -793,7 +778,6 @@
 				AE140015000000000000007C /* PropertyStore.swift in Sources */,
 				AE140015000000000000007D /* RuntimePolicyStore.swift in Sources */,
 				AE140015000000000000007E /* SandboxSupport.swift in Sources */,
-				AE140015000000000000007F /* SemanticVersion.swift in Sources */,
 				AE1400150000000000000080 /* ThumbnailRenderer.swift in Sources */,
 				AE1400150000000000000082 /* UpdateSettingsMigration.swift in Sources */,
 				AE1400150000000000000083 /* VideoWallpaperRuntime.swift in Sources */,

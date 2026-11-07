@@ -82,6 +82,44 @@ struct PropertyRoutingTests {
         #expect(fixture.saved(for: fixture.first).isEmpty)
         #expect(fixture.saved(for: fixture.second)["speed"] as? Int == 23)
     }
+
+    @Test func userPauseSurvivesWallpaperChangesUntilResumed() throws {
+        let fixture = try RoutingFixture()
+        defer { fixture.cleanup() }
+        fixture.install()
+
+        fixture.manager.setUserPaused(true)
+        #expect(fixture.runtimes.values.allSatisfy(\.isPaused))
+
+        // Installing a wallpaper re-applies the power policy; before the fix
+        // that resumed every runtime behind the user's back.
+        fixture.manager.setWallpaper(fixture.second, for: 101)
+        #expect(fixture.manager.isUserPaused)
+        #expect(fixture.runtimes.values.allSatisfy(\.isPaused))
+
+        // Resuming only clears the user's pause; any automatic pause
+        // (battery, low power) still applies, so assert the flag only.
+        fixture.manager.setUserPaused(false)
+        #expect(!fixture.manager.isUserPaused)
+    }
+
+    @Test func selectingAWallpaperInSafeModeIsRememberedButNotStarted() throws {
+        let fixture = try RoutingFixture()
+        defer { fixture.cleanup() }
+        fixture.install()
+        fixture.manager.setSafeMode(true)
+        let runtime = try #require(fixture.runtimes[101])
+        runtime.started = false
+
+        fixture.manager.setWallpaper(fixture.second, for: 101)
+        #expect(fixture.manager.isSafeMode)
+        #expect(runtime.started == false)
+        #expect(fixture.manager.currentBundle(for: 101)?.id == fixture.second.id)
+
+        fixture.manager.setSafeMode(false)
+        #expect(runtime.started == true)
+        #expect(fixture.manager.currentBundle(for: 101)?.id == fixture.second.id)
+    }
 }
 
 private final class RoutingDisplays: WallpaperDisplaySource {

@@ -105,7 +105,7 @@ clean_tree "$root"
     || fail 'Local main moved during publishing; inspect the release before retrying'
 tool cp "$dist/appcast.xml" "$root/docs/appcast.xml"
 tool git add -- docs/appcast.xml
-tool git commit --only -m "Publish appcast for $version" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' -- docs/appcast.xml
+tool git commit --only -m "Publish appcast for $version" -- docs/appcast.xml
 tool git fetch origin refs/heads/main
 [[ $(tool git rev-parse FETCH_HEAD) == "$head" ]] || fail 'Remote main moved during publishing; appcast commit remains local; inspect before retrying'
 # A normal push rejects a concurrent non-fast-forward update; never force it.
@@ -114,7 +114,7 @@ tool git push origin HEAD:refs/heads/main \
 clean_tree "$tap"
 tool cp "$work/aetherdesk.rb" "$tap/Casks/aetherdesk.rb"
 tool git -C "$tap" add -- Casks/aetherdesk.rb
-tool git -C "$tap" commit -m "AetherDesk $version" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
+tool git -C "$tap" commit -m "AetherDesk $version"
 tool git -C "$tap" push origin HEAD
 # Retry boundedly for Pages/CDN propagation. Every response must match the
 # manifest; a successful HTTP response alone is insufficient.
